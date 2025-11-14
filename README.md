@@ -92,6 +92,19 @@ cd deploy
 docker compose -f docker-compose.dev.yml up --build
 ```
 
+### Multi-architecture images (amd64 + arm64)
+
+The Dockerfile now targets BuildKit platforms so you can publish both Intel/AMD and Apple Silicon images in one shot:
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/<org>/open_model_gateway:latest \
+  .
+```
+
+Use `--push` to push the manifest list to GHCR once authenticated.
+
 Refer to [`docs/deployment/releases.md`](docs/deployment/releases.md) for more detail on the release/packaging pipeline and the GitHub Container Registry images.
 
 ## Getting Started

@@ -42,7 +42,7 @@ backend/
 | `GET /v1/models`              | ✅     | Returns merged alias list with provider metadata, deployment, and enabled flag         |
 | `POST /v1/chat/completions`   | ✅     | Supports sync + SSE streaming, Redis rate limiting, budget headers, idempotency cache |
 | `POST /v1/embeddings`         | ✅     | Handles string or string-array input, usage logging, and budget enforcement            |
-| `POST /v1/images/generations` | ✅     | Azure image generation; cost + usage recorded, budget headers surfaced                 |
+| `POST /v1/images/generations` | ✅     | Multi-provider image generation (Azure/OpenAI/Vertex/Bedrock Titan) with cost logging |
 
 Shared middleware (implemented in `internal/httpserver/public`):
 

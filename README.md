@@ -1,4 +1,4 @@
-# Open Model Gateway
+# <img src="backend/frontend/src/assets/system/open_model_gateway.svg" alt="Open Model Gateway logo" width="64" height="64" style="vertical-align:middle;margin-right:8px;"> Open Model Gateway
 
 Open Model Gateway is a programmable inference router that exposes an OpenAI-compatible API surface with tenant isolation, usage metering, and multi-provider failover. The project coordinates a Go/Fiber backend, a React/Vite admin UI, and supporting infrastructure (Postgres, Redis, OTEL/Prometheus) to deliver an enterprise-grade LLM gateway.
 
@@ -22,7 +22,7 @@ Open Model Gateway is a programmable inference router that exposes an OpenAI-com
   - `GET /v1/models`
   - `POST /v1/chat/completions` (including SSE streaming)
 - `POST /v1/embeddings`
-- `POST /v1/images/generations` (Azure `gpt-image-1`, base64 responses)
+- `POST /v1/images/generations` (Azure/OpenAI/Vertex/Bedrock Titan images, base64 responses)
 - `POST /v1/audio/{transcriptions,translations,speech}` (Whisper + GPT-4o-mini-tts text-to-speech)
 - Provider routing & failover:
   - Model catalog merge between static config and persisted overrides
@@ -106,6 +106,10 @@ docker buildx build \
 Use `--push` to push the manifest list to GHCR once authenticated.
 
 Refer to [`docs/deployment/releases.md`](docs/deployment/releases.md) for more detail on the release/packaging pipeline and the GitHub Container Registry images.
+
+## License
+
+This project is distributed under the [GLWT (Good Luck With That) Public License](LICENSE). Use it however you like—but entirely at your own risk.
 
 ## Getting Started
 
@@ -275,5 +279,3 @@ Refer to [`docs/runtime/router.example.yaml`](docs/runtime/router.example.yaml) 
 - Rate limiting: Per-key TPM and parallel request semaphores derived from quota metadata.
 - Tokenization backfills: Anthropic/Llama token counters for accurate metering fallback.
 - DevOps: Docker Compose stack, Terraform scaffolding, CI smoke tests and contract suite.
-
-For the full requirement set consult [`prd.md`](prd.md). Progress updates and coordination details continue to accumulate in [`agents.md`](agents.md).

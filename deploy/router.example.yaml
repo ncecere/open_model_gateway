@@ -1,0 +1,323 @@
+# Open Model Gateway sample configuration
+#
+# Copy this file to deploy/router.local.yaml (or another config path) and adjust secrets for your environment.
+
+server:
+  listen_addr: ":8080"
+  body_limit_mb: 20
+  sync_timeout: 300s
+  stream_idle_timeout: 30s
+  stream_max_duration: 300s
+  provider_timeout: 280s
+  read_header_timeout: 5s
+  graceful_shutdown_delay: 5s
+
+database:
+  url: "postgres://open_gateway:open_gateway@localhost:5432/open_gateway?sslmode=disable"
+  run_migrations: true
+  migrations_dir: "./migrations"
+  max_conns: 20
+  min_conns: 2
+  max_conn_idle_time: 10m
+  max_conn_lifetime: 1h
+
+redis:
+  url: "redis://localhost:6379/0"
+  db: 0
+  pool_size: 20
+
+observability:
+  enable_metrics: true
+  enable_otlp: true
+  otlp_endpoint: "http://localhost:4317"
+
+rate_limits:
+  default_tokens_per_minute: 1000000
+  default_requests_per_minute: 1000
+  default_parallel_requests_key: 10
+  default_parallel_requests_tenant: 100
+
+budgets:
+  default_usd: 100.0
+  warning_threshold_perc: 0.8
+  refresh_schedule: "calendar_month"
+  alert:
+    enabled: true
+    emails: []
+    webhooks: []
+    cooldown: "1h"
+    smtp:
+      host: ""
+      port: 587
+      username: ""
+      password: ""
+      from: ""
+      use_tls: true
+      skip_tls_verify: false
+      connect_timeout: 5s
+    webhook:
+      timeout: 5s
+      max_retries: 3
+
+reporting:
+  timezone: "UTC"
+
+providers:
+  openai_key: ""
+  anthropic_key: ""
+  azure_openai_endpoint: "https://your-resource.openai.azure.com"
+  azure_openai_key: ""
+  azure_openai_version: "2024-07-01-preview"
+  aws_access_key_id: ""
+  aws_secret_access_key: ""
+  aws_region: ""
+  gcp_project_id: ""
+  gcp_json_credentials: ""
+  hugging_face_token: ""
+  openai_compatible:
+    base_url: ""
+    api_key: ""
+
+files:
+  storage: "local"           # local or s3
+  max_size_mb: 200
+  default_ttl: 168h          # 7d
+  max_ttl: 720h              # 30d
+  encryption_key: ""         # optional base64 AES key
+  local:
+    directory: "./data/files"
+  s3:
+    bucket: ""
+    prefix: ""
+    region: ""
+    endpoint: ""
+    use_path_style: false
+
+audio:
+  max_upload_mb: 50
+
+batches:
+  max_requests: 5000
+  max_concurrency: 50
+  default_ttl: 168h
+  max_ttl: 720h
+
+retention:
+  metadata_days: 30
+  zero_retention: false
+
+health:
+  check_interval: 60s
+  rolling_window: 5
+  cooldown: 5m
+
+admin:
+  session:
+    jwt_secret: "change-me"
+    access_token_ttl: 15m
+    refresh_token_ttl: 24h
+    cookie_name: "og_admin_session"
+  local:
+    enabled: true
+  oidc:
+    enabled: false
+    issuer: ""
+    client_id: ""
+    client_secret: ""
+    redirect_url: "https://admin.localhost/auth/oidc/callback"
+    scopes: ["openid", "email", "profile"]
+    allowed_domains: []
+    http_timeout: 5s
+    roles_claim: "roles"        # claim containing roles/groups (optional)
+    allowed_roles: []           # restrict sign-in to these roles (optional)
+    admin_roles: []             # roles that should map to super-admin access
+
+# Example catalog entries (trim to the providers you need)
+model_catalog:
+  - alias: "gpt-4o-azure"
+    provider: "azure"
+    provider_model: "gpt-4o"
+    context_window: 128000
+    max_output_tokens: 4096
+    modalities: ["text"]
+    supports_tools: true
+    price_input: 0.005
+    price_output: 0.015
+    currency: "USD"
+    deployment: "gpt-4o-deployment-eastus"
+    endpoint: "https://sub1-eastus.openai.azure.com"
+    api_key: "AZURE_SUB1_KEY"
+    api_version: "2024-07-01-preview"
+    region: "eastus"
+  - alias: "gpt-image-1"
+    provider: "openai"
+    provider_model: "gpt-image-1"
+    context_window: 0
+    max_output_tokens: 0
+    modalities: ["image"]
+    supports_tools: false
+    price_input: 0.04
+    price_output: 0.08
+    currency: "USD"
+    metadata:
+      openai_organization: ""
+      description: "Full images API (generate/edit/variation)"
+
+  - alias: "gpt-4o-mini-tts"
+    provider: "openai"
+    provider_model: "gpt-4o-mini-tts"
+    context_window: 0
+    max_output_tokens: 0
+    modalities: ["audio"]
+    supports_tools: false
+    price_input: 0
+    price_output: 0
+    currency: "USD"
+    metadata:
+      audio_voice: "alloy"
+      audio_format: "mp3"
+
+  - alias: "partner-gpt-image"
+    provider: "openai-compatible"
+    provider_model: "gpt-image-1"
+    context_window: 0
+    max_output_tokens: 0
+    modalities: ["image"]
+    supports_tools: false
+    price_input: 0.04
+    price_output: 0.08
+    currency: "USD"
+    endpoint: "https://partners.example.com/v1"
+    api_key: "PARTNER_IMAGE_KEY"
+    metadata:
+      base_url: "https://partners.example.com/v1"
+      openai_organization: ""
+
+  - alias: "claude-3-sonnet"
+    provider: "bedrock"
+    provider_model: "anthropic.claude-3-sonnet-20240229-v1:0"
+    context_window: 200000
+    max_output_tokens: 4096
+    modalities: ["text"]
+    supports_tools: false
+    price_input: 0.006
+    price_output: 0.015
+    currency: "USD"
+    region: "us-west-2"
+    metadata:
+      aws_session_token: ""
+      aws_profile: ""
+  
+  - alias: "titan-image"
+    provider: "bedrock"
+    provider_model: "amazon.titan-image-generator-v1"
+    modalities: ["image"]
+    supports_tools: false
+    price_input: 0
+    price_output: 0
+    currency: "USD"
+    region: "us-west-2"
+    weight: 100
+    metadata:
+      bedrock_image_task_type: "TEXT_IMAGE"
+      bedrock_image_quality: "standard"
+      bedrock_image_cfg_scale: "8"
+      bedrock_image_strength: "0.35"
+      bedrock_image_mask_source: "MASK_IMAGE_WHITE"
+      bedrock_image_variation_prompt: "variation of the provided reference image"
+      bedrock_image_init_mode: "IMAGE_STRENGTH"
+
+  - alias: "stable-diffusion-xl"
+    provider: "bedrock"
+    provider_model: "stability.stable-diffusion-xl-v1"
+    modalities: ["image"]
+    supports_tools: false
+    price_input: 0
+    price_output: 0
+    currency: "USD"
+    region: "us-west-2"
+    weight: 100
+    metadata:
+      bedrock_image_task_type: "TEXT_IMAGE"
+      bedrock_image_quality: "premium"
+      bedrock_image_cfg_scale: "10"
+      aws_session_token: ""
+      aws_profile: ""
+
+  - alias: "vertex-imagen-3"
+    provider: "vertex"
+    provider_model: "imagen-3.0-generate-001"
+    context_window: 0
+    max_output_tokens: 0
+    modalities: ["image"]
+    supports_tools: false
+    price_input: 0
+    price_output: 0
+    currency: "USD"
+    region: "us-central1"
+    metadata:
+      gcp_project_id: "vertex-project"
+      vertex_location: "us-central1"
+      vertex_publisher: "google"
+      gcp_credentials_json: "${VERTEX_CREDS_BASE64}"
+      gcp_credentials_format: "base64"
+      vertex_edit_mode: "EDIT_MODE_INPAINT_INSERTION"
+      vertex_mask_mode: "MASK_MODE_USER_PROVIDED"
+      vertex_mask_dilation: "0.01"
+      vertex_guidance_scale: "60"
+      vertex_base_steps: "35"
+      vertex_variation_prompt: ""
+      vertex_person_generation: "allow_adult"
+
+  - alias: "vertex-nano-banana"
+    provider: "vertex"
+    provider_model: "imagen-3.0-fast-generate-001"
+    context_window: 0
+    max_output_tokens: 0
+    modalities: ["image"]
+    supports_tools: false
+    price_input: 0
+    price_output: 0
+    currency: "USD"
+    region: "us-central1"
+    metadata:
+      gcp_project_id: "vertex-project"
+      vertex_location: "us-central1"
+      vertex_publisher: "google"
+      gcp_credentials_json: "${VERTEX_CREDS_BASE64}"
+      gcp_credentials_format: "base64"
+      description: "Imagen Nano Banana reference"
+      vertex_mask_mode: "MASK_MODE_USER_PROVIDED"
+      vertex_mask_dilation: "0.01"
+      vertex_guidance_scale: "40"
+      vertex_base_steps: "25"
+      vertex_person_generation: "allow_adult"
+
+bootstrap:
+  tenants:
+    - name: "demo"
+      status: "active"
+  admin_users:
+    - email: "admin@example.com"
+      name: "Demo Admin"
+      password: "change-me"
+  api_keys:
+    - tenant: "demo"
+      name: "demo-shared"
+      scopes: ["chat", "embeddings", "images", "files", "batches"]
+  memberships:
+    - tenant: "demo"
+      email: "admin@example.com"
+      role: "owner"
+  tenant_limits:
+    - tenant: "demo"
+      tokens_per_minute: 2000000
+      requests_per_minute: 2000
+  tenant_budgets:
+    - tenant: "demo"
+      budget_usd: 250.0
+      warning_threshold: 0.85
+      refresh_schedule: "weekly"
+      alert_emails:
+        - "billing@example.com"
+      alert_cooldown: "2h"

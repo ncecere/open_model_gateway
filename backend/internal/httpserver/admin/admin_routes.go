@@ -77,6 +77,7 @@ type userResponse struct {
 	ID           string     `json:"id"`
 	Email        string     `json:"email"`
 	Name         string     `json:"name"`
+	Theme        string     `json:"theme_preference"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
@@ -322,10 +323,16 @@ func toUserResponse(u db.User) (userResponse, error) {
 		lastLoginPtr = &t
 	}
 
+	theme := strings.TrimSpace(u.ThemePreference)
+	if theme == "" {
+		theme = "system"
+	}
+
 	return userResponse{
 		ID:           id,
 		Email:        u.Email,
 		Name:         u.Name,
+		Theme:        theme,
 		CreatedAt:    createdAt,
 		UpdatedAt:    updatedAt,
 		LastLoginAt:  lastLoginPtr,

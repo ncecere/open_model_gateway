@@ -421,6 +421,7 @@ type User struct {
 	ID               pgtype.UUID        `json:"id"`
 	Email            string             `json:"email"`
 	Name             string             `json:"name"`
+	ThemePreference  string             `json:"theme_preference"`
 	IsSuperAdmin     bool               `json:"is_super_admin"`
 	PersonalTenantID pgtype.UUID        `json:"personal_tenant_id"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`

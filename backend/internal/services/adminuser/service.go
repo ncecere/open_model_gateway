@@ -37,6 +37,7 @@ type User struct {
 	ID          uuid.UUID
 	Email       string
 	Name        string
+	Theme       string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	LastLoginAt *time.Time
@@ -143,10 +144,16 @@ func convertUser(row db.User) (User, error) {
 		}
 		lastLogin = &ts
 	}
+	theme := strings.TrimSpace(row.ThemePreference)
+	if theme == "" {
+		theme = "system"
+	}
+
 	return User{
 		ID:          id,
 		Email:       row.Email,
 		Name:        row.Name,
+		Theme:       theme,
 		CreatedAt:   created,
 		UpdatedAt:   updated,
 		LastLoginAt: lastLogin,

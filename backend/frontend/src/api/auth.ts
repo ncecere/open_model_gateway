@@ -19,6 +19,7 @@ export type TokenResponse = {
     id: string;
     email: string;
     name: string;
+    theme_preference: ThemePreference;
     created_at: string;
     updated_at: string;
     last_login_at?: string | null;
@@ -60,3 +61,4 @@ export async function startOIDC(returnTo?: string) {
 export async function logout() {
   await api.post("/auth/logout", undefined, { skipAuthRefresh: true });
 }
+import type { ThemePreference } from "@/types/theme";

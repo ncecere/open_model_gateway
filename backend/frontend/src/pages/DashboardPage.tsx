@@ -14,26 +14,53 @@ import { MetricCard } from "@/ui/kit/Cards";
 import { Globe } from "lucide-react";
 import PostgresIcon from "@/assets/system/postgres.svg";
 import RedisIcon from "@/assets/system/redis.svg";
-import AnthropicIcon from "@/assets/providers/anthropic_dark.svg";
+import AnthropicIconDark from "@/assets/providers/anthropic_dark.svg";
+import AnthropicIconLight from "@/assets/providers/anthropic_light.svg";
 import BedrockIcon from "@/assets/providers/bedrock.svg";
 import VertexIcon from "@/assets/providers/vertexai.svg";
 import AzureIcon from "@/assets/providers/azure.svg";
-import OpenAIIcon from "@/assets/providers/openai_light.svg";
+import OpenAIIconLight from "@/assets/providers/openai_light.svg";
+import OpenAIIconDark from "@/assets/providers/openai_dark.svg";
 import OpenAICompatIcon from "@/assets/providers/openai_compatable.svg";
+import { useTheme } from "@/providers/ThemeProvider";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
   currency: "USD",
 });
 
-const providerIcons: Record<string, string> = {
-  anthropic: AnthropicIcon,
-  bedrock: BedrockIcon,
-  vertex: VertexIcon,
-  azure: AzureIcon,
-  openai: OpenAIIcon,
-  "openai-compatible": OpenAICompatIcon,
-  openai_compatible: OpenAICompatIcon,
+const providerIcons: Record<
+  string,
+  { light: string; dark: string }
+> = {
+  anthropic: {
+    light: AnthropicIconLight,
+    dark: AnthropicIconDark,
+  },
+  bedrock: {
+    light: BedrockIcon,
+    dark: BedrockIcon,
+  },
+  vertex: {
+    light: VertexIcon,
+    dark: VertexIcon,
+  },
+  azure: {
+    light: AzureIcon,
+    dark: AzureIcon,
+  },
+  openai: {
+    light: OpenAIIconLight,
+    dark: OpenAIIconDark,
+  },
+  "openai-compatible": {
+    light: OpenAICompatIcon,
+    dark: OpenAICompatIcon,
+  },
+  openai_compatible: {
+    light: OpenAICompatIcon,
+    dark: OpenAICompatIcon,
+  },
 };
 
 const formatSpendAmount = (usd?: number, cents?: number) =>
@@ -46,6 +73,7 @@ const formatSpendAmount = (usd?: number, cents?: number) =>
   );
 
 export function DashboardPage() {
+  const { resolvedTheme } = useTheme();
   const tenantsQuery = useQuery({
     queryKey: ["tenants", "dashboard"],
     queryFn: () => listTenants({ limit: 50 }),
@@ -154,7 +182,11 @@ export function DashboardPage() {
             )}
           </CardContent>
         </Card>
-        <ModelHealthCard models={modelsQuery.data ?? []} loading={modelsQuery.isLoading} />
+        <ModelHealthCard
+          models={modelsQuery.data ?? []}
+          loading={modelsQuery.isLoading}
+          theme={resolvedTheme}
+        />
       </section>
 
     </div>
@@ -164,9 +196,11 @@ export function DashboardPage() {
 function ModelHealthCard({
   models,
   loading,
+  theme,
 }: {
   models: ModelCatalogEntry[];
   loading?: boolean;
+  theme: "light" | "dark";
 }) {
   const providerStats = useMemo(() => {
     const stats = new Map<string, { total: number; enabled: number }>();
@@ -206,7 +240,8 @@ function ModelHealthCard({
                   : group.enabled === 0
                     ? "destructive"
                     : "outline";
-              const icon = providerIcons[group.provider] ?? null;
+              const iconSet = providerIcons[group.provider];
+              const icon = iconSet ? iconSet[theme] : null;
               return (
                 <div key={group.provider} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">

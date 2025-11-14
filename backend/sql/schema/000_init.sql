@@ -17,6 +17,7 @@ CREATE TABLE users (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email      TEXT NOT NULL UNIQUE,
     name       TEXT NOT NULL,
+    theme_preference TEXT NOT NULL DEFAULT 'system' CHECK (theme_preference IN ('system', 'light', 'dark')),
     is_super_admin BOOLEAN NOT NULL DEFAULT FALSE,
     personal_tenant_id UUID UNIQUE REFERENCES tenants(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

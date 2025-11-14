@@ -1,3 +1,4 @@
+import type { ThemePreference } from "@/types/theme";
 import { userApi } from "../userClient";
 import type { UserProfile } from "../types";
 
@@ -7,7 +8,8 @@ export async function getUserProfile() {
 }
 
 export type UpdateUserProfileRequest = {
-  name: string;
+  name?: string;
+  theme_preference?: ThemePreference;
 };
 
 export async function updateUserProfile(payload: UpdateUserProfileRequest) {

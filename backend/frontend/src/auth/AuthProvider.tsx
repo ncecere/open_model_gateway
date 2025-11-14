@@ -15,6 +15,7 @@ import {
   type TokenResponse,
 } from "../api/auth";
 import { setAuthToken, setUnauthorizedHandler } from "../api/client";
+import { setUserAuthToken } from "../api/userClient";
 import {
   USER_ACCESS_STORAGE_KEY,
   USER_REFRESH_STORAGE_KEY,
@@ -61,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(USER_ACCESS_STORAGE_KEY);
     localStorage.removeItem(USER_REFRESH_STORAGE_KEY);
     setAuthToken(undefined);
+    setUserAuthToken(undefined);
   }, []);
 
   const handleTokenResponse = useCallback((token: TokenResponse) => {
@@ -74,12 +76,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     setSession(payload);
     localStorage.setItem(ADMIN_ACCESS_STORAGE_KEY, JSON.stringify(payload));
+    localStorage.setItem(USER_ACCESS_STORAGE_KEY, JSON.stringify(payload));
     if (token.refresh_token) {
       localStorage.setItem(ADMIN_REFRESH_STORAGE_KEY, token.refresh_token);
+      localStorage.setItem(USER_REFRESH_STORAGE_KEY, token.refresh_token);
     } else {
       localStorage.removeItem(ADMIN_REFRESH_STORAGE_KEY);
+      localStorage.removeItem(USER_REFRESH_STORAGE_KEY);
     }
     setAuthToken(token.access_token);
+    setUserAuthToken(token.access_token);
   }, []);
 
   useEffect(() => {
@@ -94,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(parsed);
         if (parsed.accessToken) {
           setAuthToken(parsed.accessToken);
+          setUserAuthToken(parsed.accessToken);
         }
       } catch {
         clearSession();

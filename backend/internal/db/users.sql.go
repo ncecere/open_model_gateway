@@ -14,7 +14,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, name)
 VALUES ($1, $2)
-RETURNING id, email, name, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
+RETURNING id, email, name, theme_preference, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
 `
 
 type CreateUserParams struct {
@@ -29,6 +29,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.ID,
 		&i.Email,
 		&i.Name,
+		&i.ThemePreference,
 		&i.IsSuperAdmin,
 		&i.PersonalTenantID,
 		&i.CreatedAt,
@@ -39,7 +40,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
+SELECT id, email, name, theme_preference, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
 FROM users
 WHERE email = $1
 `
@@ -51,6 +52,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.ID,
 		&i.Email,
 		&i.Name,
+		&i.ThemePreference,
 		&i.IsSuperAdmin,
 		&i.PersonalTenantID,
 		&i.CreatedAt,
@@ -61,7 +63,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, name, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
+SELECT id, email, name, theme_preference, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
 FROM users
 WHERE id = $1
 `
@@ -73,6 +75,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 		&i.ID,
 		&i.Email,
 		&i.Name,
+		&i.ThemePreference,
 		&i.IsSuperAdmin,
 		&i.PersonalTenantID,
 		&i.CreatedAt,
@@ -83,7 +86,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, name, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
+SELECT id, email, name, theme_preference, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
 FROM users
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
@@ -107,6 +110,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.ID,
 			&i.Email,
 			&i.Name,
+			&i.ThemePreference,
 			&i.IsSuperAdmin,
 			&i.PersonalTenantID,
 			&i.CreatedAt,
@@ -124,15 +128,16 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 }
 
 const listUsersByIDs = `-- name: ListUsersByIDs :many
-SELECT id, email, name
+SELECT id, email, name, theme_preference
 FROM users
 WHERE id = ANY($1::uuid[])
 `
 
 type ListUsersByIDsRow struct {
-	ID    pgtype.UUID `json:"id"`
-	Email string      `json:"email"`
-	Name  string      `json:"name"`
+	ID              pgtype.UUID `json:"id"`
+	Email           string      `json:"email"`
+	Name            string      `json:"name"`
+	ThemePreference string      `json:"theme_preference"`
 }
 
 func (q *Queries) ListUsersByIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListUsersByIDsRow, error) {
@@ -144,7 +149,12 @@ func (q *Queries) ListUsersByIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([
 	items := []ListUsersByIDsRow{}
 	for rows.Next() {
 		var i ListUsersByIDsRow
-		if err := rows.Scan(&i.ID, &i.Email, &i.Name); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Name,
+			&i.ThemePreference,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -189,7 +199,7 @@ UPDATE users
 SET personal_tenant_id = $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, email, name, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
+RETURNING id, email, name, theme_preference, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
 `
 
 type UpdateUserPersonalTenantParams struct {
@@ -204,6 +214,7 @@ func (q *Queries) UpdateUserPersonalTenant(ctx context.Context, arg UpdateUserPe
 		&i.ID,
 		&i.Email,
 		&i.Name,
+		&i.ThemePreference,
 		&i.IsSuperAdmin,
 		&i.PersonalTenantID,
 		&i.CreatedAt,
@@ -215,24 +226,28 @@ func (q *Queries) UpdateUserPersonalTenant(ctx context.Context, arg UpdateUserPe
 
 const updateUserProfile = `-- name: UpdateUserProfile :one
 UPDATE users
-SET name = $2,
+SET
+    name = COALESCE($1, name),
+    theme_preference = COALESCE($2, theme_preference),
     updated_at = NOW()
-WHERE id = $1
-RETURNING id, email, name, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
+WHERE id = $3
+RETURNING id, email, name, theme_preference, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
 `
 
 type UpdateUserProfileParams struct {
-	ID   pgtype.UUID `json:"id"`
-	Name string      `json:"name"`
+	Name            pgtype.Text `json:"name"`
+	ThemePreference pgtype.Text `json:"theme_preference"`
+	ID              pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUserProfile, arg.ID, arg.Name)
+	row := q.db.QueryRow(ctx, updateUserProfile, arg.Name, arg.ThemePreference, arg.ID)
 	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
 		&i.Name,
+		&i.ThemePreference,
 		&i.IsSuperAdmin,
 		&i.PersonalTenantID,
 		&i.CreatedAt,

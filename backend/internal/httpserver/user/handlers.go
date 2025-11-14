@@ -36,6 +36,7 @@ type userProfileResponse struct {
 	ID                string     `json:"id"`
 	Email             string     `json:"email"`
 	Name              string     `json:"name"`
+	ThemePreference   string     `json:"theme_preference"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 	LastLoginAt       *time.Time `json:"last_login_at,omitempty"`
@@ -72,7 +73,14 @@ type tenantBudgetSummary struct {
 }
 
 type updateProfileRequest struct {
-	Name string `json:"name"`
+	Name            *string `json:"name"`
+	ThemePreference *string `json:"theme_preference"`
+}
+
+var validThemePreferences = map[string]struct{}{
+	"system": {},
+	"light":  {},
+	"dark":   {},
 }
 
 type changePasswordRequest struct {
@@ -106,15 +114,30 @@ func (h *userHandler) updateProfile(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid request body")
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return httputil.WriteError(c, fiber.StatusBadRequest, "name is required")
+
+	params := db.UpdateUserProfileParams{ID: user.ID}
+
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		if trimmed == "" {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "name is required")
+		}
+		params.Name = pgtype.Text{String: trimmed, Valid: true}
 	}
 
-	updated, err := h.container.Queries.UpdateUserProfile(c.Context(), db.UpdateUserProfileParams{
-		ID:   user.ID,
-		Name: name,
-	})
+	if req.ThemePreference != nil {
+		pref, err := normalizeThemePreference(*req.ThemePreference)
+		if err != nil {
+			return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
+		}
+		params.ThemePreference = pgtype.Text{String: pref, Valid: true}
+	}
+
+	if !params.Name.Valid && !params.ThemePreference.Valid {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "no changes supplied")
+	}
+
+	updated, err := h.container.Queries.UpdateUserProfile(c.Context(), params)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -489,6 +512,17 @@ func mustUUIDString(id pgtype.UUID) string {
 	return val.String()
 }
 
+func normalizeThemePreference(value string) (string, error) {
+	pref := strings.ToLower(strings.TrimSpace(value))
+	if pref == "" {
+		return "", errors.New("theme preference is required")
+	}
+	if _, ok := validThemePreferences[pref]; !ok {
+		return "", fmt.Errorf("theme preference must be one of 'system', 'light', or 'dark'")
+	}
+	return pref, nil
+}
+
 func (h *userHandler) buildProfileResponse(ctx context.Context, user db.User) (userProfileResponse, error) {
 	created, err := timeFromPg(user.CreatedAt)
 	if err != nil {
@@ -531,10 +565,16 @@ func (h *userHandler) buildProfileResponse(ctx context.Context, user db.User) (u
 		}
 	}
 
+	theme := strings.TrimSpace(user.ThemePreference)
+	if theme == "" {
+		theme = "system"
+	}
+
 	return userProfileResponse{
 		ID:                mustUUIDString(user.ID),
 		Email:             user.Email,
 		Name:              user.Name,
+		ThemePreference:   theme,
 		CreatedAt:         created,
 		UpdatedAt:         updated,
 		LastLoginAt:       lastLogin,

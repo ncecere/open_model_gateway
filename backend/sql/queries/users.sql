@@ -20,7 +20,7 @@ ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
 -- name: ListUsersByIDs :many
-SELECT id, email, name
+SELECT id, email, name, theme_preference
 FROM users
 WHERE id = ANY($1::uuid[]);
 
@@ -45,7 +45,9 @@ RETURNING *;
 
 -- name: UpdateUserProfile :one
 UPDATE users
-SET name = $2,
+SET
+    name = COALESCE(sqlc.narg(name), name),
+    theme_preference = COALESCE(sqlc.narg(theme_preference), theme_preference),
     updated_at = NOW()
-WHERE id = $1
+WHERE id = sqlc.arg(id)
 RETURNING *;

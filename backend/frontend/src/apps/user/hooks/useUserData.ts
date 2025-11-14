@@ -33,11 +33,12 @@ import {
 } from "../../../api/user/batches";
 import { listUserFiles } from "../../../api/user/files";
 
-export function useUserProfileQuery() {
+export function useUserProfileQuery(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["user-profile"],
     queryFn: getUserProfile,
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

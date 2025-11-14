@@ -40,6 +40,7 @@ Open Model Gateway is a programmable inference router that exposes an OpenAI-com
   - Auth: local credentials + OIDC SSO, refresh token rotation, secure cookies
   - Model catalog CRUD (aliases, deployments, pricing metadata)
   - Tenant CRUD (create, status updates) and API key lifecycle (issue/revoke)
+  - Per-user profile preferences including theme selection (light/dark/system) shared across admin & user portals
 - Config loader with YAML + `.env` merge and strict validation of runtime defaults.
 
 See [`docs/backend-status.md`](docs/backend-status.md) for a detailed feature inventory and upcoming tasks.

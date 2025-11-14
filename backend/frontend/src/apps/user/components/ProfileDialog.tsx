@@ -10,12 +10,21 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   useUserProfileQuery,
   useUpdateUserProfileMutation,
   useChangePasswordMutation,
 } from "../hooks/useUserData";
+import { useTheme } from "@/providers/ThemeProvider";
+import type { ThemePreference } from "@/types/theme";
 
 interface ProfileDialogProps {
   open: boolean;
@@ -27,8 +36,11 @@ export function UserProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   const updateProfile = useUpdateUserProfileMutation();
   const changePassword = useChangePasswordMutation();
   const { toast } = useToast();
+  const { setThemePreference: setGlobalTheme } = useTheme();
 
   const [name, setName] = useState("");
+  const [themePreference, setThemePreference] =
+    useState<ThemePreference>("system");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -36,12 +48,19 @@ export function UserProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   useEffect(() => {
     if (profileQuery.data) {
       setName(profileQuery.data.name ?? "");
+      if (profileQuery.data.theme_preference) {
+        setThemePreference(profileQuery.data.theme_preference);
+      }
     }
   }, [profileQuery.data, open]);
 
   const handleSave = async () => {
     try {
-      await updateProfile.mutateAsync({ name: name.trim() });
+      await updateProfile.mutateAsync({
+        name: name.trim(),
+        theme_preference: themePreference,
+      });
+      setGlobalTheme(themePreference);
       toast({ title: "Profile updated" });
     } catch (error) {
       console.error(error);
@@ -104,17 +123,38 @@ export function UserProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                   <Label>Email</Label>
                   <Input value={profileQuery.data.email} readOnly disabled />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="profile-name">Name</Label>
-                  <Input
-                    id="profile-name"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    onClick={handleSave}
+              <div className="space-y-2">
+                <Label htmlFor="profile-name">Name</Label>
+                <Input
+                  id="profile-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="theme-preference">Theme</Label>
+                <Select
+                  value={themePreference}
+                  onValueChange={(value: ThemePreference) =>
+                    setThemePreference(value)
+                  }
+                >
+                  <SelectTrigger id="theme-preference">
+                    <SelectValue placeholder="Select theme" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="system">System (match device)</SelectItem>
+                    <SelectItem value="light">Light</SelectItem>
+                    <SelectItem value="dark">Dark</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choose how the interface should look.
+                </p>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleSave}
                     disabled={updateProfile.isPending || name.trim() === ""}
                   >
                     Save changes

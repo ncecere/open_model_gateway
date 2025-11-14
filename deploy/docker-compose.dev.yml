@@ -33,11 +33,13 @@ services:
     command:
       - "--config=/etc/otelcol/config.yaml"
     ports:
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
+      - "4317:4317"
+      - "4318:4318"
 
   router:
-    image: ghcr.io/ncecere/open_model_gateway:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
     container_name: open-model-gateway-router
     restart: unless-stopped
     depends_on:

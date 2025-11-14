@@ -75,15 +75,21 @@ You can either download a prebuilt release bundle (router binary + migrations + 
 
 ### Option B: Run via Docker Compose
 
-The `deploy/docker-compose.yml` file now includes the router service alongside Postgres, Redis, and the OTEL collector. After filling out `deploy/router.local.yaml`, run:
+The production `deploy/docker-compose.yml` file uses the published GHCR image (`ghcr.io/ncecere/open_model_gateway:latest`) alongside Postgres, Redis, and the OTEL collector. After filling out `deploy/router.local.yaml`, run:
 
 ```bash
 cd deploy
-docker compose build router
 docker compose up -d
 ```
 
 This will build the multi-stage image defined in the root `Dockerfile`, seed the migrations inside the container, and expose the admin/public APIs on `http://localhost:8090`. The router service automatically reads `/config/router.yaml`, which is a bind-mount of `deploy/router.local.yaml`.
+
+For local development and testing changes before publishing a new container, use `docker-compose.dev.yml` (which builds from the local Dockerfile):
+
+```bash
+cd deploy
+docker compose -f docker-compose.dev.yml up --build
+```
 
 Refer to [`docs/deployment/releases.md`](docs/deployment/releases.md) for more detail on the release/packaging pipeline and the GitHub Container Registry images.
 

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -13,6 +11,12 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open_gateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   redis:
     image: redis:7-alpine
@@ -23,6 +27,11 @@ services:
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   otel-collector:
     image: otel/opentelemetry-collector:0.93.0
@@ -37,13 +46,16 @@ services:
       - "4318:4318" # OTLP HTTP
 
   router:
-    image: ghcr.io/ncecere/open_model_gateway:latest
+    image: ghcr.io/ncecere/open-model-gateway:latest
     container_name: open-model-gateway-router
     restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
-      - otel-collector
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
     environment:
       ROUTER_CONFIG_FILE: /config/router.yaml
       ROUTER_DB_URL: postgres://open_gateway:open_gateway@postgres:5432/open_gateway?sslmode=disable

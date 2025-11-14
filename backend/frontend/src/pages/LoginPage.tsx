@@ -16,7 +16,7 @@ import LogoMark from "@/assets/system/open_model_gateway.svg";
 export function LoginPage() {
   const navigate = useNavigate();
   const { loginLocal, beginOIDC, methods } = useAuth();
-  const [email, setEmail] = useState("admin@example.com");
+  const [email, setEmail] = useState("");
   const [secret, setSecret] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
   const localEnabled = methods.includes("local");
@@ -61,6 +61,7 @@ export function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  placeholder="you@example.com"
                   autoFocus
                 />
               </div>
@@ -74,6 +75,7 @@ export function LoginPage() {
                   value={secret}
                   onChange={(e) => setSecret(e.target.value)}
                   required
+                  placeholder="Your password or API secret"
                 />
               </div>
               {error ? (

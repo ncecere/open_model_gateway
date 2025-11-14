@@ -4,10 +4,10 @@
 # Stage 1: Build frontend assets
 ###############################
 # Enable access to BuildKit platforms for multi-arch builds
-ARG BUILDPLATFORM
-ARG TARGETPLATFORM
-ARG TARGETOS
-ARG TARGETARCH
+ARG BUILDPLATFORM=linux/amd64
+ARG TARGETPLATFORM=linux/amd64
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 
 FROM --platform=$BUILDPLATFORM oven/bun:1 AS frontend-builder
 WORKDIR /src

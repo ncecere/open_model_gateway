@@ -39,11 +39,13 @@ jobs:
       - name: Package release bundle
         run: |
           mkdir -p dist
+          cp docs/runtime/router.example.yaml dist/router.example.yaml
           tar -czf dist/open-model-gateway_${{ github.ref_name }}_linux_amd64.tar.gz \
             router \
             backend/migrations \
-            deploy/router.local.yaml \
+            dist/router.example.yaml \
             README.md
+          rm dist/router.example.yaml
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

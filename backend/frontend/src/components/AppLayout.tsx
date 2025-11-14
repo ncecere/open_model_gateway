@@ -23,6 +23,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import LogoMark from "@/assets/system/open_model_gateway.svg";
 
 type AuthUser = ReturnType<typeof useAuth>["user"];
 type LogoutFn = () => Promise<void> | void;
@@ -55,8 +56,16 @@ function AdminShell({ user, logout }: { user: AuthUser; logout: LogoutFn }) {
     <div className="flex min-h-screen bg-background text-foreground">
       <Sidebar>
         <SidebarHeader className="justify-between">
-          <Link to="/" className="text-lg font-semibold tracking-tight">
-            Open Model Gateway
+          <Link
+            to="/"
+            className="flex items-center gap-2 text-lg font-semibold tracking-tight"
+          >
+            <img
+              src={LogoMark}
+              alt="Open Model Gateway"
+              className="h-6 w-6"
+            />
+            <span>Open Model Gateway</span>
           </Link>
           <Button
             variant="ghost"

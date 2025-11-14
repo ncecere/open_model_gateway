@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import LogoMark from "@/assets/system/open_model_gateway.svg";
 
 export function UserLoginPage() {
   const navigate = useNavigate();
@@ -35,6 +36,11 @@ export function UserLoginPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="space-y-2 text-center">
+          <img
+            src={LogoMark}
+            alt="Open Model Gateway"
+            className="mx-auto h-20 w-20"
+          />
           <CardTitle className="text-2xl font-semibold">
             Open Model Gateway
           </CardTitle>

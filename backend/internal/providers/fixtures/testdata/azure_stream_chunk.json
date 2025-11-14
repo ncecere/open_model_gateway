@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-fixture-stream",
+  "object": "chat.completion.chunk",
+  "created": 1762500001,
+  "model": "gpt-5-mini",
+  "choices": [
+    {
+      "index": 0,
+      "delta": {
+        "role": "assistant",
+        "content": "Hello from fixture"
+      },
+      "finish_reason": null
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 21,
+    "completion_tokens": 5,
+    "total_tokens": 26
+  }
+}

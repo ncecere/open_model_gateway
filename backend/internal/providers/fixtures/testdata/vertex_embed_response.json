@@ -1,0 +1,10 @@
+{
+  "predictions": [
+    {"values": [0.01, -0.02, 0.03]}
+  ],
+  "metadata": {
+    "totalTokenCount": 42,
+    "promptTokenCount": 30,
+    "candidatesTokenCount": 12
+  }
+}

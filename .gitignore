@@ -1,0 +1,42 @@
+# Local runtime configuration (contains secrets)
+router.local.yaml
+
+# OS junk
+.DS_Store
+**/.DS_Store
+
+# Editor settings
+.idea/
+.vscode/
+*.code-workspace
+
+# Logs & temp files
+*.log
+tmp/
+# Batch worker artifacts (downloaded output/error files)
+*.ndjson
+batch_*.jsonl
+batch_errors_*.jsonl
+
+# Environment overrides
+.env
+.env.*
+
+# Backend build artifacts & runtime state
+backend/routerd
+backend/data/
+backend/internal/httpserver/ui/dist/
+
+# Go build outputs
+*.test
+*.out
+
+# Frontend (Bun/Vite) artifacts
+frontend/node_modules/
+frontend/dist/
+backend/frontend/node_modules/
+backend/frontend/dist/
+node_modules/
+dist/
+bun.lockb
+vertex.json

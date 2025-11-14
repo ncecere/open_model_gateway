@@ -1,0 +1,16 @@
+{
+  "type": "message_delta",
+  "index": 0,
+  "message": {
+    "id": "msg_123",
+    "model": "claude-3-haiku"
+  },
+  "delta": {
+    "type": "message_delta",
+    "stop_reason": "end_turn"
+  },
+  "usage": {
+    "input_tokens": 27,
+    "output_tokens": 580
+  }
+}

@@ -1,0 +1,139 @@
+import { Link, NavLink, Outlet } from "react-router-dom";
+import { Menu } from "lucide-react";
+import { useAuth } from "../hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
+
+type AuthUser = ReturnType<typeof useAuth>["user"];
+type LogoutFn = () => Promise<void> | void;
+
+const navItems = [
+  { path: "/", label: "Dashboard" },
+  { path: "/tenants", label: "Tenants" },
+  { path: "/users", label: "Users" },
+  { path: "/keys", label: "API Keys" },
+  { path: "/models", label: "Models" },
+  { path: "/usage", label: "Usage" },
+  { path: "/files", label: "Files" },
+  { path: "/batches", label: "Batches" },
+  { path: "/settings", label: "Settings" },
+];
+
+export function AppLayout() {
+  const { user, logout } = useAuth();
+  return (
+    <SidebarProvider>
+      <AdminShell user={user} logout={logout} />
+    </SidebarProvider>
+  );
+}
+
+function AdminShell({ user, logout }: { user: AuthUser; logout: LogoutFn }) {
+  const sidebar = useSidebar();
+
+  return (
+    <div className="flex min-h-screen bg-background text-foreground">
+      <Sidebar>
+        <SidebarHeader className="justify-between">
+          <Link to="/" className="text-lg font-semibold tracking-tight">
+            Open Model Gateway
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={sidebar.close}
+          >
+            <Menu className="size-5" />
+            <span className="sr-only">Close sidebar</span>
+          </Button>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarMenu>
+            {navItems.map((item) => (
+              <SidebarMenuItem key={item.path}>
+                <NavLink
+                  to={item.path}
+                  end={item.path === "/"}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )
+                  }
+                  onClick={sidebar.close}
+                >
+                  {item.label}
+                </NavLink>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarContent>
+        <SidebarFooter className="space-y-2">
+          {user?.is_super_admin ? (
+            <Button asChild variant="secondary" className="w-full text-xs">
+              <a href="/">Return to User Portal</a>
+            </Button>
+          ) : null}
+          <p>&copy; {new Date().getFullYear()} Open Model Gateway</p>
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset>
+        <header className="flex h-16 items-center justify-between gap-4 border-b bg-card px-4 md:px-6">
+          <div className="flex items-center gap-2">
+            <SidebarTrigger className="md:hidden">
+              <Menu className="size-5" />
+            </SidebarTrigger>
+            <span className="text-sm text-muted-foreground">Admin Portal</span>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="flex items-center gap-2 truncate max-w-[220px]"
+              >
+                <span className="truncate text-sm font-medium">
+                  {user?.email ?? "system@open-model-gateway"}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Signed in</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => logout()}>
+                Logout
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
+        <main className="flex-1 overflow-y-auto bg-muted/30 px-4 py-6 md:px-8">
+          <div className="mx-auto w-full max-w-6xl">
+            <Outlet />
+          </div>
+        </main>
+      </SidebarInset>
+    </div>
+  );
+}

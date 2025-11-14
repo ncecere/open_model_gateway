@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: open-model-gateway-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: open_gateway
+      POSTGRES_PASSWORD: open_gateway
+      POSTGRES_DB: open_gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: open-model-gateway-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    volumes:
+      - redis_data:/data
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.93.0
+    container_name: open-model-gateway-otel-collector
+    restart: unless-stopped
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    command:
+      - "--config=/etc/otelcol/config.yaml"
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+
+  router:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: open-model-gateway-router
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - otel-collector
+    environment:
+      ROUTER_CONFIG_FILE: /config/router.yaml
+      ROUTER_DB_URL: postgres://open_gateway:open_gateway@postgres:5432/open_gateway?sslmode=disable
+      ROUTER_DATABASE_URL: postgres://open_gateway:open_gateway@postgres:5432/open_gateway?sslmode=disable
+      ROUTER_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./router.local.yaml:/config/router.yaml:ro
+    ports:
+      - "8090:8090"
+
+volumes:
+  pg_data:
+  redis_data:

@@ -1,0 +1,24 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {"text": "Hello adventurer,"},
+          {"text": "What quest shall we begin?"}
+        ]
+      },
+      "finishReason": "STOP",
+      "usageMetadata": {
+        "promptTokenCount": 11,
+        "candidatesTokenCount": 7,
+        "totalTokenCount": 18
+      }
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 11,
+    "candidatesTokenCount": 7,
+    "totalTokenCount": 18
+  }
+}

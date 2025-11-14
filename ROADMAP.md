@@ -94,7 +94,7 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 **Goal**: Allow tenants to register custom tool endpoints that the router can invoke (similar to OpenAI function calling) for enriched responses.
 
 **Implementation ideas**
-- Define a tool schema (name, input JSON schema, invocation URL, auth headers) stored per tenant or model.
+- Define a tool schema (name, input JSON schema, invocation URL, auth headers) stored per tenant or model, supporting both manual HTTP tools and MCP-backed tools synced from tenant MCP servers.
 - Extend the routing pipeline to detect tool calls in provider responses and execute them securely with timeouts/retries.
 - Log tool invocations in usage records for auditing and cost attribution.
 - Provide SDK examples showing how to register and consume tools.

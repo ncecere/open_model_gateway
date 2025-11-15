@@ -3,6 +3,8 @@
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
 ## [Unreleased]
+
+## [v0.1.4] - 2025-02-20
 ### Added
 - Completed the OpenAI-compatible batches surface: `/v1/batches` now supports create/list/retrieve/cancel plus output/error downloads, admin tenant views show batch history, and files are persisted via the existing blob backends.
 - Introduced tenant-level RPM/TPM/parallel overrides with new schema (`tenant_rate_limits`), admin API endpoints (`GET/PUT/DELETE /admin/tenants/:id/rate-limits`), and UI controls so every API key inherits the stricter of global, tenant, and per-key caps automatically.

@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS batches (
     input_file_id UUID REFERENCES files(id),
     result_file_id UUID REFERENCES files(id),
     error_file_id UUID REFERENCES files(id),
+    errors JSONB,
     completion_window TEXT,
     max_concurrency INTEGER NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -231,14 +232,18 @@ CREATE TABLE IF NOT EXISTS batches (
     in_progress_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     cancelled_at TIMESTAMPTZ,
+    cancelling_at TIMESTAMPTZ,
     finalizing_at TIMESTAMPTZ,
     failed_at TIMESTAMPTZ,
-    expires_at TIMESTAMPTZ
+    expires_at TIMESTAMPTZ,
+    expired_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS batches_tenant_idx ON batches (tenant_id);
 CREATE INDEX IF NOT EXISTS batches_status_idx ON batches (status);
 CREATE INDEX IF NOT EXISTS batches_api_key_idx ON batches (api_key_id);
+CREATE INDEX IF NOT EXISTS batches_created_cursor_idx ON batches (tenant_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS batches_created_global_idx ON batches (created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS batch_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

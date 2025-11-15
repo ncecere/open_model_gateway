@@ -93,12 +93,22 @@ export function BatchDetailsDialog<T extends SharedBatchRecord>({
                     ? dateFormatter.format(new Date(batch.in_progress_at))
                     : "—"}
                 </DetailItem>
+                <DetailItem label="Cancelling">
+                  {batch.cancelling_at
+                    ? dateFormatter.format(new Date(batch.cancelling_at))
+                    : "—"}
+                </DetailItem>
                 <DetailItem label="Finished">
                   {formatFinishedTimestamp(batch)}
                 </DetailItem>
                 <DetailItem label="Expires">
                   {batch.expires_at
                     ? dateFormatter.format(new Date(batch.expires_at))
+                    : "—"}
+                </DetailItem>
+                <DetailItem label="Expired">
+                  {batch.expired_at
+                    ? dateFormatter.format(new Date(batch.expired_at))
                     : "—"}
                 </DetailItem>
               </div>
@@ -130,6 +140,30 @@ export function BatchDetailsDialog<T extends SharedBatchRecord>({
                   </p>
                 )}
               </div>
+              {batch.errors?.data?.length ? (
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">
+                    Errors
+                  </p>
+                  <ul className="mt-2 space-y-2 text-sm">
+                    {batch.errors.data.map((err, idx) => (
+                      <li
+                        key={`${err.code}-${idx}`}
+                        className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-destructive"
+                      >
+                        <p className="font-medium">{err.message}</p>
+                        <p className="text-xs">
+                          Code: {err.code}
+                          {err.param ? ` · Param: ${err.param}` : ""}
+                          {err.line !== undefined && err.line !== null
+                            ? ` · Line: ${err.line}`
+                            : ""}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>

@@ -26,6 +26,8 @@ var (
 	ErrFilePurposeMismatch = errors.New("file purpose must be batch")
 )
 
+const defaultCompletionWindow = "24h"
+
 // Service orchestrates batch metadata and ingestion.
 type Service struct {
 	pool    *pgxpool.Pool
@@ -69,9 +71,12 @@ type Batch struct {
 	InProgressAt          *time.Time
 	CompletedAt           *time.Time
 	CancelledAt           *time.Time
+	CancellingAt          *time.Time
 	FinalizingAt          *time.Time
 	FailedAt              *time.Time
 	ExpiresAt             *time.Time
+	ExpiredAt             *time.Time
+	Errors                []BatchError
 }
 
 // BatchWithTenant augments Batch records with tenant metadata for admin views.
@@ -86,6 +91,14 @@ type batchInput struct {
 	URL      string          `json:"url"`
 	Body     json.RawMessage `json:"body"`
 	Headers  json.RawMessage `json:"headers"`
+}
+
+// BatchError aligns with the OpenAI/Azure error payload.
+type BatchError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Param   string `json:"param,omitempty"`
+	Line    *int   `json:"line,omitempty"`
 }
 
 func (s *Service) Create(ctx context.Context, params CreateParams) (Batch, error) {
@@ -129,7 +142,10 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Batch, error
 
 	completionWindow := strings.TrimSpace(params.CompletionWindow)
 	if completionWindow == "" {
-		completionWindow = "24h"
+		completionWindow = defaultCompletionWindow
+	}
+	if completionWindow != defaultCompletionWindow {
+		return Batch{}, fmt.Errorf("completion_window must be %s", defaultCompletionWindow)
 	}
 
 	maxConcurrency := params.MaxConcurrency
@@ -142,7 +158,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Batch, error
 
 	metadata := map[string]string{}
 	for k, v := range params.Metadata {
-		metadata[k] = v
+		metadata[strings.TrimSpace(k)] = v
 	}
 	metadataJSON, _ := json.Marshal(metadata)
 
@@ -157,7 +173,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Batch, error
 	batchRow, err := qtx.CreateBatch(ctx, db.CreateBatchParams{
 		TenantID:          toPgUUID(params.TenantID),
 		ApiKeyID:          toPgUUID(params.APIKeyID),
-		Status:            "queued",
+		Status:            "validating",
 		Endpoint:          endpoint,
 		InputFileID:       toNullableUUID(params.InputFileID),
 		CompletionWindow:  pgtype.Text{String: completionWindow, Valid: true},
@@ -215,6 +231,40 @@ func (s *Service) List(ctx context.Context, tenantID uuid.UUID, limit, offset in
 		out = append(out, rec)
 	}
 	return out, nil
+}
+
+// ListCursor returns batches for a tenant using cursor pagination where limit is capped at 100.
+func (s *Service) ListCursor(ctx context.Context, tenantID uuid.UUID, limit int32, after *uuid.UUID) ([]Batch, bool, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	params := db.ListBatchesCursorParams{
+		TenantID: toPgUUID(tenantID),
+		Limit:    limit + 1,
+	}
+	if after != nil {
+		params.AfterID = toOptionalUUID(after)
+	}
+	rows, err := s.queries.ListBatchesCursor(ctx, params)
+	if err != nil {
+		return nil, false, err
+	}
+	hasMore := int32(len(rows)) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	out := make([]Batch, 0, len(rows))
+	for _, row := range rows {
+		rec, err := toBatch(row)
+		if err != nil {
+			return nil, false, err
+		}
+		out = append(out, rec)
+	}
+	return out, hasMore, nil
 }
 
 // ListAll returns paginated batches across all tenants with optional filters.
@@ -285,7 +335,6 @@ func (s *Service) Cancel(ctx context.Context, tenantID uuid.UUID, id uuid.UUID) 
 	row, err := s.queries.CancelBatch(ctx, db.CancelBatchParams{
 		TenantID: toPgUUID(tenantID),
 		ID:       toPgUUID(id),
-		Status:   "cancelled",
 	})
 	if err != nil {
 		return Batch{}, err
@@ -375,6 +424,9 @@ func toBatch(row db.Batch) (Batch, error) {
 	if len(row.Metadata) > 0 {
 		_ = json.Unmarshal(row.Metadata, &batch.Metadata)
 	}
+	if len(row.Errors) > 0 {
+		_ = json.Unmarshal(row.Errors, &batch.Errors)
+	}
 	if row.InputFileID.Valid {
 		if val, err := fromPgUUID(row.InputFileID); err == nil {
 			batch.InputFileID = val
@@ -402,6 +454,10 @@ func toBatch(row db.Batch) (Batch, error) {
 		t := row.CancelledAt.Time
 		batch.CancelledAt = &t
 	}
+	if row.CancellingAt.Valid {
+		t := row.CancellingAt.Time
+		batch.CancellingAt = &t
+	}
 	if row.FinalizingAt.Valid {
 		t := row.FinalizingAt.Time
 		batch.FinalizingAt = &t
@@ -413,6 +469,10 @@ func toBatch(row db.Batch) (Batch, error) {
 	if row.ExpiresAt.Valid {
 		t := row.ExpiresAt.Time
 		batch.ExpiresAt = &t
+	}
+	if row.ExpiredAt.Valid {
+		t := row.ExpiredAt.Time
+		batch.ExpiredAt = &t
 	}
 
 	return batch, nil
@@ -428,6 +488,7 @@ func toBatchFromAdminRow(row db.ListBatchesAdminRow) (Batch, error) {
 		InputFileID:           row.InputFileID,
 		ResultFileID:          row.ResultFileID,
 		ErrorFileID:           row.ErrorFileID,
+		Errors:                row.Errors,
 		CompletionWindow:      row.CompletionWindow,
 		MaxConcurrency:        row.MaxConcurrency,
 		Metadata:              row.Metadata,
@@ -440,9 +501,11 @@ func toBatchFromAdminRow(row db.ListBatchesAdminRow) (Batch, error) {
 		InProgressAt:          row.InProgressAt,
 		CompletedAt:           row.CompletedAt,
 		CancelledAt:           row.CancelledAt,
+		CancellingAt:          row.CancellingAt,
 		FinalizingAt:          row.FinalizingAt,
 		FailedAt:              row.FailedAt,
 		ExpiresAt:             row.ExpiresAt,
+		ExpiredAt:             row.ExpiredAt,
 	})
 }
 
@@ -501,7 +564,7 @@ func (s *Service) IncrementCounts(ctx context.Context, batchID uuid.UUID, comple
 }
 
 // FinalizeBatch updates the terminal status and links output/error files.
-func (s *Service) FinalizeBatch(ctx context.Context, batchID uuid.UUID, status string, resultFileID, errorFileID *uuid.UUID) (Batch, error) {
+func (s *Service) FinalizeBatch(ctx context.Context, batchID uuid.UUID, status string, resultFileID, errorFileID *uuid.UUID, batchErrors []BatchError) (Batch, error) {
 	params := db.MarkBatchFinalStatusParams{
 		ID:     toPgUUID(batchID),
 		Status: status,
@@ -511,6 +574,11 @@ func (s *Service) FinalizeBatch(ctx context.Context, batchID uuid.UUID, status s
 	}
 	if errorFileID != nil {
 		params.ErrorFileID = toNullableUUID(*errorFileID)
+	}
+	if len(batchErrors) > 0 {
+		if data, err := json.Marshal(batchErrors); err == nil {
+			params.Errors = data
+		}
 	}
 	row, err := s.queries.MarkBatchFinalStatus(ctx, params)
 	if err != nil {

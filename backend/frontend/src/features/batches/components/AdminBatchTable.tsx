@@ -51,14 +51,15 @@ export type AdminBatchTableProps = {
   tenants: { id: string; name: string }[];
   personalTenantIds: Set<string>;
   batches: BatchRecord[];
-  total: number;
+  pageSize: number;
+  hasMore: boolean;
+  canPageBackward: boolean;
   isLoading: boolean;
   filters: {
     tenant: string;
     status: string;
     search: string;
   };
-  offset: number;
   onFiltersChange: (next: Partial<AdminBatchTableProps["filters"]>) => void;
   onSearchChange: (value: string) => void;
   onPaginate: (direction: "next" | "prev") => void;
@@ -70,10 +71,11 @@ export function AdminBatchTable({
   tenants,
   personalTenantIds,
   batches,
-  total,
+  pageSize,
+  hasMore,
+  canPageBackward,
   isLoading,
   filters,
-  offset,
   onFiltersChange,
   onSearchChange,
   onPaginate,
@@ -96,11 +98,8 @@ export function AdminBatchTable({
     filters.tenant !== "all" ||
     filters.status !== "all" ||
     Boolean(filters.search.trim());
-
-  const hasPrev = offset > 0;
-  const hasNext = offset + batches.length < total;
-  const rangeStart = total === 0 ? 0 : offset + 1;
-  const rangeEnd = Math.min(offset + batches.length, total);
+  const showErrorPill = (batch: BatchRecord) =>
+    (batch.errors?.data?.length ?? 0) > 0;
 
   return (
     <Card>
@@ -187,6 +186,13 @@ export function AdminBatchTable({
                       >
                         {batch.status.replace(/_/g, " ")}
                       </Badge>
+                      {showErrorPill(batch) ? (
+                        <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
+                          <AlertTriangle className="h-3 w-3" />
+                          {batch.errors?.data.length} validation issue
+                          {batch.errors && batch.errors.data.length > 1 ? "s" : ""}
+                        </p>
+                      ) : null}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {batch.id}
@@ -209,6 +215,17 @@ export function AdminBatchTable({
                         <p className="text-xs text-muted-foreground">
                           Started{" "}
                           {dateFormatter.format(new Date(batch.in_progress_at))}
+                        </p>
+                      ) : null}
+                      {batch.cancelling_at ? (
+                        <p className="text-xs text-muted-foreground">
+                          Cancelling{" "}
+                          {dateFormatter.format(new Date(batch.cancelling_at))}
+                        </p>
+                      ) : null}
+                      {batch.expired_at ? (
+                        <p className="text-xs text-muted-foreground">
+                          Expired {dateFormatter.format(new Date(batch.expired_at))}
                         </p>
                       ) : null}
                     </TableCell>
@@ -260,13 +277,14 @@ export function AdminBatchTable({
       </CardContent>
       <CardFooter className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          Showing {rangeStart}–{rangeEnd} of {total}
+          Showing {batches.length} result{batches.length === 1 ? "" : "s"} (max{" "}
+          {pageSize} per page)
         </p>
         <div className="flex gap-2">
           <Button
             variant="outline"
             size="sm"
-            disabled={!hasPrev}
+            disabled={!canPageBackward}
             onClick={() => onPaginate("prev")}
           >
             Previous
@@ -274,7 +292,7 @@ export function AdminBatchTable({
           <Button
             variant="outline"
             size="sm"
-            disabled={!hasNext}
+            disabled={!hasMore}
             onClick={() => onPaginate("next")}
           >
             Next

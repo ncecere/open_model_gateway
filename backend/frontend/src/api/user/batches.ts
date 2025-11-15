@@ -7,6 +7,18 @@ export interface UserBatchCounts {
   cancelled: number;
 }
 
+export interface UserBatchErrorEntry {
+  code: string;
+  message: string;
+  param?: string;
+  line?: number | null;
+}
+
+export interface UserBatchErrorList {
+  object: string;
+  data: UserBatchErrorEntry[];
+}
+
 export interface UserBatchRecord {
   id: string;
   tenant_id: string;
@@ -23,21 +35,27 @@ export interface UserBatchRecord {
   in_progress_at?: string | null;
   completed_at?: string | null;
   cancelled_at?: string | null;
+  cancelling_at?: string | null;
   finalizing_at?: string | null;
   failed_at?: string | null;
   expires_at?: string | null;
+  expired_at?: string | null;
   counts: UserBatchCounts;
+  errors?: UserBatchErrorList;
 }
 
 export interface UserListBatchesResponse {
   object: string;
   data: UserBatchRecord[];
   tenant?: string;
+  has_more: boolean;
+  first_id?: string;
+  last_id?: string;
 }
 
 export interface UserListBatchesParams {
   limit?: number;
-  offset?: number;
+  after?: string;
 }
 
 export async function listUserTenantBatches(

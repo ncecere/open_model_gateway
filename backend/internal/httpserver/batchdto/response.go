@@ -16,27 +16,30 @@ type Counts struct {
 
 // Batch represents the API-friendly batch payload shared by admin and user routes.
 type Batch struct {
-	ID               string            `json:"id"`
-	TenantID         string            `json:"tenant_id"`
-	TenantName       string            `json:"tenant_name,omitempty"`
-	APIKeyID         string            `json:"api_key_id"`
-	Endpoint         string            `json:"endpoint"`
-	Status           string            `json:"status"`
-	CompletionWindow string            `json:"completion_window"`
-	MaxConcurrency   int               `json:"max_concurrency"`
-	Metadata         map[string]string `json:"metadata,omitempty"`
-	InputFileID      string            `json:"input_file_id"`
-	OutputFileID     *string           `json:"output_file_id,omitempty"`
-	ErrorFileID      *string           `json:"error_file_id,omitempty"`
-	CreatedAt        time.Time         `json:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at"`
-	InProgressAt     *time.Time        `json:"in_progress_at,omitempty"`
-	CompletedAt      *time.Time        `json:"completed_at,omitempty"`
-	CancelledAt      *time.Time        `json:"cancelled_at,omitempty"`
-	FinalizingAt     *time.Time        `json:"finalizing_at,omitempty"`
-	FailedAt         *time.Time        `json:"failed_at,omitempty"`
-	ExpiresAt        *time.Time        `json:"expires_at,omitempty"`
-	Counts           Counts            `json:"counts"`
+	ID               string                `json:"id"`
+	TenantID         string                `json:"tenant_id"`
+	TenantName       string                `json:"tenant_name,omitempty"`
+	APIKeyID         string                `json:"api_key_id"`
+	Endpoint         string                `json:"endpoint"`
+	Status           string                `json:"status"`
+	CompletionWindow string                `json:"completion_window"`
+	MaxConcurrency   int                   `json:"max_concurrency"`
+	Metadata         map[string]string     `json:"metadata,omitempty"`
+	InputFileID      string                `json:"input_file_id"`
+	OutputFileID     *string               `json:"output_file_id,omitempty"`
+	ErrorFileID      *string               `json:"error_file_id,omitempty"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+	InProgressAt     *time.Time            `json:"in_progress_at,omitempty"`
+	CompletedAt      *time.Time            `json:"completed_at,omitempty"`
+	CancelledAt      *time.Time            `json:"cancelled_at,omitempty"`
+	CancellingAt     *time.Time            `json:"cancelling_at,omitempty"`
+	FinalizingAt     *time.Time            `json:"finalizing_at,omitempty"`
+	FailedAt         *time.Time            `json:"failed_at,omitempty"`
+	ExpiresAt        *time.Time            `json:"expires_at,omitempty"`
+	ExpiredAt        *time.Time            `json:"expired_at,omitempty"`
+	Errors           []batchsvc.BatchError `json:"errors,omitempty"`
+	Counts           Counts                `json:"counts"`
 }
 
 // FromBatch converts the service layer batch into an API response.
@@ -93,6 +96,16 @@ func FromBatch(batch batchsvc.Batch) Batch {
 	}
 	if batch.ExpiresAt != nil {
 		resp.ExpiresAt = batch.ExpiresAt
+	}
+	if batch.CancellingAt != nil {
+		resp.CancellingAt = batch.CancellingAt
+	}
+	if batch.ExpiredAt != nil {
+		resp.ExpiredAt = batch.ExpiredAt
+	}
+	if len(batch.Errors) > 0 {
+		resp.Errors = make([]batchsvc.BatchError, len(batch.Errors))
+		copy(resp.Errors, batch.Errors)
 	}
 	return resp
 }

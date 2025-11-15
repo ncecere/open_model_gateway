@@ -98,6 +98,7 @@ When a provider does not support an operation the router returns a structured er
 - **Monitoring**: look for `batch worker:` log lines. Errors are surfaced in `/v1/batches/:id` and the admin/user portals.
 - **Throughput**: tune `batches.max_concurrency` and the database pool to match your workload.
 - The admin portal exposes per-tenant batch tables with output/error download buttons; the user portal defaults to each user’s personal tenant and keeps downloads inline (no more blank pages or extra tabs).
+- **API parity**: list responses now support `limit` (1–100) + `after` cursors and return OpenAI-style `has_more`, `first_id`, and `last_id` metadata, plus the new timestamp fields (`cancelling_at`, `expired_at`) and `errors` lists. Metadata payloads are capped at 16 key/value pairs (64/512 characters each) to match the upstream spec.
 
 ### Budget Alerts
 

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AlertTriangle, Download, Eye, MoreHorizontal, Trash2 } from "lucide-react";
 import type { UserBatchRecord } from "@/api/user/batches";
-import { dateFormatter, statusVariants } from "../utils";
+import { dateFormatter, statusVariants, formatFinishedTimestamp } from "../utils";
 
 export type UserBatchTableProps = {
   batches: UserBatchRecord[];
@@ -27,10 +27,15 @@ export type UserBatchTableProps = {
   tenantName?: string;
   canManage: boolean;
   downloadingKey: string | null;
+  hasMore: boolean;
+  canPageBackward: boolean;
+  pageSize: number;
   onView: (batch: UserBatchRecord) => void;
   onDownload: (batch: UserBatchRecord, kind: "output" | "errors") => void;
   onCancel?: (batch: UserBatchRecord) => void;
   disableCancel?: boolean;
+  onNextPage: () => void;
+  onPrevPage: () => void;
 };
 
 export function UserBatchTable({
@@ -39,10 +44,15 @@ export function UserBatchTable({
   tenantName,
   canManage,
   downloadingKey,
+  hasMore,
+  canPageBackward,
+  pageSize,
   onView,
   onDownload,
   onCancel,
   disableCancel,
+  onNextPage,
+  onPrevPage,
 }: UserBatchTableProps) {
   if (isLoading) {
     return <SkeletonTable />;
@@ -80,6 +90,13 @@ export function UserBatchTable({
                   <Badge variant={statusVariants[batch.status] ?? "outline"}>
                     {batch.status.replace(/_/g, " ")}
                   </Badge>
+                  {batch.errors?.data?.length ? (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
+                      <AlertTriangle className="h-3 w-3" />
+                      {batch.errors.data.length} issue
+                      {batch.errors.data.length > 1 ? "s" : ""}
+                    </p>
+                  ) : null}
                 </TableCell>
                 <TableCell>
                   <div className="text-sm font-medium">{batch.endpoint}</div>
@@ -89,11 +106,15 @@ export function UserBatchTable({
                 </TableCell>
                 <TableCell className="text-sm">
                   {dateFormatter.format(new Date(batch.created_at))}
+                  {batch.cancelling_at ? (
+                    <p className="text-xs text-muted-foreground">
+                      Cancelling{" "}
+                      {dateFormatter.format(new Date(batch.cancelling_at))}
+                    </p>
+                  ) : null}
                 </TableCell>
                 <TableCell className="text-sm">
-                  {batch.completed_at
-                    ? dateFormatter.format(new Date(batch.completed_at))
-                    : "—"}
+                  {formatFinishedTimestamp(batch)}
                 </TableCell>
                 <TableCell className="text-sm">
                   <div className="font-medium">
@@ -152,6 +173,30 @@ export function UserBatchTable({
           })}
         </TableBody>
       </Table>
+      <div className="mt-4 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <p>
+          Showing {batches.length} result{batches.length === 1 ? "" : "s"} (max{" "}
+          {pageSize} per page)
+        </p>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canPageBackward}
+            onClick={onPrevPage}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!hasMore}
+            onClick={onNextPage}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

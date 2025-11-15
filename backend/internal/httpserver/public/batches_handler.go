@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -31,23 +32,26 @@ type createBatchRequest struct {
 }
 
 type openAIBatchResponse struct {
-	ID               string            `json:"id"`
-	Object           string            `json:"object"`
-	Endpoint         string            `json:"endpoint"`
-	Status           string            `json:"status"`
-	CompletionWindow string            `json:"completion_window"`
-	CreatedAt        int64             `json:"created_at"`
-	InProgressAt     *int64            `json:"in_progress_at"`
-	CompletedAt      *int64            `json:"completed_at"`
-	CancelledAt      *int64            `json:"cancelled_at"`
-	FailedAt         *int64            `json:"failed_at"`
-	FinalizingAt     *int64            `json:"finalizing_at"`
-	ExpiresAt        *int64            `json:"expires_at"`
-	InputFileID      string            `json:"input_file_id"`
-	OutputFileID     *string           `json:"output_file_id"`
-	ErrorFileID      *string           `json:"error_file_id"`
-	RequestCounts    openAIBatchCounts `json:"request_counts"`
-	Metadata         map[string]string `json:"metadata,omitempty"`
+	ID               string                `json:"id"`
+	Object           string                `json:"object"`
+	Endpoint         string                `json:"endpoint"`
+	Status           string                `json:"status"`
+	CompletionWindow string                `json:"completion_window"`
+	CreatedAt        int64                 `json:"created_at"`
+	InProgressAt     *int64                `json:"in_progress_at"`
+	CompletedAt      *int64                `json:"completed_at"`
+	CancelledAt      *int64                `json:"cancelled_at"`
+	FailedAt         *int64                `json:"failed_at"`
+	FinalizingAt     *int64                `json:"finalizing_at"`
+	CancellingAt     *int64                `json:"cancelling_at"`
+	ExpiresAt        *int64                `json:"expires_at"`
+	ExpiredAt        *int64                `json:"expired_at"`
+	InputFileID      string                `json:"input_file_id"`
+	OutputFileID     *string               `json:"output_file_id"`
+	ErrorFileID      *string               `json:"error_file_id"`
+	RequestCounts    openAIBatchCounts     `json:"request_counts"`
+	Metadata         map[string]string     `json:"metadata,omitempty"`
+	Errors           *openAIBatchErrorList `json:"errors,omitempty"`
 }
 
 type openAIBatchCounts struct {
@@ -58,8 +62,23 @@ type openAIBatchCounts struct {
 }
 
 type openAIBatchList struct {
-	Object string                `json:"object"`
-	Data   []openAIBatchResponse `json:"data"`
+	Object  string                `json:"object"`
+	Data    []openAIBatchResponse `json:"data"`
+	HasMore bool                  `json:"has_more"`
+	FirstID *string               `json:"first_id,omitempty"`
+	LastID  *string               `json:"last_id,omitempty"`
+}
+
+type openAIBatchErrorList struct {
+	Object string             `json:"object"`
+	Data   []openAIBatchError `json:"data"`
+}
+
+type openAIBatchError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Param   string `json:"param,omitempty"`
+	Line    *int   `json:"line,omitempty"`
 }
 
 func (h *batchHandler) create(c *fiber.Ctx) error {
@@ -81,6 +100,9 @@ func (h *batchHandler) create(c *fiber.Ctx) error {
 	maxConc := 0
 	if req.MaxConcurrency != nil {
 		maxConc = *req.MaxConcurrency
+	}
+	if err := validateBatchMetadata(req.Metadata); err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
 
 	if alias := rc.TenantID; alias == (uuid.UUID{}) {
@@ -111,8 +133,21 @@ func (h *batchHandler) list(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusNotImplemented, "batches not enabled")
 	}
 	limit := parseQueryInt(c, "limit", 20)
-	offset := parseQueryInt(c, "offset", 0)
-	records, err := h.container.Batches.List(c.UserContext(), rc.TenantID, int32(limit), int32(offset))
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	var afterID *uuid.UUID
+	if after := strings.TrimSpace(c.Query("after")); after != "" {
+		parsed, err := uuid.Parse(after)
+		if err != nil {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "invalid after cursor")
+		}
+		afterID = &parsed
+	}
+	records, hasMore, err := h.container.Batches.ListCursor(c.UserContext(), rc.TenantID, int32(limit), afterID)
 	if err != nil {
 		return h.translateBatchError(c, err)
 	}
@@ -120,7 +155,18 @@ func (h *batchHandler) list(c *fiber.Ctx) error {
 	for _, b := range records {
 		out = append(out, toOpenAIBatch(b))
 	}
-	return c.JSON(openAIBatchList{Object: "list", Data: out})
+	resp := openAIBatchList{
+		Object:  "list",
+		Data:    out,
+		HasMore: hasMore,
+	}
+	if len(out) > 0 {
+		first := out[0].ID
+		last := out[len(out)-1].ID
+		resp.FirstID = &first
+		resp.LastID = &last
+	}
+	return c.JSON(resp)
 }
 
 func (h *batchHandler) get(c *fiber.Ctx) error {
@@ -282,6 +328,25 @@ func (h *batchHandler) translateBatchError(c *fiber.Ctx, err error) error {
 	}
 }
 
+func validateBatchMetadata(meta map[string]string) error {
+	if len(meta) > 16 {
+		return fmt.Errorf("metadata cannot exceed 16 entries")
+	}
+	for k, v := range meta {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			return fmt.Errorf("metadata keys cannot be empty")
+		}
+		if len(key) > 64 {
+			return fmt.Errorf("metadata key %q exceeds 64 characters", key)
+		}
+		if len(v) > 512 {
+			return fmt.Errorf("metadata value for %q exceeds 512 characters", key)
+		}
+	}
+	return nil
+}
+
 func toOpenAIBatch(batch batchsvc.Batch) openAIBatchResponse {
 	resp := openAIBatchResponse{
 		ID:               batch.ID.String(),
@@ -299,6 +364,21 @@ func toOpenAIBatch(batch batchsvc.Batch) openAIBatchResponse {
 			Cancelled: batch.RequestCountCancelled,
 		},
 	}
+	if len(batch.Errors) > 0 {
+		errList := openAIBatchErrorList{
+			Object: "list",
+			Data:   make([]openAIBatchError, 0, len(batch.Errors)),
+		}
+		for _, e := range batch.Errors {
+			errList.Data = append(errList.Data, openAIBatchError{
+				Code:    e.Code,
+				Message: e.Message,
+				Param:   e.Param,
+				Line:    e.Line,
+			})
+		}
+		resp.Errors = &errList
+	}
 	if batch.InProgressAt != nil {
 		ts := batch.InProgressAt.Unix()
 		resp.InProgressAt = &ts
@@ -311,6 +391,10 @@ func toOpenAIBatch(batch batchsvc.Batch) openAIBatchResponse {
 		ts := batch.CancelledAt.Unix()
 		resp.CancelledAt = &ts
 	}
+	if batch.CancellingAt != nil {
+		ts := batch.CancellingAt.Unix()
+		resp.CancellingAt = &ts
+	}
 	if batch.FailedAt != nil {
 		ts := batch.FailedAt.Unix()
 		resp.FailedAt = &ts
@@ -322,6 +406,10 @@ func toOpenAIBatch(batch batchsvc.Batch) openAIBatchResponse {
 	if batch.ExpiresAt != nil {
 		ts := batch.ExpiresAt.Unix()
 		resp.ExpiresAt = &ts
+	}
+	if batch.ExpiredAt != nil {
+		ts := batch.ExpiredAt.Unix()
+		resp.ExpiredAt = &ts
 	}
 	if batch.ResultFileID != nil {
 		id := batch.ResultFileID.String()

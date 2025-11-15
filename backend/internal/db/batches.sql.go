@@ -13,21 +13,24 @@ import (
 
 const cancelBatch = `-- name: CancelBatch :one
 UPDATE batches
-SET status = $3,
-    cancelled_at = NOW(),
+SET status = CASE
+        WHEN status = 'validating' THEN 'cancelled'
+        ELSE 'cancelling'
+    END,
+    cancelled_at = CASE WHEN status = 'validating' THEN NOW() ELSE cancelled_at END,
+    cancelling_at = CASE WHEN status <> 'validating' THEN NOW() ELSE cancelling_at END,
     updated_at = NOW()
-WHERE tenant_id = $1 AND id = $2 AND status IN ('queued', 'in_progress')
-RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+WHERE tenant_id = $1 AND id = $2 AND status IN ('validating', 'in_progress', 'finalizing')
+RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 `
 
 type CancelBatchParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	ID       pgtype.UUID `json:"id"`
-	Status   string      `json:"status"`
 }
 
 func (q *Queries) CancelBatch(ctx context.Context, arg CancelBatchParams) (Batch, error) {
-	row := q.db.QueryRow(ctx, cancelBatch, arg.TenantID, arg.ID, arg.Status)
+	row := q.db.QueryRow(ctx, cancelBatch, arg.TenantID, arg.ID)
 	var i Batch
 	err := row.Scan(
 		&i.ID,
@@ -38,6 +41,7 @@ func (q *Queries) CancelBatch(ctx context.Context, arg CancelBatchParams) (Batch
 		&i.InputFileID,
 		&i.ResultFileID,
 		&i.ErrorFileID,
+		&i.Errors,
 		&i.CompletionWindow,
 		&i.MaxConcurrency,
 		&i.Metadata,
@@ -50,9 +54,11 @@ func (q *Queries) CancelBatch(ctx context.Context, arg CancelBatchParams) (Batch
 		&i.InProgressAt,
 		&i.CompletedAt,
 		&i.CancelledAt,
+		&i.CancellingAt,
 		&i.FinalizingAt,
 		&i.FailedAt,
 		&i.ExpiresAt,
+		&i.ExpiredAt,
 	)
 	return i, err
 }
@@ -61,7 +67,10 @@ const claimNextBatchItem = `-- name: ClaimNextBatchItem :one
 WITH next_item AS (
     SELECT bi.id
     FROM batch_items bi
-    WHERE bi.batch_id = $1 AND bi.status = 'queued'
+    JOIN batches b ON b.id = bi.batch_id
+    WHERE bi.batch_id = $1
+      AND bi.status = 'queued'
+      AND b.status = 'in_progress'
     ORDER BY bi.item_index
     LIMIT 1
     FOR UPDATE SKIP LOCKED
@@ -124,7 +133,7 @@ INSERT INTO batches (
     expires_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-) RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+) RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 `
 
 type CreateBatchParams struct {
@@ -163,6 +172,7 @@ func (q *Queries) CreateBatch(ctx context.Context, arg CreateBatchParams) (Batch
 		&i.InputFileID,
 		&i.ResultFileID,
 		&i.ErrorFileID,
+		&i.Errors,
 		&i.CompletionWindow,
 		&i.MaxConcurrency,
 		&i.Metadata,
@@ -175,9 +185,11 @@ func (q *Queries) CreateBatch(ctx context.Context, arg CreateBatchParams) (Batch
 		&i.InProgressAt,
 		&i.CompletedAt,
 		&i.CancelledAt,
+		&i.CancellingAt,
 		&i.FinalizingAt,
 		&i.FailedAt,
 		&i.ExpiresAt,
+		&i.ExpiredAt,
 	)
 	return i, err
 }
@@ -201,7 +213,7 @@ func (q *Queries) FailBatchItem(ctx context.Context, arg FailBatchItemParams) er
 }
 
 const getBatch = `-- name: GetBatch :one
-SELECT id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+SELECT id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 FROM batches
 WHERE tenant_id = $1 AND id = $2
 `
@@ -223,6 +235,7 @@ func (q *Queries) GetBatch(ctx context.Context, arg GetBatchParams) (Batch, erro
 		&i.InputFileID,
 		&i.ResultFileID,
 		&i.ErrorFileID,
+		&i.Errors,
 		&i.CompletionWindow,
 		&i.MaxConcurrency,
 		&i.Metadata,
@@ -235,15 +248,17 @@ func (q *Queries) GetBatch(ctx context.Context, arg GetBatchParams) (Batch, erro
 		&i.InProgressAt,
 		&i.CompletedAt,
 		&i.CancelledAt,
+		&i.CancellingAt,
 		&i.FinalizingAt,
 		&i.FailedAt,
 		&i.ExpiresAt,
+		&i.ExpiredAt,
 	)
 	return i, err
 }
 
 const getBatchByID = `-- name: GetBatchByID :one
-SELECT id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+SELECT id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 FROM batches
 WHERE id = $1
 `
@@ -260,6 +275,7 @@ func (q *Queries) GetBatchByID(ctx context.Context, id pgtype.UUID) (Batch, erro
 		&i.InputFileID,
 		&i.ResultFileID,
 		&i.ErrorFileID,
+		&i.Errors,
 		&i.CompletionWindow,
 		&i.MaxConcurrency,
 		&i.Metadata,
@@ -272,17 +288,19 @@ func (q *Queries) GetBatchByID(ctx context.Context, id pgtype.UUID) (Batch, erro
 		&i.InProgressAt,
 		&i.CompletedAt,
 		&i.CancelledAt,
+		&i.CancellingAt,
 		&i.FinalizingAt,
 		&i.FailedAt,
 		&i.ExpiresAt,
+		&i.ExpiredAt,
 	)
 	return i, err
 }
 
 const getOldestQueuedBatch = `-- name: GetOldestQueuedBatch :one
-SELECT id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+SELECT id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 FROM batches
-WHERE status = 'queued'
+WHERE status = 'validating'
 ORDER BY created_at
 LIMIT 1
 FOR UPDATE SKIP LOCKED
@@ -300,6 +318,7 @@ func (q *Queries) GetOldestQueuedBatch(ctx context.Context) (Batch, error) {
 		&i.InputFileID,
 		&i.ResultFileID,
 		&i.ErrorFileID,
+		&i.Errors,
 		&i.CompletionWindow,
 		&i.MaxConcurrency,
 		&i.Metadata,
@@ -312,9 +331,11 @@ func (q *Queries) GetOldestQueuedBatch(ctx context.Context) (Batch, error) {
 		&i.InProgressAt,
 		&i.CompletedAt,
 		&i.CancelledAt,
+		&i.CancellingAt,
 		&i.FinalizingAt,
 		&i.FailedAt,
 		&i.ExpiresAt,
+		&i.ExpiredAt,
 	)
 	return i, err
 }
@@ -429,7 +450,7 @@ func (q *Queries) ListBatchItemsForOutput(ctx context.Context, batchID pgtype.UU
 }
 
 const listBatches = `-- name: ListBatches :many
-SELECT id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+SELECT id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 FROM batches
 WHERE tenant_id = $1
 ORDER BY created_at DESC
@@ -460,6 +481,7 @@ func (q *Queries) ListBatches(ctx context.Context, arg ListBatchesParams) ([]Bat
 			&i.InputFileID,
 			&i.ResultFileID,
 			&i.ErrorFileID,
+			&i.Errors,
 			&i.CompletionWindow,
 			&i.MaxConcurrency,
 			&i.Metadata,
@@ -472,9 +494,11 @@ func (q *Queries) ListBatches(ctx context.Context, arg ListBatchesParams) ([]Bat
 			&i.InProgressAt,
 			&i.CompletedAt,
 			&i.CancelledAt,
+			&i.CancellingAt,
 			&i.FinalizingAt,
 			&i.FailedAt,
 			&i.ExpiresAt,
+			&i.ExpiredAt,
 		); err != nil {
 			return nil, err
 		}
@@ -487,7 +511,7 @@ func (q *Queries) ListBatches(ctx context.Context, arg ListBatchesParams) ([]Bat
 }
 
 const listBatchesAdmin = `-- name: ListBatchesAdmin :many
-SELECT b.id, b.tenant_id, b.api_key_id, b.status, b.endpoint, b.input_file_id, b.result_file_id, b.error_file_id, b.completion_window, b.max_concurrency, b.metadata, b.request_count_total, b.request_count_completed, b.request_count_failed, b.request_count_cancelled, b.created_at, b.updated_at, b.in_progress_at, b.completed_at, b.cancelled_at, b.finalizing_at, b.failed_at, b.expires_at, t.name AS tenant_name, COUNT(*) OVER() AS total_count
+SELECT b.id, b.tenant_id, b.api_key_id, b.status, b.endpoint, b.input_file_id, b.result_file_id, b.error_file_id, b.errors, b.completion_window, b.max_concurrency, b.metadata, b.request_count_total, b.request_count_completed, b.request_count_failed, b.request_count_cancelled, b.created_at, b.updated_at, b.in_progress_at, b.completed_at, b.cancelled_at, b.cancelling_at, b.finalizing_at, b.failed_at, b.expires_at, b.expired_at, t.name AS tenant_name, COUNT(*) OVER() AS total_count
 FROM batches b
 JOIN tenants t ON t.id = b.tenant_id
 WHERE ($1::uuid IS NULL OR b.tenant_id = $1)
@@ -524,6 +548,7 @@ type ListBatchesAdminRow struct {
 	InputFileID           pgtype.UUID        `json:"input_file_id"`
 	ResultFileID          pgtype.UUID        `json:"result_file_id"`
 	ErrorFileID           pgtype.UUID        `json:"error_file_id"`
+	Errors                []byte             `json:"errors"`
 	CompletionWindow      pgtype.Text        `json:"completion_window"`
 	MaxConcurrency        int32              `json:"max_concurrency"`
 	Metadata              []byte             `json:"metadata"`
@@ -536,9 +561,11 @@ type ListBatchesAdminRow struct {
 	InProgressAt          pgtype.Timestamptz `json:"in_progress_at"`
 	CompletedAt           pgtype.Timestamptz `json:"completed_at"`
 	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	CancellingAt          pgtype.Timestamptz `json:"cancelling_at"`
 	FinalizingAt          pgtype.Timestamptz `json:"finalizing_at"`
 	FailedAt              pgtype.Timestamptz `json:"failed_at"`
 	ExpiresAt             pgtype.Timestamptz `json:"expires_at"`
+	ExpiredAt             pgtype.Timestamptz `json:"expired_at"`
 	TenantName            string             `json:"tenant_name"`
 	TotalCount            int64              `json:"total_count"`
 }
@@ -567,6 +594,7 @@ func (q *Queries) ListBatchesAdmin(ctx context.Context, arg ListBatchesAdminPara
 			&i.InputFileID,
 			&i.ResultFileID,
 			&i.ErrorFileID,
+			&i.Errors,
 			&i.CompletionWindow,
 			&i.MaxConcurrency,
 			&i.Metadata,
@@ -579,11 +607,85 @@ func (q *Queries) ListBatchesAdmin(ctx context.Context, arg ListBatchesAdminPara
 			&i.InProgressAt,
 			&i.CompletedAt,
 			&i.CancelledAt,
+			&i.CancellingAt,
 			&i.FinalizingAt,
 			&i.FailedAt,
 			&i.ExpiresAt,
+			&i.ExpiredAt,
 			&i.TenantName,
 			&i.TotalCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBatchesCursor = `-- name: ListBatchesCursor :many
+WITH anchor AS (
+    SELECT b.created_at, b.id
+    FROM batches b
+    WHERE b.id = $3::uuid
+)
+SELECT b.id, b.tenant_id, b.api_key_id, b.status, b.endpoint, b.input_file_id, b.result_file_id, b.error_file_id, b.errors, b.completion_window, b.max_concurrency, b.metadata, b.request_count_total, b.request_count_completed, b.request_count_failed, b.request_count_cancelled, b.created_at, b.updated_at, b.in_progress_at, b.completed_at, b.cancelled_at, b.cancelling_at, b.finalizing_at, b.failed_at, b.expires_at, b.expired_at
+FROM batches b
+LEFT JOIN anchor a ON true
+WHERE b.tenant_id = $1
+  AND (
+        a.created_at IS NULL
+        OR b.created_at < a.created_at
+        OR (b.created_at = a.created_at AND b.id < a.id)
+  )
+ORDER BY b.created_at DESC, b.id DESC
+LIMIT $2
+`
+
+type ListBatchesCursorParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+	AfterID  pgtype.UUID `json:"after_id"`
+}
+
+func (q *Queries) ListBatchesCursor(ctx context.Context, arg ListBatchesCursorParams) ([]Batch, error) {
+	rows, err := q.db.Query(ctx, listBatchesCursor, arg.TenantID, arg.Limit, arg.AfterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Batch{}
+	for rows.Next() {
+		var i Batch
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ApiKeyID,
+			&i.Status,
+			&i.Endpoint,
+			&i.InputFileID,
+			&i.ResultFileID,
+			&i.ErrorFileID,
+			&i.Errors,
+			&i.CompletionWindow,
+			&i.MaxConcurrency,
+			&i.Metadata,
+			&i.RequestCountTotal,
+			&i.RequestCountCompleted,
+			&i.RequestCountFailed,
+			&i.RequestCountCancelled,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.InProgressAt,
+			&i.CompletedAt,
+			&i.CancelledAt,
+			&i.CancellingAt,
+			&i.FinalizingAt,
+			&i.FailedAt,
+			&i.ExpiresAt,
+			&i.ExpiredAt,
 		); err != nil {
 			return nil, err
 		}
@@ -601,11 +703,15 @@ SET status = $2,
     completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END,
     failed_at = CASE WHEN $2 = 'failed' THEN NOW() ELSE failed_at END,
     finalizing_at = CASE WHEN $2 = 'finalizing' THEN NOW() ELSE finalizing_at END,
+    cancelled_at = CASE WHEN $2 = 'cancelled' THEN NOW() ELSE cancelled_at END,
+    cancelling_at = CASE WHEN $2 = 'cancelling' THEN NOW() ELSE cancelling_at END,
+    expired_at = CASE WHEN $2 = 'expired' THEN NOW() ELSE expired_at END,
     result_file_id = $3,
     error_file_id = $4,
+    errors = COALESCE($5::jsonb, errors),
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 `
 
 type MarkBatchFinalStatusParams struct {
@@ -613,6 +719,7 @@ type MarkBatchFinalStatusParams struct {
 	Status       string      `json:"status"`
 	ResultFileID pgtype.UUID `json:"result_file_id"`
 	ErrorFileID  pgtype.UUID `json:"error_file_id"`
+	Errors       []byte      `json:"errors"`
 }
 
 func (q *Queries) MarkBatchFinalStatus(ctx context.Context, arg MarkBatchFinalStatusParams) (Batch, error) {
@@ -621,6 +728,7 @@ func (q *Queries) MarkBatchFinalStatus(ctx context.Context, arg MarkBatchFinalSt
 		arg.Status,
 		arg.ResultFileID,
 		arg.ErrorFileID,
+		arg.Errors,
 	)
 	var i Batch
 	err := row.Scan(
@@ -632,6 +740,7 @@ func (q *Queries) MarkBatchFinalStatus(ctx context.Context, arg MarkBatchFinalSt
 		&i.InputFileID,
 		&i.ResultFileID,
 		&i.ErrorFileID,
+		&i.Errors,
 		&i.CompletionWindow,
 		&i.MaxConcurrency,
 		&i.Metadata,
@@ -644,9 +753,11 @@ func (q *Queries) MarkBatchFinalStatus(ctx context.Context, arg MarkBatchFinalSt
 		&i.InProgressAt,
 		&i.CompletedAt,
 		&i.CancelledAt,
+		&i.CancellingAt,
 		&i.FinalizingAt,
 		&i.FailedAt,
 		&i.ExpiresAt,
+		&i.ExpiredAt,
 	)
 	return i, err
 }
@@ -656,8 +767,8 @@ UPDATE batches
 SET status = 'in_progress',
     in_progress_at = NOW(),
     updated_at = NOW()
-WHERE id = $1 AND status = 'queued'
-RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+WHERE id = $1 AND status = 'validating'
+RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 `
 
 func (q *Queries) MarkBatchInProgress(ctx context.Context, id pgtype.UUID) (Batch, error) {
@@ -672,6 +783,7 @@ func (q *Queries) MarkBatchInProgress(ctx context.Context, id pgtype.UUID) (Batc
 		&i.InputFileID,
 		&i.ResultFileID,
 		&i.ErrorFileID,
+		&i.Errors,
 		&i.CompletionWindow,
 		&i.MaxConcurrency,
 		&i.Metadata,
@@ -684,9 +796,11 @@ func (q *Queries) MarkBatchInProgress(ctx context.Context, id pgtype.UUID) (Batc
 		&i.InProgressAt,
 		&i.CompletedAt,
 		&i.CancelledAt,
+		&i.CancellingAt,
 		&i.FinalizingAt,
 		&i.FailedAt,
 		&i.ExpiresAt,
+		&i.ExpiredAt,
 	)
 	return i, err
 }
@@ -696,7 +810,7 @@ UPDATE batches
 SET request_count_total = request_count_total + $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, finalizing_at, failed_at, expires_at
+RETURNING id, tenant_id, api_key_id, status, endpoint, input_file_id, result_file_id, error_file_id, errors, completion_window, max_concurrency, metadata, request_count_total, request_count_completed, request_count_failed, request_count_cancelled, created_at, updated_at, in_progress_at, completed_at, cancelled_at, cancelling_at, finalizing_at, failed_at, expires_at, expired_at
 `
 
 type UpdateBatchCountsParams struct {
@@ -716,6 +830,7 @@ func (q *Queries) UpdateBatchCounts(ctx context.Context, arg UpdateBatchCountsPa
 		&i.InputFileID,
 		&i.ResultFileID,
 		&i.ErrorFileID,
+		&i.Errors,
 		&i.CompletionWindow,
 		&i.MaxConcurrency,
 		&i.Metadata,
@@ -728,9 +843,11 @@ func (q *Queries) UpdateBatchCounts(ctx context.Context, arg UpdateBatchCountsPa
 		&i.InProgressAt,
 		&i.CompletedAt,
 		&i.CancelledAt,
+		&i.CancellingAt,
 		&i.FinalizingAt,
 		&i.FailedAt,
 		&i.ExpiresAt,
+		&i.ExpiredAt,
 	)
 	return i, err
 }

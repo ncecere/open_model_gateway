@@ -7,6 +7,18 @@ export interface BatchCounts {
   cancelled: number;
 }
 
+export interface BatchErrorEntry {
+  code: string;
+  message: string;
+  param?: string;
+  line?: number | null;
+}
+
+export interface BatchErrorList {
+  object: string;
+  data: BatchErrorEntry[];
+}
+
 export interface BatchRecord {
   id: string;
   tenant_id: string;
@@ -25,29 +37,35 @@ export interface BatchRecord {
   in_progress_at?: string | null;
   completed_at?: string | null;
   cancelled_at?: string | null;
+  cancelling_at?: string | null;
   finalizing_at?: string | null;
   failed_at?: string | null;
   expires_at?: string | null;
+  expired_at?: string | null;
   counts: BatchCounts;
+  errors?: BatchErrorList;
 }
 
 export interface ListTenantBatchesResponse {
   object: string;
   data: BatchRecord[];
   tenant?: string;
+  has_more: boolean;
+  first_id?: string;
+  last_id?: string;
 }
 
 export interface ListBatchesParams {
   limit?: number;
-  offset?: number;
+  after?: string;
 }
 
 export interface ListAdminBatchesResponse {
   object: string;
   data: BatchRecord[];
-  limit: number;
-  offset: number;
-  total: number;
+  has_more: boolean;
+  first_id?: string;
+  last_id?: string;
 }
 
 export interface ListAdminBatchesParams extends ListBatchesParams {

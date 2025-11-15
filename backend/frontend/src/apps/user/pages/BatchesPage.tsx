@@ -21,6 +21,7 @@ import type { UserBatchRecord } from "@/api/user/batches";
 import {
   BatchDetailsDialog,
   UserBatchTable,
+  BATCH_PAGE_SIZE,
 } from "@/features/batches";
 
 export function UserBatchesPage() {
@@ -49,6 +50,8 @@ export function UserBatchesPage() {
   const [selectedTenantId, setSelectedTenantId] = useState<string>();
   const [downloading, setDownloading] = useState<string | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<UserBatchRecord | null>(null);
+  const [cursorAfter, setCursorAfter] = useState<string | undefined>(undefined);
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([]);
 
   useEffect(() => {
     if (!tenantOptions.length) {
@@ -67,7 +70,10 @@ export function UserBatchesPage() {
 
   const selectValue = selectedTenantId ?? "";
 
-  const batchesQuery = useUserTenantBatchesQuery(selectedTenantId);
+  const batchesQuery = useUserTenantBatchesQuery(selectedTenantId, {
+    limit: BATCH_PAGE_SIZE,
+    after: cursorAfter,
+  });
   const cancelMutation = useCancelUserTenantBatchMutation();
 
   const selectedTenant = tenantOptions.find(
@@ -76,6 +82,9 @@ export function UserBatchesPage() {
   const canManage =
     selectedTenant?.role === "owner" || selectedTenant?.role === "admin";
   const batches = batchesQuery.data?.data ?? [];
+  const hasMore = batchesQuery.data?.has_more ?? false;
+  const lastId = batchesQuery.data?.last_id;
+  const canPrev = cursorStack.length > 0;
 
   const extractFilename = (header?: string) => {
     if (!header) return undefined;
@@ -128,6 +137,31 @@ export function UserBatchesPage() {
     } finally {
       setDownloading(null);
     }
+  };
+
+  useEffect(() => {
+    setCursorAfter(undefined);
+    setCursorStack([]);
+  }, [selectedTenantId]);
+
+  const handleNextPage = () => {
+    if (!hasMore || !lastId) {
+      return;
+    }
+    setCursorStack((prev) => [...prev, cursorAfter ?? null]);
+    setCursorAfter(lastId);
+  };
+
+  const handlePrevPage = () => {
+    setCursorStack((prev) => {
+      if (!prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const previousCursor = next.pop();
+      setCursorAfter(previousCursor ?? undefined);
+      return next;
+    });
   };
 
   const skeletonRows = (
@@ -187,6 +221,9 @@ export function UserBatchesPage() {
               tenantName={selectedTenant?.displayName}
               canManage={canManage}
               downloadingKey={downloading}
+              hasMore={hasMore}
+              canPageBackward={canPrev}
+              pageSize={BATCH_PAGE_SIZE}
               onView={(batch) => setSelectedBatch(batch)}
               onDownload={handleDownload}
               onCancel={
@@ -211,6 +248,8 @@ export function UserBatchesPage() {
                   : undefined
               }
               disableCancel={cancelMutation.isPending || !selectedTenantId}
+              onNextPage={handleNextPage}
+              onPrevPage={handlePrevPage}
             />
           )}
         </CardContent>

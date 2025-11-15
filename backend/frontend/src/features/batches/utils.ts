@@ -8,17 +8,26 @@ export const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 export const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
   queued: "outline",
+  validating: "outline",
   running: "secondary",
   in_progress: "secondary",
   finalizing: "secondary",
+  cancelling: "secondary",
   completed: "default",
+  expired: "outline",
   failed: "destructive",
   cancelled: "destructive",
 };
 
 export const BATCH_PAGE_SIZE = 20;
 
-export const formatFinishedTimestamp = (batch: { completed_at?: string | null; failed_at?: string | null; cancelled_at?: string | null }) => {
-  const ts = batch.completed_at || batch.failed_at || batch.cancelled_at;
+export const formatFinishedTimestamp = (batch: {
+  completed_at?: string | null;
+  failed_at?: string | null;
+  cancelled_at?: string | null;
+  expired_at?: string | null;
+}) => {
+  const ts =
+    batch.completed_at || batch.failed_at || batch.cancelled_at || batch.expired_at;
   return ts ? dateFormatter.format(new Date(ts)) : "—";
 };

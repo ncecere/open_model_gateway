@@ -193,11 +193,14 @@ export function useAllTenantAPIKeysQueries(tenantIds: string[]) {
   });
 }
 
-export function useUserTenantBatchesQuery(tenantId?: string) {
+export function useUserTenantBatchesQuery(
+  tenantId?: string,
+  params?: { limit?: number; after?: string },
+) {
   return useQuery({
-    queryKey: ["user-tenant-batches", tenantId],
+    queryKey: ["user-tenant-batches", tenantId, params?.limit, params?.after],
     queryFn: () =>
-      tenantId ? listUserTenantBatches(tenantId) : Promise.resolve(null),
+      tenantId ? listUserTenantBatches(tenantId, params) : Promise.resolve(null),
     enabled: Boolean(tenantId),
   });
 }
@@ -216,9 +219,9 @@ export function useCancelUserTenantBatchMutation() {
   return useMutation({
     mutationFn: (input: { tenantId: string; batchId: string }) =>
       cancelUserTenantBatch(input.tenantId, input.batchId),
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       client.invalidateQueries({
-        queryKey: ["user-tenant-batches", variables.tenantId],
+        queryKey: ["user-tenant-batches"],
       });
     },
   });

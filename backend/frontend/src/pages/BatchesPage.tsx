@@ -46,7 +46,8 @@ export function BatchesPage() {
     search: "",
   });
   const [searchQuery, setSearchQuery] = useState("");
-  const [offset, setOffset] = useState(0);
+  const [cursorAfter, setCursorAfter] = useState<string | undefined>(undefined);
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<{
     batch: BatchRecord;
     tenantLabel: string;
@@ -55,10 +56,15 @@ export function BatchesPage() {
   useEffect(() => {
     const handle = setTimeout(() => {
       setSearchQuery(filters.search.trim());
-      setOffset(0);
+      resetPagination();
     }, 300);
     return () => clearTimeout(handle);
   }, [filters.search]);
+
+  const resetPagination = () => {
+    setCursorAfter(undefined);
+    setCursorStack([]);
+  };
 
   const batchesQuery = useQuery({
     queryKey: [
@@ -66,7 +72,7 @@ export function BatchesPage() {
       filters.tenant,
       filters.status,
       searchQuery,
-      offset,
+      cursorAfter ?? null,
       BATCH_PAGE_SIZE,
     ],
     queryFn: () =>
@@ -75,7 +81,7 @@ export function BatchesPage() {
         status: filters.status === "all" ? undefined : filters.status,
         q: searchQuery || undefined,
         limit: BATCH_PAGE_SIZE,
-        offset,
+        after: cursorAfter,
       }),
     refetchInterval: 15_000,
   });
@@ -99,7 +105,6 @@ export function BatchesPage() {
   });
 
   const batches: BatchRecord[] = batchesQuery.data?.data ?? [];
-  const totalBatches = batchesQuery.data?.total ?? 0;
   const tableIsLoading =
     tenantsQuery.isLoading ||
     personalTenantsQuery.isLoading ||
@@ -111,7 +116,7 @@ export function BatchesPage() {
     setFilters((prev) => {
       const updated = { ...prev, ...next };
       if (next.tenant !== undefined || next.status !== undefined) {
-        setOffset(0);
+        resetPagination();
       }
       return updated;
     });
@@ -121,12 +126,28 @@ export function BatchesPage() {
     setFilters((prev) => ({ ...prev, search: value }));
   };
 
+  const hasMore = batchesQuery.data?.has_more ?? false;
+  const lastId = batchesQuery.data?.last_id;
+  const canPrev = cursorStack.length > 0;
+
   const handlePaginate = (direction: "next" | "prev") => {
-    setOffset((prev) =>
-      direction === "next"
-        ? prev + BATCH_PAGE_SIZE
-        : Math.max(prev - BATCH_PAGE_SIZE, 0),
-    );
+    if (direction === "next") {
+      if (!hasMore || !lastId) {
+        return;
+      }
+      setCursorStack((prev) => [...prev, cursorAfter ?? null]);
+      setCursorAfter(lastId);
+      return;
+    }
+    setCursorStack((prev) => {
+      if (!prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const previousCursor = next.pop();
+      setCursorAfter(previousCursor ?? undefined);
+      return next;
+    });
   };
 
   return (
@@ -145,10 +166,11 @@ export function BatchesPage() {
         tenants={tenants}
         personalTenantIds={personalTenantIds}
         batches={batches}
-        total={totalBatches}
+        pageSize={BATCH_PAGE_SIZE}
+        hasMore={hasMore}
+        canPageBackward={canPrev}
         isLoading={tableIsLoading}
         filters={filters}
-        offset={offset}
         onFiltersChange={handleFiltersChange}
         onSearchChange={handleSearchChange}
         onPaginate={handlePaginate}

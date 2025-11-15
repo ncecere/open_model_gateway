@@ -216,6 +216,7 @@ type Batch struct {
 	InputFileID           pgtype.UUID        `json:"input_file_id"`
 	ResultFileID          pgtype.UUID        `json:"result_file_id"`
 	ErrorFileID           pgtype.UUID        `json:"error_file_id"`
+	Errors                []byte             `json:"errors"`
 	CompletionWindow      pgtype.Text        `json:"completion_window"`
 	MaxConcurrency        int32              `json:"max_concurrency"`
 	Metadata              []byte             `json:"metadata"`
@@ -228,9 +229,11 @@ type Batch struct {
 	InProgressAt          pgtype.Timestamptz `json:"in_progress_at"`
 	CompletedAt           pgtype.Timestamptz `json:"completed_at"`
 	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	CancellingAt          pgtype.Timestamptz `json:"cancelling_at"`
 	FinalizingAt          pgtype.Timestamptz `json:"finalizing_at"`
 	FailedAt              pgtype.Timestamptz `json:"failed_at"`
 	ExpiresAt             pgtype.Timestamptz `json:"expires_at"`
+	ExpiredAt             pgtype.Timestamptz `json:"expired_at"`
 }
 
 type BatchItem struct {

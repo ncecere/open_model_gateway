@@ -28,6 +28,7 @@ The Batches view includes:
 - Status + progress table.
 - “Finished” column showing completion timestamps.
 - Buttons to download `output` or `errors` without leaving the portal.
+- Cursor-friendly pagination (the UI calls `GET /v1/batches?limit=...&after=...`, and the API responds with `has_more`, `first_id`, `last_id`).
 
 ### Usage Comparison API
 
@@ -91,7 +92,7 @@ All requests use the standard OpenAI headers (`Authorization: Bearer <api-key>`,
 | `POST /v1/files` / `GET /v1/files` / `DELETE /v1/files/:id` | File upload, listing, download. |
 | `POST /v1/audio/transcriptions` / `/translations` | Audio transcription/translation (subject to provider support). |
 | `POST /v1/audio/speech` | Text-to-speech (returns binary audio; use `-o` when using curl). |
-| `POST /v1/batches` | NDJSON batch ingestion. |
+| `POST /v1/batches` | NDJSON batch ingestion. Supports `limit` (1–100) + `after` cursors on `GET /v1/batches` and returns OpenAI-style `errors`, `cancelling_at`, and `expired_at` fields. Metadata is limited to 16 key/value pairs (keys ≤ 64 chars, values ≤ 512 chars). |
 
 ### Chat Example
 
@@ -169,6 +170,8 @@ curl http://localhost:8090/v1/batches \
 
 3. Poll `/v1/batches/:id` or open the **Batches** tab in the portal to monitor progress.
 4. Download output/error NDJSON via `curl` or the UI buttons.
+
+> The list API supports cursor pagination via `limit` (1–100) and `after=batch_id` so long-running jobs can stream results. Each batch response mirrors OpenAI’s schema, including an `errors` list when validation/runtime issues occur and the `cancelling_at`/`expired_at` timestamps, so SDKs can understand the lifecycle without custom glue.
 
 ### Audio Example
 

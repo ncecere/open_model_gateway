@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -56,4 +58,28 @@ func (c *Container) UpdateRateLimitConfig(cfg config.RateLimitConfig) {
 		TokensPerMinute:   cfg.DefaultTokensPerMinute,
 		ParallelRequests:  cfg.DefaultParallelRequestsTenant,
 	}
+}
+
+// LoadTenantRateLimitOverrides returns tenant-level overrides stored in the database.
+func LoadTenantRateLimitOverrides(ctx context.Context, queries *db.Queries) (map[uuid.UUID]limits.LimitConfig, error) {
+	result := make(map[uuid.UUID]limits.LimitConfig)
+	if queries == nil {
+		return result, nil
+	}
+	rows, err := queries.ListTenantRateLimits(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		tenantID, err := uuidFromPg(row.TenantID)
+		if err != nil {
+			continue
+		}
+		result[tenantID] = limits.LimitConfig{
+			RequestsPerMinute: int(row.RequestsPerMinute),
+			TokensPerMinute:   int(row.TokensPerMinute),
+			ParallelRequests:  int(row.ParallelRequests),
+		}
+	}
+	return result, nil
 }

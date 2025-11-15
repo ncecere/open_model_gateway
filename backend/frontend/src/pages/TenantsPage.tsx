@@ -9,13 +9,16 @@ import type {
 } from "@/api/tenants";
 import {
   createTenant,
+  deleteTenantRateLimits,
+  getTenantRateLimits,
   listTenantMemberships,
   listTenantModels,
   removeTenantMembership,
   updateTenant,
+  updateTenantStatus,
   upsertTenantMembership,
   upsertTenantModels,
-  updateTenantStatus,
+  upsertTenantRateLimits,
 } from "@/api/tenants";
 import {
   deleteBudgetOverride,
@@ -26,6 +29,7 @@ import {
 import type { UpsertBudgetOverrideRequest } from "@/api/budgets";
 import { Separator } from "@/components/ui/separator";
 import { listModelCatalog } from "@/api/model-catalog";
+import { getRateLimitDefaults } from "@/api/rate-limits";
 import { useToast } from "@/hooks/use-toast";
 import type { AdminUser } from "@/api/users";
 import { listUsers } from "@/api/users";
@@ -71,6 +75,11 @@ export function TenantsPage() {
   const budgetDefaultsQuery = useQuery({
     queryKey: ["budget-defaults"],
     queryFn: getBudgetDefaults,
+  });
+
+  const rateLimitDefaultsQuery = useQuery({
+    queryKey: ["rate-limit-defaults"],
+    queryFn: getRateLimitDefaults,
   });
 
   const modelCatalogQuery = useQuery({
@@ -133,6 +142,7 @@ export function TenantsPage() {
     activeCount,
   } = useTenantDirectoryFilters(tenants);
   const budgetDefaults = budgetDefaultsQuery.data;
+  const rateLimitDefaults = rateLimitDefaultsQuery.data;
 
   const modelAliases = useMemo(
     () => modelCatalog.map((entry) => entry.alias),
@@ -170,10 +180,18 @@ export function TenantsPage() {
         ? undefined
         : createDialog.refreshSchedule;
     const trimmedCooldown = createDialog.alertCooldown.trim();
+    const trimmedRPM = createDialog.requestsPerMinute.trim();
+    const trimmedTPM = createDialog.tokensPerMinute.trim();
+    const trimmedParallel = createDialog.parallelRequests.trim();
     const budgetValue = Number.parseFloat(trimmedBudget);
     const thresholdValue = Number.parseFloat(trimmedThreshold);
     const cooldownValue = Number.parseInt(trimmedCooldown, 10);
+    const rpmValue = Number.parseInt(trimmedRPM, 10);
+    const tpmValue = Number.parseInt(trimmedTPM, 10);
+    const parallelValue = Number.parseInt(trimmedParallel, 10);
     const defaults = budgetDefaultsQuery.data;
+    const hasRateOverride =
+      trimmedRPM.length > 0 || trimmedTPM.length > 0 || trimmedParallel.length > 0;
 
     if (trimmedBudget && (!Number.isFinite(budgetValue) || budgetValue <= 0)) {
       toast({
@@ -207,6 +225,94 @@ export function TenantsPage() {
         title: "Cooldown must be a positive integer (seconds)",
       });
       return;
+    }
+
+    if (hasRateOverride) {
+      if (!trimmedRPM || !trimmedTPM || !trimmedParallel) {
+        toast({
+          variant: "destructive",
+          title: "Provide RPM, TPM, and parallel values",
+          description: "All three fields are required for tenant overrides.",
+        });
+        return;
+      }
+      if (
+        !Number.isFinite(rpmValue) ||
+        rpmValue <= 0 ||
+        !Number.isInteger(rpmValue)
+      ) {
+        toast({
+          variant: "destructive",
+          title: "RPM must be a positive integer",
+        });
+        return;
+      }
+      if (
+        !Number.isFinite(tpmValue) ||
+        tpmValue <= 0 ||
+        !Number.isInteger(tpmValue)
+      ) {
+        toast({
+          variant: "destructive",
+          title: "TPM must be a positive integer",
+        });
+        return;
+      }
+      if (
+        !Number.isFinite(parallelValue) ||
+        parallelValue <= 0 ||
+        !Number.isInteger(parallelValue)
+      ) {
+        toast({
+          variant: "destructive",
+          title: "Parallel requests must be a positive integer",
+        });
+        return;
+      }
+    }
+
+    if (hasRateOverride) {
+      if (!trimmedRPM || !trimmedTPM || !trimmedParallel) {
+        toast({
+          variant: "destructive",
+          title: "Provide RPM, TPM, and parallel values",
+          description: "All three fields are required for a tenant override.",
+        });
+        return;
+      }
+      if (
+        !Number.isFinite(rpmValue) ||
+        rpmValue <= 0 ||
+        !Number.isInteger(rpmValue)
+      ) {
+        toast({
+          variant: "destructive",
+          title: "RPM must be a positive integer",
+        });
+        return;
+      }
+      if (
+        !Number.isFinite(tpmValue) ||
+        tpmValue <= 0 ||
+        !Number.isInteger(tpmValue)
+      ) {
+        toast({
+          variant: "destructive",
+          title: "TPM must be a positive integer",
+        });
+        return;
+      }
+      if (
+        !Number.isFinite(parallelValue) ||
+        parallelValue <= 0 ||
+        !Number.isInteger(parallelValue)
+      ) {
+        toast({
+          variant: "destructive",
+          title: "Parallel requests must be a positive integer",
+        });
+        return;
+      }
     }
 
     if (modelCatalog.length === 0) {
@@ -279,6 +385,23 @@ export function TenantsPage() {
         });
       }
 
+      if (hasRateOverride) {
+        try {
+          await upsertTenantRateLimits(tenant.id, {
+            requests_per_minute: rpmValue,
+            tokens_per_minute: tpmValue,
+            parallel_requests: parallelValue,
+          });
+        } catch (error) {
+          console.error(error);
+          toast({
+            variant: "destructive",
+            title: "Tenant created, but rate limits failed to save",
+            description: "Reopen the tenant dialog to retry.",
+          });
+        }
+      }
+
       createDialog.setName("");
       createDialog.setStatus("active");
       createDialog.setBudgetUsd("");
@@ -288,6 +411,9 @@ export function TenantsPage() {
       createDialog.setAlertWebhooks("");
       createDialog.setAlertCooldown("");
       createDialog.setSelectedModels(modelAliases);
+      createDialog.setRequestsPerMinute("");
+      createDialog.setTokensPerMinute("");
+      createDialog.setParallelRequests("");
       createDialog.setOpen(false);
     } catch (error) {
       console.error(error);
@@ -355,7 +481,9 @@ export function TenantsPage() {
   const editDialog = useTenantEditDialog();
   const [editModelsLoading, setEditModelsLoading] = useState(false);
   const [editBudgetLoading, setEditBudgetLoading] = useState(false);
-  const [editHadOverride, setEditHadOverride] = useState(false);
+  const [editBudgetHadOverride, setEditBudgetHadOverride] = useState(false);
+  const [editRateLoading, setEditRateLoading] = useState(false);
+  const [editRateHadOverride, setEditRateHadOverride] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
@@ -364,6 +492,8 @@ export function TenantsPage() {
         setEditSaving(false);
         setEditBudgetLoading(false);
         setEditModelsLoading(false);
+        setEditRateLoading(false);
+        setEditRateHadOverride(false);
       }
       return;
     }
@@ -384,13 +514,17 @@ export function TenantsPage() {
     editDialog.setAlertCooldown(
       cooldownSeconds != null ? cooldownSeconds.toString() : "",
     );
-    setEditHadOverride(false);
+    editDialog.setRequestsPerMinute("");
+    editDialog.setTokensPerMinute("");
+    editDialog.setParallelRequests("");
+    setEditBudgetHadOverride(false);
+    setEditRateHadOverride(false);
 
     setEditBudgetLoading(true);
     getTenantBudget(editDialog.tenant.id)
       .then((override) => {
         if (override) {
-          setEditHadOverride(true);
+          setEditBudgetHadOverride(true);
           editDialog.setBudgetUsd(override.budget_usd.toString());
           editDialog.setWarningThreshold(override.warning_threshold.toString());
           editDialog.setRefreshSchedule(override.refresh_schedule);
@@ -426,6 +560,31 @@ export function TenantsPage() {
         });
       })
       .finally(() => setEditModelsLoading(false));
+
+    setEditRateLoading(true);
+    getTenantRateLimits(editDialog.tenant.id)
+      .then((limits) => {
+        if (limits) {
+          setEditRateHadOverride(true);
+          editDialog.setRequestsPerMinute(
+            limits.requests_per_minute.toString(),
+          );
+          editDialog.setTokensPerMinute(
+            limits.tokens_per_minute.toString(),
+          );
+          editDialog.setParallelRequests(
+            limits.parallel_requests.toString(),
+          );
+        }
+      })
+      .catch(() => {
+        toast({
+          variant: "destructive",
+          title: "Failed to load rate limits",
+          description: "Try reopening the dialog.",
+        });
+      })
+      .finally(() => setEditRateLoading(false));
   }, [editDialog.open, editDialog.tenant, budgetDefaultsQuery.data, toast]);
 
   const toggleEditModel = (alias: string, checked: boolean) => {
@@ -490,6 +649,9 @@ export function TenantsPage() {
     const trimmedBudget = editDialog.budgetUsd.trim();
     const trimmedThreshold = editDialog.warningThreshold.trim();
     const trimmedCooldown = editDialog.alertCooldown.trim();
+    const trimmedRPM = editDialog.requestsPerMinute.trim();
+    const trimmedTPM = editDialog.tokensPerMinute.trim();
+    const trimmedParallel = editDialog.parallelRequests.trim();
     const scheduleSelection =
       editDialog.refreshSchedule === INHERIT_SCHEDULE
         ? undefined
@@ -543,6 +705,12 @@ export function TenantsPage() {
       return;
     }
 
+    const rpmValue = Number.parseInt(trimmedRPM, 10);
+    const tpmValue = Number.parseInt(trimmedTPM, 10);
+    const parallelValue = Number.parseInt(trimmedParallel, 10);
+    const hasRateOverride =
+      trimmedRPM.length > 0 || trimmedTPM.length > 0 || trimmedParallel.length > 0;
+
     setEditSaving(true);
     try {
       if (trimmedName !== editDialog.tenant.name) {
@@ -574,13 +742,25 @@ export function TenantsPage() {
               : defaults?.alert?.cooldown_seconds,
         };
         await upsertBudgetOverride(tenantId, payload);
-      } else if (editHadOverride) {
+      } else if (editBudgetHadOverride) {
         await deleteBudgetOverride(tenantId);
       }
 
       if (!aliasSelectionsEqual(editDialog.selectedModels, editDialog.originalModels)) {
         await upsertTenantModels(tenantId, editDialog.selectedModels);
         editDialog.setOriginalModels(editDialog.selectedModels);
+      }
+
+      if (hasRateOverride) {
+        await upsertTenantRateLimits(tenantId, {
+          requests_per_minute: rpmValue,
+          tokens_per_minute: tpmValue,
+          parallel_requests: parallelValue,
+        });
+        setEditRateHadOverride(true);
+      } else if (editRateHadOverride) {
+        await deleteTenantRateLimits(tenantId);
+        setEditRateHadOverride(false);
       }
 
       toast({ title: "Tenant updated" });
@@ -612,6 +792,7 @@ export function TenantsPage() {
         dialog={createDialog}
         statusOptions={TENANT_STATUSES}
         budgetDefaults={budgetDefaults}
+        rateLimitDefaults={rateLimitDefaults}
         modelCatalog={modelCatalog}
         modelAliases={modelAliases}
         isModelCatalogLoading={modelCatalogQuery.isLoading}
@@ -672,11 +853,13 @@ export function TenantsPage() {
         dialog={editDialog}
         statusOptions={TENANT_STATUSES}
         budgetDefaults={budgetDefaults}
+        rateLimitDefaults={rateLimitDefaults}
         modelCatalog={modelCatalog}
         isModelCatalogLoading={modelCatalogQuery.isLoading}
         isSubmitting={editSaving}
         editModelsLoading={editModelsLoading}
         editBudgetLoading={editBudgetLoading}
+        editRateLoading={editRateLoading}
         onToggleModel={toggleEditModel}
         onSelectAllModels={handleSelectAllEditModels}
         onClearModels={handleClearEditModels}

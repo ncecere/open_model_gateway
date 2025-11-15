@@ -1,6 +1,7 @@
 import type { BudgetDefaults } from "@/api/budgets";
 import type { ModelCatalogEntry } from "@/api/model-catalog";
 import type { TenantStatus } from "@/api/tenants";
+import type { RateLimitDefaults } from "@/api/rate-limits";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ type TenantCreateDialogProps = {
   dialog: TenantCreateDialogState;
   statusOptions: TenantStatus[];
   budgetDefaults?: BudgetDefaults;
+  rateLimitDefaults?: RateLimitDefaults;
   modelCatalog: ModelCatalogEntry[];
   modelAliases: string[];
   isModelCatalogLoading: boolean;
@@ -41,6 +43,7 @@ export function TenantCreateDialog({
   dialog,
   statusOptions,
   budgetDefaults,
+  rateLimitDefaults,
   modelCatalog,
   modelAliases,
   isModelCatalogLoading,
@@ -104,6 +107,57 @@ export function TenantCreateDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <Separator />
+          <div className="space-y-2">
+            <Label>Rate limit override (optional)</Label>
+            <p className="text-xs text-muted-foreground">
+              Leave blank to inherit project defaults. Current defaults:{" "}
+              {rateLimitDefaults
+                ? `${rateLimitDefaults.requests_per_minute} RPM, ${rateLimitDefaults.tokens_per_minute} TPM, ${rateLimitDefaults.parallel_requests_tenant} parallel`
+                : "loading…"}
+            </p>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="tenant-rpm">Requests per minute</Label>
+                <Input
+                  id="tenant-rpm"
+                  value={dialog.requestsPerMinute}
+                  onChange={(event) => dialog.setRequestsPerMinute(event.target.value)}
+                  placeholder={
+                    rateLimitDefaults
+                      ? `${rateLimitDefaults.requests_per_minute}`
+                      : "e.g. 100"
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tenant-tpm">Tokens per minute</Label>
+                <Input
+                  id="tenant-tpm"
+                  value={dialog.tokensPerMinute}
+                  onChange={(event) => dialog.setTokensPerMinute(event.target.value)}
+                  placeholder={
+                    rateLimitDefaults
+                      ? `${rateLimitDefaults.tokens_per_minute}`
+                      : "e.g. 200000"
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tenant-parallel">Parallel requests</Label>
+                <Input
+                  id="tenant-parallel"
+                  value={dialog.parallelRequests}
+                  onChange={(event) => dialog.setParallelRequests(event.target.value)}
+                  placeholder={
+                    rateLimitDefaults
+                      ? `${rateLimitDefaults.parallel_requests_tenant}`
+                      : "e.g. 10"
+                  }
+                />
+              </div>
+            </div>
           </div>
           <Separator />
           <div className="space-y-2">

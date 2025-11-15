@@ -1,40 +1,17 @@
-# Batch API Parity Tasks
+# API Key Self-Service Limits
 
-## 1. Spec & Requirements Alignment
-- Pull Official OpenAI/Azure batch docs, capture request/response fields, statuses, pagination semantics.
-- Define lifecycle mapping (validating, in_progress, finalizing, completed, failed, cancelling, cancelled, expired) and allowed completion windows.
-- Record decisions in `docs/runtime` so backend/frontend agents stay synced.
+## Plan
+- Extend the admin + user API key creation flows so callers can optionally specify budget overrides and RPM/TPM/parallel caps at creation time (and update them later) instead of relying solely on bootstrap/time-of-day operator tweaks.
+- Enforce hierarchical ceilings: personal keys may not exceed the global defaults assigned to that user, while tenant keys must sit at or below the tenant’s configured limits (falling back to global defaults when no tenant override exists).
+- Update database schema + services so per-key rate limit overrides (currently bootstrap-only) are persisted via SQLC and exposed in responses, along with budget override metadata.
+- Refresh both the admin and user portals with form controls for budgets + rate limits, inheriting and displaying the effective defaults so users know the maximum allowed values before submitting.
+- Add validation/tests to cover limit inheritance, API error paths, and UI behaviors; document the new workflow so operators understand how tenant ceilings interact with API key overrides.
 
-## 2. Database & SQLC Updates
-- Extend `batches` table with `errors JSONB`, `cancelling_at`, `expired_at`, plus index for cursor pagination.
-- Update SQL queries (list/get/cancel/finalize) and regenerate SQLC models.
-- Add cursor-based list query (`limit+1`, `after_id`) to support `has_more`/`first_id`/`last_id`.
-
-## 3. Batch Service Enhancements
-- Set initial status to `validating`, clamp completion windows, preserve max concurrency.
-- Add helpers for each lifecycle transition (in-progress, finalizing, cancelling, expired, etc.).
-- Store validation/runtime errors in the new JSON column so `/v1/batches/:id` mirrors OpenAI.
-- Expand `sanitizeEndpoint` to cover all currently supported OpenAI endpoints.
-
-## 4. Worker Runtime & Concurrency
-- Honor `batch.MaxConcurrency` by introducing a goroutine pool for item processing.
-- Update status transitions (`validating`→`in_progress`→`finalizing`→terminal) and write timestamps accordingly.
-- Handle cancellations gracefully (switch to `cancelling`, finish in-flight items, then mark `cancelled`).
-- Track provider status codes/request IDs, feed them into NDJSON writer, and adopt the OpenAI response/error line format.
-- Add expiry sweep that marks overdue batches as `expired`.
-
-## 5. HTTP Surface Parity
-- Update `/v1/batches` JSON to include spec fields (`errors`, `has_more`, `first_id`, `last_id`, `cancelling_at`, `expired_at`, etc.).
-- Accept `limit` + `after` query params and return cursor metadata.
-- Ensure cancel route returns the new fields, and document `/files/:id/content` for outputs.
-- Validate request bodies strictly (metadata limits, allowed completion windows, endpoint checks).
-
-## 6. Testing & Docs
-- Add unit tests for service transitions, concurrency enforcement, NDJSON formatting.
-- Add HTTP integration tests covering create/list/get/cancel/output with spec-compliant assertions.
-- Update `docs/user/guide.md`, `docs/admin/guide.md`, and `deploy/router.example.yaml` to describe the new behavior.
-- Coordinate with frontend agent to consume the richer payload (status timeline, pagination, error display).
-
-## 7. Follow-Up (Optional)
-- Wire `/v1/responses` endpoint once base parity lands so batches can target it.
-- Add SDK smoke tests (Node/Python) to ensure OpenAI clients accept the gateway responses.
+## Checklist
+- [ ] Schema & queries: add nullable budget/rate limit fields to `api_keys` (or dedicated tables) and regenerate SQLC so service layers can persist them outside bootstrap.
+- [ ] Backend services & handlers: update admin/user API key create/update endpoints to accept `{budget_usd, warning_threshold, requests_per_minute, tokens_per_minute, parallel_requests}` and enforce the correct ceilings (global default → tenant override → key override).
+- [ ] Runtime limiter integration: ensure `Container.KeyRateLimits` loads from the new storage so runtime enforcement reflects user-configured values immediately.
+- [ ] Admin portal UI: expose budget + RPM/TPM/parallel inputs in the tenant API key create/edit dialogs, showing inherited max values and validation errors.
+- [ ] User portal UI: allow personal-tenant users to set the same controls (bounded by their defaults) when creating/rotating keys.
+- [ ] Tests: add backend unit tests for validation/enforcement plus frontend form tests (or e2e coverage) to lock the new workflows.
+- [ ] Docs: update admin/user guides + changelog to describe the self-service API key limits and inheritance rules.

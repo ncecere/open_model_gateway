@@ -17,6 +17,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/auth"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
+	"github.com/ncecere/open_model_gateway/backend/internal/limits"
 )
 
 // Service centralizes admin-facing tenant operations.
@@ -28,10 +29,11 @@ type Service struct {
 	accounts        *accounts.PersonalService
 	adminAuth       *auth.AdminAuthService
 	setTenantModels func(uuid.UUID, []string)
+	setTenantRate   func(uuid.UUID, *limits.LimitConfig)
 }
 
 // NewService builds an admin tenant service.
-func NewService(cfg *config.Config, queries *db.Queries, tz *time.Location, pool *pgxpool.Pool, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, setTenantModels func(uuid.UUID, []string)) *Service {
+func NewService(cfg *config.Config, queries *db.Queries, tz *time.Location, pool *pgxpool.Pool, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, setTenantModels func(uuid.UUID, []string), setTenantRate func(uuid.UUID, *limits.LimitConfig)) *Service {
 	if tz == nil {
 		tz = time.UTC
 	}
@@ -43,6 +45,7 @@ func NewService(cfg *config.Config, queries *db.Queries, tz *time.Location, pool
 		accounts:        accounts,
 		adminAuth:       adminAuth,
 		setTenantModels: setTenantModels,
+		setTenantRate:   setTenantRate,
 	}
 }
 
@@ -52,6 +55,7 @@ var (
 	ErrModelNotFound        = errors.New("model not found")
 	ErrAPIKeyTenantMismatch = errors.New("api key does not belong to tenant")
 	ErrLocalAuthDisabled    = errors.New("local authentication disabled")
+	ErrInvalidRateLimit     = errors.New("rate limits must be positive")
 )
 
 // ListItem represents a tenant row plus budget summary.
@@ -475,6 +479,71 @@ func (s *Service) RemoveMembership(ctx context.Context, tenantID, userID uuid.UU
 		TenantID: toPgUUID(tenantID),
 		UserID:   toPgUUID(userID),
 	})
+}
+
+// GetTenantRateLimitOverride returns the tenant-level rate limit override (if any).
+func (s *Service) GetTenantRateLimitOverride(ctx context.Context, tenantID uuid.UUID) (limits.LimitConfig, bool, error) {
+	if s == nil || s.queries == nil {
+		return limits.LimitConfig{}, false, ErrServiceUnavailable
+	}
+	record, err := s.queries.GetTenantRateLimit(ctx, toPgUUID(tenantID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return limits.LimitConfig{}, false, nil
+		}
+		return limits.LimitConfig{}, false, err
+	}
+	cfg := limits.LimitConfig{
+		RequestsPerMinute: int(record.RequestsPerMinute),
+		TokensPerMinute:   int(record.TokensPerMinute),
+		ParallelRequests:  int(record.ParallelRequests),
+	}
+	return cfg, true, nil
+}
+
+// UpsertTenantRateLimitOverride stores a tenant-specific override.
+func (s *Service) UpsertTenantRateLimitOverride(ctx context.Context, tenantID uuid.UUID, req limits.LimitConfig) (limits.LimitConfig, error) {
+	if s == nil || s.queries == nil {
+		return limits.LimitConfig{}, ErrServiceUnavailable
+	}
+	if req.RequestsPerMinute <= 0 || req.TokensPerMinute <= 0 || req.ParallelRequests <= 0 {
+		return limits.LimitConfig{}, ErrInvalidRateLimit
+	}
+	record, err := s.queries.UpsertTenantRateLimit(ctx, db.UpsertTenantRateLimitParams{
+		TenantID:           toPgUUID(tenantID),
+		RequestsPerMinute:  int32(req.RequestsPerMinute),
+		TokensPerMinute:    int32(req.TokensPerMinute),
+		ParallelRequests:   int32(req.ParallelRequests),
+	})
+	if err != nil {
+		return limits.LimitConfig{}, err
+	}
+	cfg := limits.LimitConfig{
+		RequestsPerMinute: int(record.RequestsPerMinute),
+		TokensPerMinute:   int(record.TokensPerMinute),
+		ParallelRequests:  int(record.ParallelRequests),
+	}
+	if s.setTenantRate != nil {
+		s.setTenantRate(tenantID, &cfg)
+	}
+	return cfg, nil
+}
+
+// DeleteTenantRateLimitOverride removes the tenant-level override (if set).
+func (s *Service) DeleteTenantRateLimitOverride(ctx context.Context, tenantID uuid.UUID) error {
+	if s == nil || s.queries == nil {
+		return ErrServiceUnavailable
+	}
+	if err := s.queries.DeleteTenantRateLimit(ctx, toPgUUID(tenantID)); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if s.setTenantRate != nil {
+		s.setTenantRate(tenantID, nil)
+	}
+	return nil
 }
 
 func (s *Service) normalizeModelAliases(ctx context.Context, aliases []string) ([]string, error) {

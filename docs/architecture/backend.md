@@ -60,7 +60,7 @@ Admin access is via JWT (local credentials or OIDC). Refresh tokens ride secure 
 |-----------------|-----------------------------------------------------------------------------|--------|-------|
 | Auth            | `/admin/auth/methods`, `/login`, `/refresh`, `/logout`, `/oidc/*`           | ✅     | Local + OIDC flows share token manager |
 | Model Catalog   | `GET/POST/DELETE /admin/model-catalog`                                      | ✅     | Full CRUD including enable/disable, pricing, metadata, provider secrets |
-| Tenants         | `GET/POST /admin/tenants`, `PATCH /admin/tenants/:id`, `PATCH /admin/tenants/:id/status`, `GET/PUT/DELETE /admin/tenants/:id/budget`, `GET/PUT/DELETE /admin/tenants/:id/models` | ✅     | Manage tenants, rename them, edit budgets, and curate allowed model lists |
+| Tenants         | `GET/POST /admin/tenants`, `PATCH /admin/tenants/:id`, `PATCH /admin/tenants/:id/status`, `GET/PUT/DELETE /admin/tenants/:id/budget`, `GET/PUT/DELETE /admin/tenants/:id/models`, `GET/PUT/DELETE /admin/tenants/:id/rate-limits` | ✅     | Manage tenants, rename them, edit budgets, curate allowed model lists, and enforce tenant-wide RPM/TPM/parallel caps |
 | API Keys        | `GET/POST/DELETE /admin/tenants/:id/api-keys`                               | ✅     | Quota payload handles `budget_usd` + warning threshold overrides |
 | Memberships     | `GET/POST/DELETE /admin/tenants/:id/memberships`                            | ✅     | Owner role required to modify; optional password assignment for local auth; super admins bypass tenant checks |
 | Users & RBAC    | `GET/POST /admin/users`, password reset helpers                             | ✅     | Config bootstrapped users promoted to super admin automatically |
@@ -87,7 +87,7 @@ Super admin access: every email listed under `bootstrap.admin_users` is elevated
 - Bootstrap supports `tenant_budgets` entries to seed budget/alert defaults alongside `admin_users`, `api_keys`, and `tenant_limits`.
 - Tenant listings now include each tenant's budget limit/usage in USD, and budgets can be managed directly via `/admin/tenants/:id/budget` (GET/PUT/DELETE).
 - API key quotas override tenant defaults (budget + warning threshold) and are seeded via bootstrap or UI.
-- Rate limiter enforces RPM, TPM, and parallel request caps. Overrides can be seeded in bootstrap config (`bootstrap.api_keys[].rate_limit`, `bootstrap.tenant_limits`) or tuned via admin UI.
+- Rate limiter enforces RPM, TPM, and parallel request caps. Overrides can be seeded in bootstrap config (`bootstrap.api_keys[].rate_limit`, `bootstrap.tenant_limits`) or tuned via admin UI (`GET/PUT/DELETE /admin/tenants/:id/rate-limits`). Tenant overrides live in `tenant_rate_limits` and always apply before key-specific limits so a key cannot exceed its parent tenant.
 
 ## Observability & Ops
 

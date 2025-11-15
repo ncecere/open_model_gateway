@@ -28,6 +28,9 @@ export function useTenantCreateDialog(defaults?: {
   const [alertWebhooks, setAlertWebhooks] = useState("");
   const [alertCooldown, setAlertCooldown] = useState("");
   const [selectedModels, setSelectedModels] = useState<string[]>(modelAliases);
+  const [requestsPerMinute, setRequestsPerMinute] = useState("");
+  const [tokensPerMinute, setTokensPerMinute] = useState("");
+  const [parallelRequests, setParallelRequests] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -48,6 +51,9 @@ export function useTenantCreateDialog(defaults?: {
           : "",
       );
       setSelectedModels(modelAliases);
+      setRequestsPerMinute("");
+      setTokensPerMinute("");
+      setParallelRequests("");
     }
   }, [open, defaults, modelAliases]);
 
@@ -72,6 +78,12 @@ export function useTenantCreateDialog(defaults?: {
     setAlertCooldown,
     selectedModels,
     setSelectedModels,
+    requestsPerMinute,
+    setRequestsPerMinute,
+    tokensPerMinute,
+    setTokensPerMinute,
+    parallelRequests,
+    setParallelRequests,
   };
 }
 
@@ -91,6 +103,9 @@ export function useTenantEditDialog() {
   const [alertCooldown, setAlertCooldown] = useState("");
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [originalModels, setOriginalModels] = useState<string[]>([]);
+  const [requestsPerMinute, setRequestsPerMinute] = useState("");
+  const [tokensPerMinute, setTokensPerMinute] = useState("");
+  const [parallelRequests, setParallelRequests] = useState("");
 
   const reset = () => {
     setTenant(null);
@@ -104,6 +119,9 @@ export function useTenantEditDialog() {
     setAlertCooldown("");
     setSelectedModels([]);
     setOriginalModels([]);
+    setRequestsPerMinute("");
+    setTokensPerMinute("");
+    setParallelRequests("");
   };
 
   useEffect(() => {
@@ -137,6 +155,12 @@ export function useTenantEditDialog() {
     setSelectedModels,
     originalModels,
     setOriginalModels,
+    requestsPerMinute,
+    setRequestsPerMinute,
+    tokensPerMinute,
+    setTokensPerMinute,
+    parallelRequests,
+    setParallelRequests,
     reset,
   };
 }

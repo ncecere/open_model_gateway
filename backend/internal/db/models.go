@@ -407,6 +407,15 @@ type TenantModel struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type TenantRateLimit struct {
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	RequestsPerMinute int32              `json:"requests_per_minute"`
+	TokensPerMinute   int32              `json:"tokens_per_minute"`
+	ParallelRequests  int32              `json:"parallel_requests"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 type UsageRecord struct {
 	ID            pgtype.UUID        `json:"id"`
 	TenantID      pgtype.UUID        `json:"tenant_id"`

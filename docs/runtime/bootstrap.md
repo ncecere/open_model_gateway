@@ -47,7 +47,7 @@ bootstrap:
 - **admin_users** – Upserts users and Argon2id-hashes the provided password. Every bootstrapped admin is automatically promoted to `is_super_admin=true`, bypassing tenant RBAC checks at runtime.
 - **memberships** – Ensures the user holds the specified role for the tenant. Roles are ordered `owner > admin > viewer > user`; invalid values trigger startup errors.
 - **api_keys** – Generates hashed API key secrets. When the key already exists the bootstrap step leaves it untouched. Rate limit overrides are recorded for the limiter service.
-- **tenant_limits** – Seeds per-tenant rate limit overrides that apply to all API keys inside the tenant.
+- **tenant_limits** – Seeds per-tenant rate limit overrides (RPM, TPM, parallel). At runtime every API key inherits the strictest combination of global defaults, tenant override, and key-specific override, so these records always cap per-key bursts.
 - **tenant_budgets** – Creates/updates tenant-specific budget overrides, including refresh schedules (calendar_month, weekly, rolling_Xd) and alert channels (email/webhook) with per-tenant cooldowns.
 
 ## Operational Notes

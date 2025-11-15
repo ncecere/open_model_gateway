@@ -84,6 +84,7 @@ type Container struct {
 	Files              *filesvc.Service
 	tenantModelMu      sync.RWMutex
 	tenantModelAccess  map[uuid.UUID]map[string]struct{}
+	tenantRateLimitMu  sync.RWMutex
 	ReportingLocation  *time.Location
 }
 
@@ -153,7 +154,13 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	}
 
 	keyLimitOverrides := make(map[string]limits.LimitConfig)
-	tenantLimitOverrides := make(map[uuid.UUID]limits.LimitConfig)
+	tenantLimitOverrides, err := LoadTenantRateLimitOverrides(ctx, queries)
+	if err != nil {
+		return nil, fmt.Errorf("load tenant rate limits: %w", err)
+	}
+	if tenantLimitOverrides == nil {
+		tenantLimitOverrides = make(map[uuid.UUID]limits.LimitConfig)
+	}
 
 	if err := ensureBootstrap(ctx, queries, adminAuth, personalSvc, cfg.Bootstrap, cfg.Budgets, keyLimitOverrides, tenantLimitOverrides); err != nil {
 		return nil, err
@@ -236,7 +243,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	container.AdminCatalog = admincatalogsvc.NewService(queries, container.ReloadRouter)
 	container.AdminBudgets = adminbudgetsvc.NewService(queries, cfg)
 	container.AdminRateLimits = adminratelimitsvc.NewService(queries, cfg)
-	container.AdminTenants = admintenantsvc.NewService(cfg, queries, reportingLoc, pool, personalSvc, adminAuth, container.SetTenantModels)
+container.AdminTenants = admintenantsvc.NewService(cfg, queries, reportingLoc, pool, personalSvc, adminAuth, container.SetTenantModels, container.UpdateTenantRateLimit)
 	container.AdminRBAC = adminrbacsvc.NewService(queries)
 	container.AdminAudit = adminauditsvc.NewService(auditservice.NewService(queries))
 
@@ -395,6 +402,23 @@ func (c *Container) ClearTenantModels(tenantID uuid.UUID) {
 	c.tenantModelMu.Lock()
 	delete(c.tenantModelAccess, tenantID)
 	c.tenantModelMu.Unlock()
+}
+
+// UpdateTenantRateLimit overrides (or clears) the tenant-level rate limit.
+func (c *Container) UpdateTenantRateLimit(tenantID uuid.UUID, cfg *limits.LimitConfig) {
+	if c == nil {
+		return
+	}
+	c.tenantRateLimitMu.Lock()
+	defer c.tenantRateLimitMu.Unlock()
+	if cfg == nil {
+		delete(c.TenantRateLimits, tenantID)
+		return
+	}
+	if c.TenantRateLimits == nil {
+		c.TenantRateLimits = make(map[uuid.UUID]limits.LimitConfig)
+	}
+	c.TenantRateLimits[tenantID] = *cfg
 }
 
 func ensureCatalogPersisted(ctx context.Context, queries *db.Queries, entries []config.ModelCatalogEntry) error {
@@ -645,7 +669,16 @@ func ensureBootstrap(ctx context.Context, queries *db.Queries, adminAuth *auth.A
 		if err != nil {
 			return fmt.Errorf("bootstrap tenant limit %q id: %w", tenantName, err)
 		}
-		tenantLimits[tenantUUID] = limitFromBootstrapRate(limit.Limits)
+		override := limitFromBootstrapRate(limit.Limits)
+		tenantLimits[tenantUUID] = override
+		if _, err := queries.UpsertTenantRateLimit(ctx, db.UpsertTenantRateLimitParams{
+			TenantID:          tenant.ID,
+			RequestsPerMinute: int32(limit.Limits.RequestsPerMinute),
+			TokensPerMinute:   int32(limit.Limits.TokensPerMinute),
+			ParallelRequests:  int32(limit.Limits.ParallelRequests),
+		}); err != nil {
+			return fmt.Errorf("bootstrap tenant limit %q upsert: %w", tenantName, err)
+		}
 	}
 
 	for _, entry := range bootstrap.TenantBudgets {
@@ -743,7 +776,10 @@ func (c *Container) EffectiveRateLimits(prefix string, tenantID uuid.UUID) (limi
 		keyCfg = mergeLimitConfigs(keyCfg, override)
 	}
 	tenantCfg := c.DefaultTenantLimit
-	if override, ok := c.TenantRateLimits[tenantID]; ok {
+	c.tenantRateLimitMu.RLock()
+	override, ok := c.TenantRateLimits[tenantID]
+	c.tenantRateLimitMu.RUnlock()
+	if ok {
 		tenantCfg = mergeLimitConfigs(tenantCfg, override)
 	}
 	return keyCfg, tenantCfg
@@ -760,7 +796,10 @@ func (c *Container) ResolveRateLimits(ctx context.Context, alias string) (string
 		keyCfg = mergeLimitConfigs(keyCfg, override)
 	}
 	tenantCfg := c.DefaultTenantLimit
-	if override, ok := c.TenantRateLimits[rc.TenantID]; ok {
+	c.tenantRateLimitMu.RLock()
+	override, ok := c.TenantRateLimits[rc.TenantID]
+	c.tenantRateLimitMu.RUnlock()
+	if ok {
 		tenantCfg = mergeLimitConfigs(tenantCfg, override)
 	}
 

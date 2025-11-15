@@ -106,6 +106,12 @@ export interface ApiKeyRateLimits {
   tenant: RateLimitInfo;
 }
 
+export interface TenantRateLimitOverride {
+  requests_per_minute: number;
+  tokens_per_minute: number;
+  parallel_requests: number;
+}
+
 export interface ApiKeyIssuer {
   type: string;
   label: string;
@@ -233,4 +239,33 @@ export async function upsertTenantMembership(
 
 export async function removeTenantMembership(tenantId: string, userId: string) {
   await api.delete(`/tenants/${tenantId}/memberships/${userId}`);
+}
+
+export async function getTenantRateLimits(tenantId: string) {
+  const response = await api.get<TenantRateLimitOverride>(
+    `/tenants/${tenantId}/rate-limits`,
+    {
+      validateStatus: (status) =>
+        (status >= 200 && status < 300) || status === 404,
+    },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return response.data;
+}
+
+export async function upsertTenantRateLimits(
+  tenantId: string,
+  payload: TenantRateLimitOverride,
+) {
+  const { data } = await api.put<TenantRateLimitOverride>(
+    `/tenants/${tenantId}/rate-limits`,
+    payload,
+  );
+  return data;
+}
+
+export async function deleteTenantRateLimits(tenantId: string) {
+  await api.delete(`/tenants/${tenantId}/rate-limits`);
 }

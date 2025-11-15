@@ -18,6 +18,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/batchdto"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/limits"
 	"github.com/ncecere/open_model_gateway/backend/internal/rbac"
 	adminbudgetsvc "github.com/ncecere/open_model_gateway/backend/internal/services/adminbudget"
 	admintenantsvc "github.com/ncecere/open_model_gateway/backend/internal/services/admintenant"
@@ -35,6 +36,9 @@ func registerAdminTenantRoutes(router fiber.Router, container *app.Container) {
 	group.Get("/:tenantID/budget", handler.getBudget)
 	group.Put("/:tenantID/budget", handler.upsertBudget)
 	group.Delete("/:tenantID/budget", handler.deleteBudget)
+	group.Get("/:tenantID/rate-limits", handler.getRateLimits)
+	group.Put("/:tenantID/rate-limits", handler.upsertRateLimits)
+	group.Delete("/:tenantID/rate-limits", handler.deleteRateLimits)
 	group.Get("/:tenantID/models", handler.getTenantModels)
 	group.Put("/:tenantID/models", handler.upsertTenantModels)
 	group.Delete("/:tenantID/models", handler.deleteTenantModels)
@@ -102,6 +106,18 @@ type quotaPayload struct {
 	BudgetUSD        float64 `json:"budget_usd,omitempty"`
 	BudgetCents      int64   `json:"budget_cents,omitempty"`
 	WarningThreshold float64 `json:"warning_threshold,omitempty"`
+}
+
+type tenantRateLimitRequest struct {
+	RequestsPerMinute int `json:"requests_per_minute"`
+	TokensPerMinute   int `json:"tokens_per_minute"`
+	ParallelRequests  int `json:"parallel_requests"`
+}
+
+type tenantRateLimitResponse struct {
+	RequestsPerMinute int `json:"requests_per_minute"`
+	TokensPerMinute   int `json:"tokens_per_minute"`
+	ParallelRequests  int `json:"parallel_requests"`
 }
 
 type membershipRequest struct {
@@ -475,6 +491,91 @@ func (h *tenantHandler) deleteBudget(c *fiber.Ctx) error {
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *tenantHandler) getRateLimits(c *fiber.Ctx) error {
+	tenantUUID, err := parseTenantParam(c)
+	if err != nil {
+		return err
+	}
+	if err := requireTenantRole(c, h.container, tenantUUID, db.MembershipRoleViewer); err != nil {
+		return err
+	}
+	if h.service == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "tenant service unavailable")
+	}
+	cfg, exists, err := h.service.GetTenantRateLimitOverride(c.Context(), tenantUUID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if !exists {
+		return httputil.WriteError(c, fiber.StatusNotFound, "rate limit override not set")
+	}
+	return c.JSON(mapTenantRateLimit(cfg))
+}
+
+func (h *tenantHandler) upsertRateLimits(c *fiber.Ctx) error {
+	tenantUUID, err := parseTenantParam(c)
+	if err != nil {
+		return err
+	}
+	if err := requireTenantRole(c, h.container, tenantUUID, db.MembershipRoleOwner); err != nil {
+		return err
+	}
+	if h.service == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "tenant service unavailable")
+	}
+	var req tenantRateLimitRequest
+	if err := c.BodyParser(&req); err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid request body")
+	}
+	cfg, err := h.service.UpsertTenantRateLimitOverride(c.Context(), tenantUUID, limits.LimitConfig{
+		RequestsPerMinute: req.RequestsPerMinute,
+		TokensPerMinute:   req.TokensPerMinute,
+		ParallelRequests:  req.ParallelRequests,
+	})
+	if err != nil {
+		if errors.Is(err, admintenantsvc.ErrInvalidRateLimit) {
+			return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if err := recordAudit(c, h.container, "tenant.rate_limit.upsert", "tenant", tenantUUID.String(), fiber.Map{
+		"requests_per_minute": cfg.RequestsPerMinute,
+		"tokens_per_minute":   cfg.TokensPerMinute,
+		"parallel_requests":   cfg.ParallelRequests,
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(mapTenantRateLimit(cfg))
+}
+
+func (h *tenantHandler) deleteRateLimits(c *fiber.Ctx) error {
+	tenantUUID, err := parseTenantParam(c)
+	if err != nil {
+		return err
+	}
+	if err := requireTenantRole(c, h.container, tenantUUID, db.MembershipRoleOwner); err != nil {
+		return err
+	}
+	if h.service == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "tenant service unavailable")
+	}
+	if err := h.service.DeleteTenantRateLimitOverride(c.Context(), tenantUUID); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if err := recordAudit(c, h.container, "tenant.rate_limit.delete", "tenant", tenantUUID.String(), fiber.Map{}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func mapTenantRateLimit(cfg limits.LimitConfig) tenantRateLimitResponse {
+	return tenantRateLimitResponse{
+		RequestsPerMinute: cfg.RequestsPerMinute,
+		TokensPerMinute:   cfg.TokensPerMinute,
+		ParallelRequests:  cfg.ParallelRequests,
+	}
 }
 
 func (h *tenantHandler) getTenantModels(c *fiber.Ctx) error {

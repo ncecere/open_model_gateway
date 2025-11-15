@@ -153,12 +153,12 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - `POST /v1/embeddings`
 - `POST /v1/images/generations`
 - `POST /v1/audio/speech`
+- `GET/POST /v1/files` (including content streaming + delete)
 
 **Missing / planned**
 - `POST /v1/audio/transcriptions`, `POST /v1/audio/translations`
 - `POST /v1/images/edits`, `POST /v1/images/variations`
 - `POST /v1/moderations`
-- `GET/POST /v1/files` (complete CRUD + content streaming)
 - `POST /v1/batches`
 - `POST /v1/responses`, Assistants/Threads/Runs APIs (future stretch goal)
 
@@ -168,8 +168,8 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - **Benefits**: Unlocks high-volume offline workloads and parity with the latest OpenAI SDKs.
 
 ### Files API
-- **Implementation**: Extend `/v1/files` to accept uploads, list files with pagination, retrieve content, and delete. Store file blobs in the current storage backend while maintaining OpenAI’s metadata schema (purpose, bytes, status). Support streaming downloads for large files.
-- **Benefits**: Required for Assistants, fine-tuning, and soon the Responses API when tool outputs reference assets.
+- **Status**: ✅ Completed — `/v1/files` now implements full OpenAI parity (upload/list/get/delete/content). Schema tracks purpose/status/status_details, cursor pagination mirrors OpenAI’s `limit/after` contract, and both public/admin portals expose status chips, TTL hints, and download actions wired to the new admin/user download endpoints.
+- **Benefits**: Required for Assistants, fine-tuning, batches, and future Responses/tooling flows. Brings first-class parity so SDKs can drop-in against the gateway without code forks.
 
 ### Moderations
 - **Implementation**: Add `/v1/moderations` that routes to a configured provider (OpenAI, Azure, or third-party). Persist moderation logs for auditing and optionally allow tenant-specific policies.

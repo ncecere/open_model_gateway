@@ -8,6 +8,7 @@ import (
 
 	decimal "github.com/shopspring/decimal"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/catalog"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 )
@@ -39,6 +40,7 @@ type ModelPayload struct {
 	Alias           string            `json:"alias"`
 	Provider        string            `json:"provider"`
 	ProviderModel   string            `json:"provider_model"`
+	ModelType       string            `json:"model_type"`
 	ContextWindow   int32             `json:"context_window"`
 	MaxOutputTokens int32             `json:"max_output_tokens"`
 	Modalities      []string          `json:"modalities"`
@@ -62,7 +64,14 @@ func (s *Service) List(ctx context.Context) ([]db.ModelCatalog, error) {
 	if s == nil || s.queries == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.queries.ListModelCatalog(ctx)
+	items, err := s.queries.ListModelCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].Provider = catalog.NormalizeProviderSlug(items[i].Provider)
+	}
+	return items, nil
 }
 
 // Upsert validates and saves a catalog entry, reloading the router afterwards.
@@ -74,9 +83,13 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 	if alias == "" {
 		return db.ModelCatalog{}, ErrAliasRequired
 	}
-	provider := strings.TrimSpace(payload.Provider)
+	provider := catalog.NormalizeProviderSlug(payload.Provider)
 	if provider == "" {
 		return db.ModelCatalog{}, ErrProviderRequired
+	}
+	modelType := strings.TrimSpace(payload.ModelType)
+	if modelType == "" {
+		modelType = "llm"
 	}
 	model := strings.TrimSpace(payload.ProviderModel)
 	if model == "" {
@@ -90,7 +103,7 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 		payload.Metadata = map[string]string{}
 	}
 
-	switch payload.Provider {
+	switch provider {
 	case "azure":
 		if cfg := payload.ProviderOverrides.Azure; cfg != nil {
 			if deployment == "" {
@@ -163,6 +176,7 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 		Alias:              alias,
 		Provider:           provider,
 		ProviderModel:      model,
+		ModelType:          modelType,
 		ContextWindow:      payload.ContextWindow,
 		MaxOutputTokens:    payload.MaxOutputTokens,
 		ModalitiesJson:     modalitiesJSON,
@@ -193,6 +207,7 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 			return db.ModelCatalog{}, err
 		}
 	}
+	entry.ModelType = modelType
 	return entry, nil
 }
 

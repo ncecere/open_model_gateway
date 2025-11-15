@@ -425,10 +425,18 @@ func ensureCatalogPersisted(ctx context.Context, queries *db.Queries, entries []
 			currency = "USD"
 		}
 
+		provider := catalog.NormalizeProviderSlug(entry.Provider)
+
+		modelType := strings.TrimSpace(entry.ModelType)
+		if modelType == "" {
+			modelType = "llm"
+		}
+
 		_, err = queries.UpsertModelCatalogEntry(ctx, db.UpsertModelCatalogEntryParams{
 			Alias:              entry.Alias,
-			Provider:           entry.Provider,
+			Provider:           provider,
 			ProviderModel:      entry.ProviderModel,
+			ModelType:          modelType,
 			ContextWindow:      entry.ContextWindow,
 			MaxOutputTokens:    entry.MaxOutputTokens,
 			ModalitiesJson:     modalitiesJSON,

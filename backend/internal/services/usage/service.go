@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/catalog"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/timeutil"
 )
@@ -733,7 +734,7 @@ func (s *Service) buildModelCompareSeries(ctx context.Context, aliases []string,
 		label := alias
 		provider := ""
 		if row, ok := meta[alias]; ok {
-			provider = row.Provider
+			provider = catalog.NormalizeProviderSlug(row.Provider)
 		}
 		totals := totalMap[alias]
 		points := buildUsagePointsFromDailyMap(start, end, loc, daily[alias])

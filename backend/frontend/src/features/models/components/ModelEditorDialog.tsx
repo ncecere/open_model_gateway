@@ -7,6 +7,7 @@ import {
   type ModelCatalogUpsertRequest,
   type ProviderOverrides,
   type VertexProviderConfig,
+  normalizeProviderSlug,
 } from "@/api/model-catalog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,6 +40,7 @@ import {
 import { buildMetadataPayload } from "../form";
 import { normalizeMetadataForProvider } from "../metadata";
 import {
+  MODEL_TYPE_OPTIONS,
   defaultVertexOverride,
   type CustomMetadataEntry,
   type ModelFormState,
@@ -64,8 +66,9 @@ export function ModelEditorDialog({
   loading: boolean;
   mode: "create" | "edit";
 }) {
+  const providerKey = normalizeProviderSlug(form.provider);
   const providerDetail =
-    PROVIDER_DETAILS[form.provider] ?? DEFAULT_PROVIDER_DETAIL;
+    PROVIDER_DETAILS[providerKey] ?? DEFAULT_PROVIDER_DETAIL;
   const providerConfig = providerDetail.config;
   const providerKeyInline =
     providerConfig.showApiKey && !providerConfig.showDeployment;
@@ -195,6 +198,7 @@ export function ModelEditorDialog({
       alias: form.alias.trim(),
       provider: form.provider.trim(),
       provider_model: form.provider_model.trim(),
+      model_type: form.model_type || "llm",
       context_window: Number(form.context_window) || 0,
       max_output_tokens: Number(form.max_output_tokens) || 0,
       modalities: form.modalities,
@@ -261,6 +265,24 @@ export function ModelEditorDialog({
                   {SUPPORTED_PROVIDERS.map((provider) => (
                     <SelectItem key={provider.value} value={provider.value}>
                       {provider.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="model_type">Model type</Label>
+              <Select
+                value={form.model_type}
+                onValueChange={(value) => handleStringChange("model_type", value)}
+              >
+                <SelectTrigger id="model_type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODEL_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -370,7 +392,7 @@ export function ModelEditorDialog({
 
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="price_input">Price input ($)</Label>
+              <Label htmlFor="price_input">Price input ($ per 1M tokens)</Label>
               <Input
                 id="price_input"
                 value={form.price_input}
@@ -382,7 +404,7 @@ export function ModelEditorDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="price_output">Price output ($)</Label>
+              <Label htmlFor="price_output">Price output ($ per 1M tokens)</Label>
               <Input
                 id="price_output"
                 value={form.price_output}

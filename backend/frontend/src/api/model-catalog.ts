@@ -4,6 +4,7 @@ interface ModelCatalogDTO {
   alias: string;
   provider: string;
   provider_model: string;
+  model_type?: string;
   context_window: number;
   max_output_tokens: number;
   modalities_json: string;
@@ -85,6 +86,7 @@ export interface ModelCatalogEntry {
   alias: string;
   provider: string;
   provider_model: string;
+  model_type: string;
   context_window: number;
   max_output_tokens: number;
   modalities: string[];
@@ -108,6 +110,7 @@ export interface ModelCatalogUpsertRequest {
   alias: string;
   provider: string;
   provider_model: string;
+  model_type: string;
   context_window: number;
   max_output_tokens: number;
   modalities: string[];
@@ -124,6 +127,14 @@ export interface ModelCatalogUpsertRequest {
   metadata: Record<string, string>;
   weight: number;
   provider_overrides?: ProviderOverrides;
+}
+
+export function normalizeProviderSlug(value: string): string {
+  const slug = value?.trim().toLowerCase() ?? "";
+  if (slug === "openai_compatible") {
+    return "openai-compatible";
+  }
+  return slug;
 }
 
 function decodeBase64(raw: string): string {
@@ -161,8 +172,9 @@ function parseDecimal(value: string | number | null | undefined): number {
 function mapCatalogEntry(entry: ModelCatalogDTO): ModelCatalogEntry {
   return {
     alias: entry.alias,
-    provider: entry.provider,
+    provider: normalizeProviderSlug(entry.provider),
     provider_model: entry.provider_model,
+    model_type: entry.model_type ?? "llm",
     context_window: entry.context_window,
     max_output_tokens: entry.max_output_tokens,
     modalities: decodeBase64Json<string[]>(entry.modalities_json, []),

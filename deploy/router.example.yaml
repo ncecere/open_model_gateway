@@ -137,6 +137,7 @@ model_catalog:
   - alias: "gpt-4o-azure"
     provider: "azure"
     provider_model: "gpt-4o"
+    model_type: "llm"
     context_window: 128000
     max_output_tokens: 4096
     modalities: ["text"]
@@ -152,6 +153,7 @@ model_catalog:
   - alias: "gpt-image-1"
     provider: "openai"
     provider_model: "gpt-image-1"
+    model_type: "image"
     context_window: 0
     max_output_tokens: 0
     modalities: ["image"]
@@ -166,6 +168,7 @@ model_catalog:
   - alias: "gpt-4o-mini-tts"
     provider: "openai"
     provider_model: "gpt-4o-mini-tts"
+    model_type: "audio"
     context_window: 0
     max_output_tokens: 0
     modalities: ["audio"]
@@ -180,6 +183,7 @@ model_catalog:
   - alias: "partner-gpt-image"
     provider: "openai-compatible"
     provider_model: "gpt-image-1"
+    model_type: "image"
     context_window: 0
     max_output_tokens: 0
     modalities: ["image"]
@@ -196,6 +200,7 @@ model_catalog:
   - alias: "claude-3-sonnet"
     provider: "bedrock"
     provider_model: "anthropic.claude-3-sonnet-20240229-v1:0"
+    model_type: "llm"
     context_window: 200000
     max_output_tokens: 4096
     modalities: ["text"]
@@ -211,6 +216,7 @@ model_catalog:
   - alias: "titan-image"
     provider: "bedrock"
     provider_model: "amazon.titan-image-generator-v1"
+    model_type: "image"
     modalities: ["image"]
     supports_tools: false
     price_input: 0
@@ -230,6 +236,7 @@ model_catalog:
   - alias: "stable-diffusion-xl"
     provider: "bedrock"
     provider_model: "stability.stable-diffusion-xl-v1"
+    model_type: "image"
     modalities: ["image"]
     supports_tools: false
     price_input: 0

@@ -3,6 +3,7 @@ INSERT INTO model_catalog (
     alias,
     provider,
     provider_model,
+    model_type,
     context_window,
     max_output_tokens,
     modalities_json,
@@ -20,11 +21,12 @@ INSERT INTO model_catalog (
     weight,
     provider_config_json
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 ON CONFLICT (alias)
 DO UPDATE SET
     provider = EXCLUDED.provider,
     provider_model = EXCLUDED.provider_model,
+    model_type = EXCLUDED.model_type,
     context_window = EXCLUDED.context_window,
     max_output_tokens = EXCLUDED.max_output_tokens,
     modalities_json = EXCLUDED.modalities_json,

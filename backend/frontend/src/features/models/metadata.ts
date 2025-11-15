@@ -82,6 +82,33 @@ const BASE_METADATA_SECTIONS: MetadataSection[] = [
   },
 ];
 
+const OPENAI_COMPATIBLE_METADATA: MetadataSection[] = [
+  {
+    id: "openai-compatible-endpoint",
+    title: "Compatible endpoint settings",
+    description:
+      "Required base URL + optional API key/org overrides for Flux, custom gateways, etc.",
+    fields: [
+      {
+        key: "base_url",
+        label: "Base URL",
+        placeholder: "https://my-gateway.example.com/v1",
+      },
+      {
+        key: "api_key",
+        label: "Provider API key override",
+        description:
+          "Populate if this model should use a different key than the catalog entry.",
+      },
+      {
+        key: "openai_organization",
+        label: "Organization header",
+        placeholder: "org_abc123",
+      },
+    ],
+  },
+];
+
 const PROVIDER_METADATA_SECTIONS: Record<string, MetadataSection[]> = {
   openai: [
     {
@@ -103,32 +130,8 @@ const PROVIDER_METADATA_SECTIONS: Record<string, MetadataSection[]> = {
       ],
     },
   ],
-  openai_compatible: [
-    {
-      id: "openai-compatible-endpoint",
-      title: "Compatible endpoint settings",
-      description:
-        "Required base URL + optional API key/org overrides for Flux, custom gateways, etc.",
-      fields: [
-        {
-          key: "base_url",
-          label: "Base URL",
-          placeholder: "https://my-gateway.example.com/v1",
-        },
-        {
-          key: "api_key",
-          label: "Provider API key override",
-          description:
-            "Populate if this model should use a different key than the catalog entry.",
-        },
-        {
-          key: "openai_organization",
-          label: "Organization header",
-          placeholder: "org_abc123",
-        },
-      ],
-    },
-  ],
+  "openai-compatible": OPENAI_COMPATIBLE_METADATA,
+  openai_compatible: OPENAI_COMPATIBLE_METADATA,
   bedrock: [
     {
       id: "bedrock-behavior",

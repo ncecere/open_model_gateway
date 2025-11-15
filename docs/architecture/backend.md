@@ -80,7 +80,7 @@ Super admin access: every email listed under `bootstrap.admin_users` is elevated
 
 ## Usage Logging, Budgets & Rate Limits
 
-- `usage.Logger` records request + usage rows inside a transaction, computing costs as `(input_tokens * price_input + output_tokens * price_output) / 1000` and storing spend in USD in the database.
+- `usage.Logger` records request + usage rows inside a transaction, computing costs as `(input_tokens * price_input + output_tokens * price_output) / 1,000,000` and storing spend in USD in the database.
 - Budget windows honour the persisted defaults (`PUT /admin/budgets/default`) or any per-tenant overrides, supporting `calendar_month`, `weekly`, and rolling windows such as `rolling_7d`.
 - Budget alerts dispatch warning/exceeded events via the configured email/webhook channels. Defaults come from `budgets.alert` and may be overridden per tenant (including cooldowns). Alert state is persisted so repeat notifications respect the configured cool-down.
 - Tenant overrides live in `tenant_budget_overrides`; admin UI exposes `/admin/tenants/:id/budget` (backed by `/admin/budgets/overrides`) so operators can edit tenant budgets, schedules, and alert channels directly from the tenant dialog. Per-tenant model allowlists are managed via `/admin/tenants/:id/models` and enforced on `/v1/models` plus all completion/image routes.

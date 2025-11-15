@@ -187,6 +187,7 @@ type ModelCatalogEntry struct {
 	Alias             string            `mapstructure:"alias"`
 	Provider          string            `mapstructure:"provider"`
 	ProviderModel     string            `mapstructure:"provider_model"`
+	ModelType         string            `mapstructure:"model_type"`
 	ContextWindow     int32             `mapstructure:"context_window"`
 	MaxOutputTokens   int32             `mapstructure:"max_output_tokens"`
 	Modalities        []string          `mapstructure:"modalities"`

@@ -165,12 +165,13 @@ Each entry registers a public alias:
 | Field | Description |
 | --- | --- |
 | `alias` | Public name (`gpt-4o`, `gemini-flash`). |
-| `provider` | `openai`, `azure`, `bedrock`, `vertex`, `openai_compatible`, etc. |
+| `provider` | `openai`, `azure`, `bedrock`, `vertex`, `openai-compatible`, etc. (`openai_compatible` is accepted but normalized) |
 | `provider_model` | Provider-specific identifier. |
+| `model_type` | Optional workload classification (`llm`, `embedding`, `image`, `audio`, `video`, etc.). Defaults to `llm` if omitted. |
 | `context_window` / `max_output_tokens` | Token metadata. |
 | `modalities` | e.g., `["text","image"]`. |
 | `supports_tools` | Enables tool/function calling. |
-| `price_input` / `price_output` / `currency` | Used by the usage logger. |
+| `price_input` / `price_output` / `currency` | Used by the usage logger (values represent USD per 1M tokens). |
 | `deployment`, `endpoint`, `api_key`, `api_version`, `region` | Optional overrides. |
 | `metadata` or provider-specific block | Adapter-specific knobs (Azure deployments, Vertex credentials, Bedrock image options, etc.). |
 

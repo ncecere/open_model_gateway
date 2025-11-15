@@ -70,8 +70,8 @@ export const PROVIDER_DETAILS: Record<string, ProviderDetail> = {
       showRegion: false,
     },
   },
-  openai_compatible: {
-    value: "openai_compatible",
+  "openai-compatible": {
+    value: "openai-compatible",
     label: "OpenAI-compatible",
     logo: OpenAICompatibleLogo,
     config: {

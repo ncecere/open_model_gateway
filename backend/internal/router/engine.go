@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/catalog"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
@@ -168,6 +170,10 @@ func (e *Engine) ListAliases() map[string][]providers.Route {
 func MergeEntries(cfgEntries []config.ModelCatalogEntry, dbEntries []db.ModelCatalog) ([]config.ModelCatalogEntry, error) {
 	merged := make(map[string]config.ModelCatalogEntry)
 	for _, entry := range cfgEntries {
+		entry.Provider = catalog.NormalizeProviderSlug(entry.Provider)
+		if strings.TrimSpace(entry.ModelType) == "" {
+			entry.ModelType = "llm"
+		}
 		merged[entry.Alias] = entry
 	}
 
@@ -175,8 +181,9 @@ func MergeEntries(cfgEntries []config.ModelCatalogEntry, dbEntries []db.ModelCat
 		enabled := row.Enabled
 		entry := config.ModelCatalogEntry{
 			Alias:           row.Alias,
-			Provider:        row.Provider,
+			Provider:        catalog.NormalizeProviderSlug(row.Provider),
 			ProviderModel:   row.ProviderModel,
+			ModelType:       row.ModelType,
 			ContextWindow:   row.ContextWindow,
 			MaxOutputTokens: row.MaxOutputTokens,
 			SupportsTools:   row.SupportsTools,

@@ -46,6 +46,7 @@ CREATE TABLE model_catalog (
     alias              TEXT PRIMARY KEY,
     provider           TEXT NOT NULL,
     provider_model     TEXT NOT NULL,
+    model_type         TEXT NOT NULL DEFAULT 'llm',
     context_window     INT NOT NULL,
     max_output_tokens  INT NOT NULL,
     modalities_json    JSONB NOT NULL DEFAULT '[]'::JSONB,

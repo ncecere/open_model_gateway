@@ -222,9 +222,9 @@ func (l *Logger) costFor(alias string, usage models.Usage) decimal.Decimal {
 	prompt := decimal.NewFromInt(int64(usage.PromptTokens))
 	completion := decimal.NewFromInt(int64(usage.CompletionTokens))
 
-	thousand := decimal.NewFromInt(1000)
-	promptCost := price.Input.Mul(prompt).Div(thousand)
-	completionCost := price.Output.Mul(completion).Div(thousand)
+	million := decimal.NewFromInt(1_000_000)
+	promptCost := price.Input.Mul(prompt).Div(million)
+	completionCost := price.Output.Mul(completion).Div(million)
 	totalUSD := promptCost.Add(completionCost)
 	if totalUSD.IsNegative() {
 		return decimal.Zero

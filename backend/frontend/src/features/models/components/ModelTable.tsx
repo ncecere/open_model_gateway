@@ -1,5 +1,5 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import type { ModelCatalogEntry } from "@/api/model-catalog";
+import { formatModelTypeLabel } from "../types";
 
 const currency = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -84,7 +85,7 @@ export function ModelTable({
           <TableHead>Provider model</TableHead>
           <TableHead>Deployment</TableHead>
           <TableHead>Pricing</TableHead>
-          <TableHead>Modalities</TableHead>
+          <TableHead>Model type</TableHead>
           <TableHead>Updated</TableHead>
           <TableHead className="w-12 text-right">Actions</TableHead>
         </TableRow>
@@ -118,25 +119,18 @@ export function ModelTable({
             </TableCell>
             <TableCell className="text-sm">
               <div className="flex flex-col">
-                <span>{currency.format(model.price_input)} input</span>
-                <span>{currency.format(model.price_output)} output</span>
+                <span>
+                  {currency.format(model.price_input)} / 1M input tokens
+                </span>
+                <span>
+                  {currency.format(model.price_output)} / 1M output tokens
+                </span>
               </div>
             </TableCell>
-            <TableCell>
-              <div className="flex flex-wrap gap-1">
-                {model.modalities.length > 0 ? (
-                  model.modalities.map((modality) => (
-                    <Badge key={modality} variant="secondary">
-                      {modality}
-                    </Badge>
-                  ))
-                ) : (
-                  <span className="text-xs text-muted-foreground">none</span>
-                )}
-                {model.supports_tools ? (
-                  <Badge variant="outline">tools</Badge>
-                ) : null}
-              </div>
+            <TableCell className="text-sm">
+              <Badge variant="secondary">
+                {formatModelTypeLabel(model.model_type)}
+              </Badge>
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">
               {dateTime.format(new Date(model.updated_at))}

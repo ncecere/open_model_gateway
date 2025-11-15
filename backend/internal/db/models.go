@@ -298,6 +298,7 @@ type ModelCatalog struct {
 	Alias              string             `json:"alias"`
 	Provider           string             `json:"provider"`
 	ProviderModel      string             `json:"provider_model"`
+	ModelType          string             `json:"model_type"`
 	ContextWindow      int32              `json:"context_window"`
 	MaxOutputTokens    int32              `json:"max_output_tokens"`
 	ModalitiesJson     []byte             `json:"modalities_json"`

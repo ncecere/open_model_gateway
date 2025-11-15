@@ -9,12 +9,14 @@ import type {
 } from "@/api/tenants";
 import {
   createTenantApiKey,
+  getTenantRateLimits,
   listAdminApiKeys,
   listPersonalTenants,
   listTenants,
   revokeTenantApiKey,
 } from "@/api/tenants";
 import { getBudgetDefaults } from "@/api/budgets";
+import { getRateLimitDefaults } from "@/api/rate-limits";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -89,6 +91,11 @@ export function KeysPage() {
     queryFn: getBudgetDefaults,
   });
 
+  const rateLimitDefaultsQuery = useQuery({
+    queryKey: ["rate-limit-defaults"],
+    queryFn: getRateLimitDefaults,
+  });
+
   const tenants = tenantsQuery.data?.tenants ?? [];
   const personalTenants = personalTenantsQuery.data?.personal_tenants ?? [];
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(
@@ -104,6 +111,13 @@ export function KeysPage() {
   const keysQuery = useQuery({
     queryKey: ["admin-api-keys"],
     queryFn: () => listAdminApiKeys(),
+  });
+
+  const tenantRateLimitQuery = useQuery({
+    queryKey: ["tenant-rate-limits", selectedTenantId],
+    queryFn: () =>
+      selectedTenantId ? getTenantRateLimits(selectedTenantId) : Promise.resolve(null),
+    enabled: Boolean(selectedTenantId),
   });
 
   const createKeyMutation = useMutation({
@@ -160,6 +174,9 @@ export function KeysPage() {
   const [keyName, setKeyName] = useState("");
   const [budgetUsd, setBudgetUsd] = useState<string>("");
   const [warningThreshold, setWarningThreshold] = useState<string>("");
+  const [requestsPerMinute, setRequestsPerMinute] = useState("");
+  const [tokensPerMinute, setTokensPerMinute] = useState("");
+  const [parallelRequests, setParallelRequests] = useState("");
   const [selectedKey, setSelectedKey] = useState<ApiKeyRecord | null>(null);
   const [pendingRevokeKey, setPendingRevokeKey] = useState<ApiKeyRecord | null>(
     null,
@@ -172,6 +189,17 @@ export function KeysPage() {
     "all",
   );
 
+  useEffect(() => {
+    if (!createOpen) {
+      setKeyName("");
+      setBudgetUsd("");
+      setWarningThreshold("");
+      setRequestsPerMinute("");
+      setTokensPerMinute("");
+      setParallelRequests("");
+    }
+  }, [createOpen]);
+
   const handleCreateKey = async () => {
     if (!selectedTenantId) return;
     if (!keyName.trim()) {
@@ -183,7 +211,22 @@ export function KeysPage() {
     };
     const parsedBudget = Number(budgetUsd);
     const parsedThreshold = Number(warningThreshold);
+    const tenantBudgetLimit =
+      tenantBudgetMap.get(selectedTenantId)?.limit ??
+      budgetDefaults?.default_usd ??
+      0;
+
     if (budgetUsd && Number.isFinite(parsedBudget)) {
+      if (
+        tenantBudgetLimit > 0 &&
+        parsedBudget > tenantBudgetLimit
+      ) {
+        toast({
+          variant: "destructive",
+          title: `Budget exceeds tenant cap ($${tenantBudgetLimit.toFixed(2)})`,
+        });
+        return;
+      }
       payload.quota = {
         budget_usd: parsedBudget,
         warning_threshold: Number.isFinite(parsedThreshold)
@@ -197,6 +240,89 @@ export function KeysPage() {
           : undefined,
       };
     }
+    const trimmedRPM = requestsPerMinute.trim();
+    const trimmedTPM = tokensPerMinute.trim();
+    const trimmedParallel = parallelRequests.trim();
+    const hasRateOverride =
+      trimmedRPM.length > 0 || trimmedTPM.length > 0 || trimmedParallel.length > 0;
+    let rpmValue: number | undefined;
+    let tpmValue: number | undefined;
+    let parallelValue: number | undefined;
+    if (hasRateOverride) {
+      rpmValue = Number.parseInt(trimmedRPM, 10);
+      tpmValue = Number.parseInt(trimmedTPM, 10);
+      parallelValue = Number.parseInt(trimmedParallel, 10);
+      if (
+        !Number.isFinite(rpmValue) ||
+        !Number.isFinite(tpmValue) ||
+        !Number.isFinite(parallelValue) ||
+        (rpmValue as number) <= 0 ||
+        (tpmValue as number) <= 0 ||
+        (parallelValue as number) <= 0
+      ) {
+        toast({
+          variant: "destructive",
+          title: "Rate limits must be positive integers",
+        });
+        return;
+      }
+      const keyMaxRPM = defaultKeyRateLimit?.requests_per_minute ?? 0;
+      const keyMaxTPM = defaultKeyRateLimit?.tokens_per_minute ?? 0;
+      const keyMaxParallel = defaultKeyRateLimit?.parallel_requests ?? 0;
+      const tenantMaxRPM = effectiveTenantRateLimit?.requests_per_minute ?? 0;
+      const tenantMaxTPM = effectiveTenantRateLimit?.tokens_per_minute ?? 0;
+      const tenantMaxParallel = effectiveTenantRateLimit?.parallel_requests ?? 0;
+      if (keyMaxRPM > 0 && (rpmValue as number) > keyMaxRPM) {
+        toast({
+          variant: "destructive",
+          title: `RPM exceeds key default (${keyMaxRPM})`,
+        });
+        return;
+      }
+      if (tenantMaxRPM > 0 && (rpmValue as number) > tenantMaxRPM) {
+        toast({
+          variant: "destructive",
+          title: `RPM exceeds tenant cap (${tenantMaxRPM})`,
+        });
+        return;
+      }
+      if (keyMaxTPM > 0 && (tpmValue as number) > keyMaxTPM) {
+        toast({
+          variant: "destructive",
+          title: `TPM exceeds key default (${keyMaxTPM})`,
+        });
+        return;
+      }
+      if (tenantMaxTPM > 0 && (tpmValue as number) > tenantMaxTPM) {
+        toast({
+          variant: "destructive",
+          title: `TPM exceeds tenant cap (${tenantMaxTPM})`,
+        });
+        return;
+      }
+      if (keyMaxParallel > 0 && (parallelValue as number) > keyMaxParallel) {
+        toast({
+          variant: "destructive",
+          title: `Parallel requests exceed key default (${keyMaxParallel})`,
+        });
+        return;
+      }
+      if (
+        tenantMaxParallel > 0 &&
+        (parallelValue as number) > tenantMaxParallel
+      ) {
+        toast({
+          variant: "destructive",
+          title: `Parallel requests exceed tenant cap (${tenantMaxParallel})`,
+        });
+        return;
+      }
+      payload.rate_limits = {
+        requests_per_minute: rpmValue,
+        tokens_per_minute: tpmValue,
+        parallel_requests: parallelValue,
+      };
+    }
 
     try {
       const result = await createKeyMutation.mutateAsync({
@@ -207,6 +333,9 @@ export function KeysPage() {
       setKeyName("");
       setBudgetUsd("");
       setWarningThreshold("");
+      setRequestsPerMinute("");
+      setTokensPerMinute("");
+      setParallelRequests("");
       setCreateOpen(false);
     } catch (error) {
       console.error(error);
@@ -252,6 +381,9 @@ export function KeysPage() {
     return { limit, warning };
   };
 
+  const selectedTenantBudgetLimit =
+    (selectedTenantId && tenantBudgetMap.get(selectedTenantId)?.limit) ?? null;
+
   const keys: ApiKeyRecord[] = keysQuery.data?.api_keys ?? [];
   const filteredKeys = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -273,6 +405,33 @@ export function KeysPage() {
 
   const activeKeys = keys.filter((key) => !key.revoked);
   const revokedKeys = keys.filter((key) => key.revoked);
+
+  const rateLimitDefaults = rateLimitDefaultsQuery.data;
+  const defaultKeyRateLimit = useMemo(
+    () =>
+      rateLimitDefaults
+        ? {
+            requests_per_minute: rateLimitDefaults.requests_per_minute,
+            tokens_per_minute: rateLimitDefaults.tokens_per_minute,
+            parallel_requests: rateLimitDefaults.parallel_requests_key,
+          }
+        : null,
+    [rateLimitDefaults],
+  );
+  const defaultTenantRateLimit = useMemo(
+    () =>
+      rateLimitDefaults
+        ? {
+            requests_per_minute: rateLimitDefaults.requests_per_minute,
+            tokens_per_minute: rateLimitDefaults.tokens_per_minute,
+            parallel_requests: rateLimitDefaults.parallel_requests_tenant,
+          }
+        : null,
+    [rateLimitDefaults],
+  );
+  const tenantRateLimitOverride = tenantRateLimitQuery.data;
+  const effectiveTenantRateLimit =
+    tenantRateLimitOverride ?? defaultTenantRateLimit;
 
   const formatBudgetValue = (key: ApiKeyRecord) => {
     const { limit } = resolveBudgetMeta(key);
@@ -367,7 +526,13 @@ export function KeysPage() {
                       id="budget"
                       value={budgetUsd}
                       onChange={(event) => setBudgetUsd(event.target.value)}
-                      placeholder="200"
+                      placeholder={
+                        selectedTenantBudgetLimit
+                          ? `${selectedTenantBudgetLimit.toFixed(2)}`
+                          : budgetDefaults?.default_usd
+                            ? `${budgetDefaults.default_usd}`
+                            : "Budget"
+                      }
                     />
                   </div>
                   <div className="space-y-2">
@@ -379,6 +544,59 @@ export function KeysPage() {
                         setWarningThreshold(event.target.value)
                       }
                       placeholder="0.8"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Rate limit override (optional)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Max per key:{" "}
+                      {defaultKeyRateLimit?.requests_per_minute ?? "—"} RPM /{" "}
+                      {defaultKeyRateLimit?.tokens_per_minute ?? "—"} TPM /{" "}
+                      {defaultKeyRateLimit?.parallel_requests ?? "—"} parallel
+                    </p>
+                  </div>
+                  {effectiveTenantRateLimit ? (
+                    <p className="text-xs text-muted-foreground">
+                      Tenant cap: {effectiveTenantRateLimit.requests_per_minute} RPM ·{" "}
+                      {effectiveTenantRateLimit.tokens_per_minute} TPM ·{" "}
+                      {effectiveTenantRateLimit.parallel_requests} parallel
+                    </p>
+                  ) : null}
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <Input
+                      id="rpm"
+                      value={requestsPerMinute}
+                      onChange={(event) => setRequestsPerMinute(event.target.value)}
+                      placeholder={
+                        defaultKeyRateLimit?.requests_per_minute
+                          ? `${defaultKeyRateLimit.requests_per_minute}`
+                          : "RPM"
+                      }
+                      aria-label="Requests per minute"
+                    />
+                    <Input
+                      id="tpm"
+                      value={tokensPerMinute}
+                      onChange={(event) => setTokensPerMinute(event.target.value)}
+                      placeholder={
+                        defaultKeyRateLimit?.tokens_per_minute
+                          ? `${defaultKeyRateLimit.tokens_per_minute}`
+                          : "Tokens per minute"
+                      }
+                      aria-label="Tokens per minute"
+                    />
+                    <Input
+                      id="parallel"
+                      value={parallelRequests}
+                      onChange={(event) => setParallelRequests(event.target.value)}
+                      placeholder={
+                        defaultKeyRateLimit?.parallel_requests
+                          ? `${defaultKeyRateLimit.parallel_requests}`
+                          : "Parallel requests"
+                      }
+                      aria-label="Parallel requests"
                     />
                   </div>
                 </div>

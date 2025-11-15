@@ -6,7 +6,7 @@ This guide explains how API consumers interact with Open Model Gateway—both th
 
 1. Ask an administrator to invite you (either to a shared tenant or to create a personal account).
 2. Log in at `https://<gateway-host>/` (use **Continue with SSO** if your org enabled OIDC; otherwise use the local email/password form).
-3. Go to **API Keys** and create an API key for the tenant you want to use. Copy the secret immediately—keys are only shown once.
+3. Go to **API Keys** and create an API key for the tenant you want to use. Copy the secret immediately—keys are only shown once. The dialog lets you specify optional per-key budgets and RPM/TPM/parallel overrides; the UI displays the maximum allowed values based on your personal defaults or the selected tenant so you know the ceiling before issuing a key.
 
 Personal tenants are labelled **Personal** inside the UI and scoped to your user account only.
 

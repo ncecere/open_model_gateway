@@ -48,6 +48,11 @@ export type CreateUserAPIKeyRequest = {
     budget_usd?: number;
     warning_threshold?: number;
   };
+  rate_limits?: {
+    requests_per_minute?: number;
+    tokens_per_minute?: number;
+    parallel_requests?: number;
+  };
 };
 
 export type CreateUserAPIKeyResponse = {

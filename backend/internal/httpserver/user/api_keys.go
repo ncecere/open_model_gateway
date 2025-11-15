@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,10 +12,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/auth"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/limits"
 	usageservice "github.com/ncecere/open_model_gateway/backend/internal/services/usage"
 )
 
@@ -50,10 +53,17 @@ type rateLimitPayload struct {
 	Tenant rateLimitDetails `json:"tenant"`
 }
 
+type apiKeyRateLimitRequest struct {
+	RequestsPerMinute int `json:"requests_per_minute"`
+	TokensPerMinute   int `json:"tokens_per_minute"`
+	ParallelRequests  int `json:"parallel_requests"`
+}
+
 type createUserAPIKeyRequest struct {
-	Name   string        `json:"name"`
-	Scopes []string      `json:"scopes"`
-	Quota  *quotaPayload `json:"quota"`
+	Name       string                  `json:"name"`
+	Scopes     []string                `json:"scopes"`
+	Quota      *quotaPayload           `json:"quota"`
+	RateLimits *apiKeyRateLimitRequest `json:"rate_limits,omitempty"`
 }
 
 type createUserAPIKeyResponse struct {
@@ -102,6 +112,9 @@ func (h *userHandler) createAPIKey(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
+	if h.container == nil || h.container.Config == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "configuration unavailable")
+	}
 
 	var req createUserAPIKeyRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -124,6 +137,10 @@ func (h *userHandler) createAPIKey(c *fiber.Ctx) error {
 		user = updated
 		tenantID = tenant.ID
 	}
+	tenantUUID, err := uuidFromPg(tenantID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "invalid tenant id")
+	}
 
 	scopesJSON, err := marshalScopes(req.Scopes)
 	if err != nil {
@@ -132,6 +149,13 @@ func (h *userHandler) createAPIKey(c *fiber.Ctx) error {
 	quotaJSON, err := marshalQuota(req.Quota)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid quota")
+	}
+	if err := validateQuotaForLimit(req.Quota, h.container.Config.Budgets.DefaultUSD); err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
+	}
+	rateLimitCfg, err := validateAPIKeyRateLimit(h.container, tenantUUID, req.RateLimits)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
 
 	prefix, secret, token, err := auth.GenerateAPIKey()
@@ -155,6 +179,11 @@ func (h *userHandler) createAPIKey(c *fiber.Ctx) error {
 	})
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if rateLimitCfg != nil {
+		if err := applyAPIKeyRateLimit(c.Context(), h.container, record, rateLimitCfg); err != nil {
+			return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+		}
 	}
 
 	resp, err := h.buildUserAPIKeyResponse(c.Context(), record)
@@ -289,6 +318,9 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
+	if h.container == nil || h.container.Config == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "configuration unavailable")
+	}
 	tenantUUID, err := uuid.Parse(strings.TrimSpace(c.Params("tenantID")))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
@@ -319,6 +351,17 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid quota")
 	}
+	budgetLimit, _, err := h.container.EffectiveTenantBudget(c.Context(), tenantUUID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if err := validateQuotaForLimit(req.Quota, budgetLimit); err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
+	}
+	rateLimitCfg, err := validateAPIKeyRateLimit(h.container, tenantUUID, req.RateLimits)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
+	}
 	prefix, secret, token, err := auth.GenerateAPIKey()
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to generate api key")
@@ -339,6 +382,11 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 	})
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if rateLimitCfg != nil {
+		if err := applyAPIKeyRateLimit(c.Context(), h.container, record, rateLimitCfg); err != nil {
+			return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+		}
 	}
 	resp, err := h.buildUserAPIKeyResponse(c.Context(), record)
 	if err != nil {
@@ -626,4 +674,82 @@ func unmarshalQuota(raw []byte) (*quotaPayload, error) {
 		return nil, err
 	}
 	return &qp, nil
+}
+
+func validateAPIKeyRateLimit(container *app.Container, tenantID uuid.UUID, payload *apiKeyRateLimitRequest) (*limits.LimitConfig, error) {
+	if container == nil || payload == nil {
+		return nil, nil
+	}
+	rpm := payload.RequestsPerMinute
+	tpm := payload.TokensPerMinute
+	parallel := payload.ParallelRequests
+	if rpm == 0 && tpm == 0 && parallel == 0 {
+		return nil, nil
+	}
+	if rpm <= 0 || tpm <= 0 || parallel <= 0 {
+		return nil, fmt.Errorf("rate limits must be positive integers")
+	}
+	keyCfg, tenantCfg := container.EffectiveRateLimits("", tenantID)
+	if tenantCfg.RequestsPerMinute > 0 && rpm > tenantCfg.RequestsPerMinute {
+		return nil, fmt.Errorf("requests_per_minute cannot exceed tenant limit (%d)", tenantCfg.RequestsPerMinute)
+	}
+	if keyCfg.RequestsPerMinute > 0 && rpm > keyCfg.RequestsPerMinute {
+		return nil, fmt.Errorf("requests_per_minute cannot exceed default limit (%d)", keyCfg.RequestsPerMinute)
+	}
+	if tenantCfg.TokensPerMinute > 0 && tpm > tenantCfg.TokensPerMinute {
+		return nil, fmt.Errorf("tokens_per_minute cannot exceed tenant limit (%d)", tenantCfg.TokensPerMinute)
+	}
+	if keyCfg.TokensPerMinute > 0 && tpm > keyCfg.TokensPerMinute {
+		return nil, fmt.Errorf("tokens_per_minute cannot exceed default limit (%d)", keyCfg.TokensPerMinute)
+	}
+	if tenantCfg.ParallelRequests > 0 && parallel > tenantCfg.ParallelRequests {
+		return nil, fmt.Errorf("parallel_requests cannot exceed tenant limit (%d)", tenantCfg.ParallelRequests)
+	}
+	if keyCfg.ParallelRequests > 0 && parallel > keyCfg.ParallelRequests {
+		return nil, fmt.Errorf("parallel_requests cannot exceed default limit (%d)", keyCfg.ParallelRequests)
+	}
+	return &limits.LimitConfig{
+		RequestsPerMinute: rpm,
+		TokensPerMinute:   tpm,
+		ParallelRequests:  parallel,
+	}, nil
+}
+
+func applyAPIKeyRateLimit(ctx context.Context, container *app.Container, record db.ApiKey, cfg *limits.LimitConfig) error {
+	if container == nil || container.Queries == nil {
+		return errors.New("rate limit persistence unavailable")
+	}
+	if cfg == nil {
+		if _, err := container.Queries.DeleteAPIKeyRateLimit(ctx, record.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		container.UpdateAPIKeyRateLimit(record.Prefix, nil)
+		return nil
+	}
+	if _, err := container.Queries.UpsertAPIKeyRateLimit(ctx, db.UpsertAPIKeyRateLimitParams{
+		ApiKeyID:          record.ID,
+		RequestsPerMinute: int32(cfg.RequestsPerMinute),
+		TokensPerMinute:   int32(cfg.TokensPerMinute),
+		ParallelRequests:  int32(cfg.ParallelRequests),
+	}); err != nil {
+		return err
+	}
+	container.UpdateAPIKeyRateLimit(record.Prefix, cfg)
+	return nil
+}
+
+func validateQuotaForLimit(quota *quotaPayload, limit float64) error {
+	if quota == nil {
+		return nil
+	}
+	if quota.BudgetUSD < 0 {
+		return fmt.Errorf("budget must be positive")
+	}
+	if quota.BudgetUSD > 0 && limit > 0 && quota.BudgetUSD > limit {
+		return fmt.Errorf("budget cannot exceed tenant limit (%.2f)", limit)
+	}
+	if quota.WarningThreshold < 0 || quota.WarningThreshold > 1 {
+		return fmt.Errorf("warning threshold must be between 0 and 1")
+	}
+	return nil
 }

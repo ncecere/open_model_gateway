@@ -37,7 +37,10 @@ import {
 import { BudgetMeter } from "@/ui/kit/BudgetMeter";
 import { useToast } from "@/hooks/use-toast";
 import { computeNextResetDate, formatScheduleLabel } from "@/features/api-keys";
-import type { UserAPIKey } from "../../../api/user/api-keys";
+import type {
+  CreateUserAPIKeyRequest,
+  UserAPIKey,
+} from "../../../api/user/api-keys";
 import {
   useCreateUserAPIKeyMutation,
   useCreateTenantAPIKeyMutation,
@@ -82,6 +85,10 @@ export function UserApiKeysPage() {
   );
   const { data: personalKeys, isLoading: personalLoading } = useUserAPIKeysQuery();
   const { data: tenants } = useUserTenantsQuery();
+  const personalTenantId = useMemo(
+    () => tenants?.find((tenant) => tenant.is_personal)?.tenant_id,
+    [tenants],
+  );
   const tenantOptions = useMemo(
     () => (tenants ?? []).filter((tenant) => !tenant.is_personal),
     [tenants],
@@ -122,6 +129,12 @@ export function UserApiKeysPage() {
     });
     return map;
   }, [tenantSummaryQueries, uniqueBudgetTenantIds]);
+  const personalBudgetLimit =
+    (personalTenantId && tenantBudgetMap.get(personalTenantId)?.limit_usd) ??
+    null;
+  const selectedTenantBudgetSummary = selectedTenantId
+    ? tenantBudgetMap.get(selectedTenantId)
+    : null;
   const tenantRole = tenantKeyData?.role;
   const tenantKeys = tenantKeyData?.api_keys ?? [];
   const tenantActiveKeys = tenantKeys.filter((key) => !key.revoked);
@@ -138,20 +151,125 @@ export function UserApiKeysPage() {
   const { toast } = useToast();
 
   const [name, setName] = useState("");
+  const [personalBudgetUsd, setPersonalBudgetUsd] = useState("");
+  const [personalWarningThreshold, setPersonalWarningThreshold] = useState("");
+  const [personalRPM, setPersonalRPM] = useState("");
+  const [personalTPM, setPersonalTPM] = useState("");
+  const [personalParallel, setPersonalParallel] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [tenantCreateOpen, setTenantCreateOpen] = useState(false);
   const [tenantKeyName, setTenantKeyName] = useState("");
+  const [tenantBudgetUsd, setTenantBudgetUsd] = useState("");
+  const [tenantWarningThreshold, setTenantWarningThreshold] = useState("");
+  const [tenantRPM, setTenantRPM] = useState("");
+  const [tenantTPM, setTenantTPM] = useState("");
+  const [tenantParallel, setTenantParallel] = useState("");
   const [issuedSecret, setIssuedSecret] = useState<IssuedSecret>(null);
+
+  useEffect(() => {
+    if (!createOpen) {
+      setName("");
+      setPersonalBudgetUsd("");
+      setPersonalWarningThreshold("");
+      setPersonalRPM("");
+      setPersonalTPM("");
+      setPersonalParallel("");
+    }
+  }, [createOpen]);
+
+  useEffect(() => {
+    if (!tenantCreateOpen) {
+      setTenantKeyName("");
+      setTenantBudgetUsd("");
+      setTenantWarningThreshold("");
+      setTenantRPM("");
+      setTenantTPM("");
+      setTenantParallel("");
+    }
+  }, [tenantCreateOpen]);
 
   const handleCreate = async () => {
     if (!name.trim()) {
       toast({ variant: "destructive", title: "Name is required" });
       return;
     }
-    try {
-      const result = await createMutation.mutateAsync({
-        name: name.trim(),
+    const payload: CreateUserAPIKeyRequest = {
+      name: name.trim(),
+    };
+    const budgetValue = Number(personalBudgetUsd);
+    const thresholdValue = Number(personalWarningThreshold);
+    if (
+      personalWarningThreshold &&
+      (!Number.isFinite(thresholdValue) ||
+        thresholdValue <= 0 ||
+        thresholdValue > 1)
+    ) {
+      toast({
+        variant: "destructive",
+        title: "Warning threshold must be between 0 and 1",
       });
+      return;
+    }
+    if (personalBudgetUsd && Number.isFinite(budgetValue)) {
+      if (
+        personalBudgetLimit &&
+        budgetValue > personalBudgetLimit
+      ) {
+        toast({
+          variant: "destructive",
+          title: `Budget exceeds limit ($${personalBudgetLimit.toFixed(2)})`,
+        });
+        return;
+      }
+      payload.quota = {
+        budget_usd: budgetValue,
+        warning_threshold: Number.isFinite(thresholdValue)
+          ? thresholdValue
+          : undefined,
+      };
+    } else if (personalWarningThreshold) {
+      payload.quota = {
+        warning_threshold: Number.isFinite(thresholdValue)
+          ? thresholdValue
+          : undefined,
+      };
+    }
+    const rpmValue = personalRPM.trim()
+      ? Number.parseInt(personalRPM.trim(), 10)
+      : undefined;
+    const tpmValue = personalTPM.trim()
+      ? Number.parseInt(personalTPM.trim(), 10)
+      : undefined;
+    const parallelValue = personalParallel.trim()
+      ? Number.parseInt(personalParallel.trim(), 10)
+      : undefined;
+    if (
+      rpmValue !== undefined ||
+      tpmValue !== undefined ||
+      parallelValue !== undefined
+    ) {
+      if (
+        !rpmValue ||
+        !tpmValue ||
+        !parallelValue ||
+        rpmValue <= 0 ||
+        tpmValue <= 0 ||
+        parallelValue <= 0
+      ) {
+        toast({
+          variant: "destructive",
+          title: "Rate limits must be positive integers",
+        });
+        return;
+      }
+      payload.rate_limits = {
+        requests_per_minute: rpmValue,
+        tokens_per_minute: tpmValue,
+        parallel_requests: parallelValue,
+      };
+    }
+    try {
+      const result = await createMutation.mutateAsync(payload);
       setIssuedSecret({
         scope: "personal",
         name: result.api_key.name,
@@ -159,7 +277,6 @@ export function UserApiKeysPage() {
         secret: result.secret,
         token: result.token,
       });
-      setName("");
       setCreateOpen(false);
       toast({ title: "API key created", description: "Copy the secret now." });
     } catch (error) {
@@ -181,12 +298,87 @@ export function UserApiKeysPage() {
       toast({ variant: "destructive", title: "Name is required" });
       return;
     }
+    const payload: CreateUserAPIKeyRequest = {
+      name: tenantKeyName.trim(),
+    };
+    const tenantBudgetValue = Number(tenantBudgetUsd);
+    const tenantThresholdValue = Number(tenantWarningThreshold);
+    if (
+      tenantWarningThreshold &&
+      (!Number.isFinite(tenantThresholdValue) ||
+        tenantThresholdValue <= 0 ||
+        tenantThresholdValue > 1)
+    ) {
+      toast({
+        variant: "destructive",
+        title: "Warning threshold must be between 0 and 1",
+      });
+      return;
+    }
+    if (tenantBudgetUsd && Number.isFinite(tenantBudgetValue)) {
+      if (
+        selectedTenantBudgetSummary?.limit_usd &&
+        tenantBudgetValue > selectedTenantBudgetSummary.limit_usd
+      ) {
+        toast({
+          variant: "destructive",
+          title: `Budget exceeds tenant cap ($${selectedTenantBudgetSummary.limit_usd.toFixed(
+            2,
+          )})`,
+        });
+        return;
+      }
+      payload.quota = {
+        budget_usd: tenantBudgetValue,
+        warning_threshold: Number.isFinite(tenantThresholdValue)
+          ? tenantThresholdValue
+          : undefined,
+      };
+    } else if (tenantWarningThreshold) {
+      payload.quota = {
+        warning_threshold: Number.isFinite(tenantThresholdValue)
+          ? tenantThresholdValue
+          : undefined,
+      };
+    }
+    const rpmValue = tenantRPM.trim()
+      ? Number.parseInt(tenantRPM.trim(), 10)
+      : undefined;
+    const tpmValue = tenantTPM.trim()
+      ? Number.parseInt(tenantTPM.trim(), 10)
+      : undefined;
+    const parallelValue = tenantParallel.trim()
+      ? Number.parseInt(tenantParallel.trim(), 10)
+      : undefined;
+    if (
+      rpmValue !== undefined ||
+      tpmValue !== undefined ||
+      parallelValue !== undefined
+    ) {
+      if (
+        !rpmValue ||
+        !tpmValue ||
+        !parallelValue ||
+        rpmValue <= 0 ||
+        tpmValue <= 0 ||
+        parallelValue <= 0
+      ) {
+        toast({
+          variant: "destructive",
+          title: "Rate limits must be positive integers",
+        });
+        return;
+      }
+      payload.rate_limits = {
+        requests_per_minute: rpmValue,
+        tokens_per_minute: tpmValue,
+        parallel_requests: parallelValue,
+      };
+    }
     try {
       const result = await tenantCreateMutation.mutateAsync({
         tenantId: selectedTenantId,
-        payload: {
-          name: tenantKeyName.trim(),
-        },
+        payload,
       });
       setIssuedSecret({
         scope: "tenant",
@@ -196,7 +388,6 @@ export function UserApiKeysPage() {
         secret: result.secret,
         token: result.token,
       });
-      setTenantKeyName("");
       setTenantCreateOpen(false);
       toast({
         title: "Tenant API key created",
@@ -386,6 +577,57 @@ export function UserApiKeysPage() {
                       placeholder="My personal key"
                     />
                   </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="personal-budget">Budget (USD)</Label>
+                      <Input
+                        id="personal-budget"
+                        value={personalBudgetUsd}
+                        onChange={(event) => setPersonalBudgetUsd(event.target.value)}
+                        placeholder={
+                          personalBudgetLimit
+                            ? `${personalBudgetLimit.toFixed(2)}`
+                            : "Budget"
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="personal-threshold">Warning threshold</Label>
+                      <Input
+                        id="personal-threshold"
+                        value={personalWarningThreshold}
+                        onChange={(event) =>
+                          setPersonalWarningThreshold(event.target.value)
+                        }
+                        placeholder="0.8"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Rate limits (optional)</Label>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <Input
+                        value={personalRPM}
+                        onChange={(event) => setPersonalRPM(event.target.value)}
+                        placeholder="RPM"
+                        aria-label="Requests per minute"
+                      />
+                      <Input
+                        value={personalTPM}
+                        onChange={(event) => setPersonalTPM(event.target.value)}
+                        placeholder="TPM"
+                        aria-label="Tokens per minute"
+                      />
+                      <Input
+                        value={personalParallel}
+                        onChange={(event) =>
+                          setPersonalParallel(event.target.value)
+                        }
+                        placeholder="Parallel"
+                        aria-label="Parallel requests"
+                      />
+                    </div>
+                  </div>
                 </div>
                 <DialogFooter>
                   <Button
@@ -487,20 +729,71 @@ export function UserApiKeysPage() {
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="tenant-key-name">Name</Label>
+                      <Input
+                        id="tenant-key-name"
+                        value={tenantKeyName}
+                        onChange={(event) => setTenantKeyName(event.target.value)}
+                        placeholder="Shared key"
+                      />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="tenant-key-name">Name</Label>
+                        <Label htmlFor="tenant-budget">Budget (USD)</Label>
                         <Input
-                          id="tenant-key-name"
-                          value={tenantKeyName}
-                          onChange={(event) => setTenantKeyName(event.target.value)}
-                          placeholder="Shared key"
+                          id="tenant-budget"
+                          value={tenantBudgetUsd}
+                          onChange={(event) => setTenantBudgetUsd(event.target.value)}
+                          placeholder={
+                            selectedTenantBudgetSummary
+                              ? `${selectedTenantBudgetSummary.limit_usd.toFixed(2)}`
+                              : "Budget"
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tenant-threshold">Warning threshold</Label>
+                        <Input
+                          id="tenant-threshold"
+                          value={tenantWarningThreshold}
+                          onChange={(event) =>
+                            setTenantWarningThreshold(event.target.value)
+                          }
+                          placeholder="0.8"
                         />
                       </div>
                     </div>
-                    <DialogFooter>
-                      <Button
-                        onClick={handleTenantCreate}
-                        disabled={tenantCreateMutation.isPending}
+                    <div className="space-y-2">
+                      <Label>Rate limits (optional)</Label>
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <Input
+                          value={tenantRPM}
+                          onChange={(event) => setTenantRPM(event.target.value)}
+                          placeholder="RPM"
+                          aria-label="Requests per minute"
+                        />
+                        <Input
+                          value={tenantTPM}
+                          onChange={(event) => setTenantTPM(event.target.value)}
+                          placeholder="TPM"
+                          aria-label="Tokens per minute"
+                        />
+                        <Input
+                          value={tenantParallel}
+                          onChange={(event) =>
+                            setTenantParallel(event.target.value)
+                          }
+                          placeholder="Parallel"
+                          aria-label="Parallel requests"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      onClick={handleTenantCreate}
+                      disabled={tenantCreateMutation.isPending}
                       >
                         Issue key
                       </Button>

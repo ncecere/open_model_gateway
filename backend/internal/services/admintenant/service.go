@@ -30,10 +30,11 @@ type Service struct {
 	adminAuth       *auth.AdminAuthService
 	setTenantModels func(uuid.UUID, []string)
 	setTenantRate   func(uuid.UUID, *limits.LimitConfig)
+	setAPIKeyRate   func(string, *limits.LimitConfig)
 }
 
 // NewService builds an admin tenant service.
-func NewService(cfg *config.Config, queries *db.Queries, tz *time.Location, pool *pgxpool.Pool, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, setTenantModels func(uuid.UUID, []string), setTenantRate func(uuid.UUID, *limits.LimitConfig)) *Service {
+func NewService(cfg *config.Config, queries *db.Queries, tz *time.Location, pool *pgxpool.Pool, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, setTenantModels func(uuid.UUID, []string), setTenantRate func(uuid.UUID, *limits.LimitConfig), setAPIKeyRate func(string, *limits.LimitConfig)) *Service {
 	if tz == nil {
 		tz = time.UTC
 	}
@@ -46,6 +47,7 @@ func NewService(cfg *config.Config, queries *db.Queries, tz *time.Location, pool
 		adminAuth:       adminAuth,
 		setTenantModels: setTenantModels,
 		setTenantRate:   setTenantRate,
+		setAPIKeyRate:   setAPIKeyRate,
 	}
 }
 
@@ -71,15 +73,15 @@ type ListItem struct {
 
 // PersonalListItem represents a personal tenant linked to a specific user.
 type PersonalListItem struct {
-	TenantID       uuid.UUID
-	UserID         uuid.UUID
-	UserEmail      string
-	UserName       string
-	Status         db.TenantStatus
-	CreatedAt      time.Time
-	BudgetLimitUSD float64
-	BudgetUsedUSD  float64
-	WarningThresh  *float64
+	TenantID        uuid.UUID
+	UserID          uuid.UUID
+	UserEmail       string
+	UserName        string
+	Status          db.TenantStatus
+	CreatedAt       time.Time
+	BudgetLimitUSD  float64
+	BudgetUsedUSD   float64
+	WarningThresh   *float64
 	MembershipCount int64
 }
 
@@ -212,15 +214,15 @@ func (s *Service) ListPersonal(ctx context.Context, limit, offset int32) ([]Pers
 			return nil, err
 		}
 		items = append(items, PersonalListItem{
-			TenantID:       tenantID,
-			UserID:         userID,
-			UserEmail:      rec.UserEmail,
-			UserName:       rec.UserName,
-			Status:         rec.Status,
-			CreatedAt:      created.In(s.timezone),
-			BudgetLimitUSD: limitUSD,
-			BudgetUsedUSD:  used,
-			WarningThresh:  warnPtr,
+			TenantID:        tenantID,
+			UserID:          userID,
+			UserEmail:       rec.UserEmail,
+			UserName:        rec.UserName,
+			Status:          rec.Status,
+			CreatedAt:       created.In(s.timezone),
+			BudgetLimitUSD:  limitUSD,
+			BudgetUsedUSD:   used,
+			WarningThresh:   warnPtr,
 			MembershipCount: rec.MembershipCount,
 		})
 	}
@@ -326,7 +328,7 @@ type APIKeyCreateResult struct {
 }
 
 // CreateAPIKey issues a new service key.
-func (s *Service) CreateAPIKey(ctx context.Context, tenantID uuid.UUID, name string, scopesJSON, quotaJSON []byte) (APIKeyCreateResult, error) {
+func (s *Service) CreateAPIKey(ctx context.Context, tenantID uuid.UUID, name string, scopesJSON, quotaJSON []byte, rateLimit *limits.LimitConfig) (APIKeyCreateResult, error) {
 	if s == nil || s.queries == nil {
 		return APIKeyCreateResult{}, ErrServiceUnavailable
 	}
@@ -350,6 +352,19 @@ func (s *Service) CreateAPIKey(ctx context.Context, tenantID uuid.UUID, name str
 	})
 	if err != nil {
 		return APIKeyCreateResult{}, err
+	}
+	if rateLimit != nil {
+		if _, err := s.queries.UpsertAPIKeyRateLimit(ctx, db.UpsertAPIKeyRateLimitParams{
+			ApiKeyID:          key.ID,
+			RequestsPerMinute: int32(rateLimit.RequestsPerMinute),
+			TokensPerMinute:   int32(rateLimit.TokensPerMinute),
+			ParallelRequests:  int32(rateLimit.ParallelRequests),
+		}); err != nil {
+			return APIKeyCreateResult{}, err
+		}
+		if s.setAPIKeyRate != nil {
+			s.setAPIKeyRate(prefix, rateLimit)
+		}
 	}
 	return APIKeyCreateResult{Key: key, Secret: secret, Token: token}, nil
 }
@@ -510,10 +525,10 @@ func (s *Service) UpsertTenantRateLimitOverride(ctx context.Context, tenantID uu
 		return limits.LimitConfig{}, ErrInvalidRateLimit
 	}
 	record, err := s.queries.UpsertTenantRateLimit(ctx, db.UpsertTenantRateLimitParams{
-		TenantID:           toPgUUID(tenantID),
-		RequestsPerMinute:  int32(req.RequestsPerMinute),
-		TokensPerMinute:    int32(req.TokensPerMinute),
-		ParallelRequests:   int32(req.ParallelRequests),
+		TenantID:          toPgUUID(tenantID),
+		RequestsPerMinute: int32(req.RequestsPerMinute),
+		TokensPerMinute:   int32(req.TokensPerMinute),
+		ParallelRequests:  int32(req.ParallelRequests),
 	})
 	if err != nil {
 		return limits.LimitConfig{}, err

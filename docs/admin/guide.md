@@ -84,6 +84,7 @@ When a provider does not support an operation the router returns a structured er
 - Admin portal (`/admin`) lets you manage tenants, rate limits, budgets, model catalog entries, and bootstrap settings.
 - Tenant create/edit dialogs expose RPM, TPM, and parallel request inputs. Leaving the fields blank inherits the global defaults (`rate_limits.*`); setting all three persists a tenant-level override via `PUT /admin/tenants/:id/rate-limits`. The cap applies to every key under that tenant before per-key overrides are considered, so keys can never exceed the tenant ceiling.
 - Use the “Clear rate limit override” action (or `DELETE /admin/tenants/:id/rate-limits`) to fall back to defaults after tightening limits for an incident.
+- API key dialogs let operators specify per-key budgets and RPM/TPM/parallel overrides. The form highlights the effective tenant and global ceilings so you can see the maximum allowed values before issuing the key; the backend enforces the same limits for requests made via the API.
 - User portal (`/`) allows non-admin accounts to access personal tenants, API keys, usage dashboards, and batch artifacts.
 - API endpoints under `/admin/**` and `/user/**` mirror the UI functionality; use them for automation.
 

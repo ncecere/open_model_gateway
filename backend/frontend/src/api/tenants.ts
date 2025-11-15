@@ -106,6 +106,12 @@ export interface ApiKeyRateLimits {
   tenant: RateLimitInfo;
 }
 
+export interface ApiKeyRateLimitOverride {
+  requests_per_minute?: number;
+  tokens_per_minute?: number;
+  parallel_requests?: number;
+}
+
 export interface TenantRateLimitOverride {
   requests_per_minute: number;
   tokens_per_minute: number;
@@ -149,6 +155,7 @@ export interface CreateApiKeyRequest {
   name: string;
   scopes?: string[];
   quota?: QuotaPayload;
+  rate_limits?: ApiKeyRateLimitOverride;
 }
 
 export interface CreateApiKeyResponse {

@@ -8,10 +8,10 @@
 - Add validation/tests to cover limit inheritance, API error paths, and UI behaviors; document the new workflow so operators understand how tenant ceilings interact with API key overrides.
 
 ## Checklist
-- [ ] Schema & queries: add nullable budget/rate limit fields to `api_keys` (or dedicated tables) and regenerate SQLC so service layers can persist them outside bootstrap.
-- [ ] Backend services & handlers: update admin/user API key create/update endpoints to accept `{budget_usd, warning_threshold, requests_per_minute, tokens_per_minute, parallel_requests}` and enforce the correct ceilings (global default → tenant override → key override).
-- [ ] Runtime limiter integration: ensure `Container.KeyRateLimits` loads from the new storage so runtime enforcement reflects user-configured values immediately.
-- [ ] Admin portal UI: expose budget + RPM/TPM/parallel inputs in the tenant API key create/edit dialogs, showing inherited max values and validation errors.
-- [ ] User portal UI: allow personal-tenant users to set the same controls (bounded by their defaults) when creating/rotating keys.
-- [ ] Tests: add backend unit tests for validation/enforcement plus frontend form tests (or e2e coverage) to lock the new workflows.
-- [ ] Docs: update admin/user guides + changelog to describe the self-service API key limits and inheritance rules.
+- [x] Schema & queries: add nullable budget/rate limit fields to `api_keys` (or dedicated tables) and regenerate SQLC so service layers can persist them outside bootstrap.
+- [x] Backend services & handlers: update admin/user API key create/update endpoints to accept `{budget_usd, warning_threshold, requests_per_minute, tokens_per_minute, parallel_requests}` and enforce the correct ceilings (global default → tenant override → key override).
+- [x] Runtime limiter integration: ensure `Container.KeyRateLimits` loads from the new storage so runtime enforcement reflects user-configured values immediately.
+- [x] Admin portal UI: expose budget + RPM/TPM/parallel inputs in the tenant API key create/edit dialogs, showing inherited max values and validation errors.
+- [x] User portal UI: allow personal-tenant users to set the same controls (bounded by their defaults) when creating/rotating keys.
+- [x] Tests: add backend unit tests for validation/enforcement plus frontend form tests (or e2e coverage) to lock the new workflows.
+- [x] Docs: update admin/user guides + changelog to describe the self-service API key limits and inheritance rules.

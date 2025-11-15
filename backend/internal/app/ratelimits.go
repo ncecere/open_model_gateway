@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -76,6 +77,30 @@ func LoadTenantRateLimitOverrides(ctx context.Context, queries *db.Queries) (map
 			continue
 		}
 		result[tenantID] = limits.LimitConfig{
+			RequestsPerMinute: int(row.RequestsPerMinute),
+			TokensPerMinute:   int(row.TokensPerMinute),
+			ParallelRequests:  int(row.ParallelRequests),
+		}
+	}
+	return result, nil
+}
+
+// LoadAPIKeyRateLimitOverrides returns key-level overrides stored in the database.
+func LoadAPIKeyRateLimitOverrides(ctx context.Context, queries *db.Queries) (map[string]limits.LimitConfig, error) {
+	result := make(map[string]limits.LimitConfig)
+	if queries == nil {
+		return result, nil
+	}
+	rows, err := queries.ListAPIKeyRateLimits(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		prefix := strings.TrimSpace(row.Prefix)
+		if prefix == "" {
+			continue
+		}
+		result[prefix] = limits.LimitConfig{
 			RequestsPerMinute: int(row.RequestsPerMinute),
 			TokensPerMinute:   int(row.TokensPerMinute),
 			ParallelRequests:  int(row.ParallelRequests),

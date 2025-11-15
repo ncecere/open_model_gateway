@@ -164,6 +164,7 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 
 ### Batches API
 - **Implementation**: Mirror `/v1/batches` upload/list/retrieve/delete endpoints, storing batch metadata and job statuses in Postgres. Reuse the existing internal batch runner but add response payload compatibility (file references, errors array).
+- **Status**: ✅ Completed — `/v1/batches` now matches the OpenAI API, persists artifacts, and surfaces batches in both admin and user portals.
 - **Benefits**: Unlocks high-volume offline workloads and parity with the latest OpenAI SDKs.
 
 ### Files API

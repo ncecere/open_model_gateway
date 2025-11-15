@@ -85,6 +85,7 @@ type Container struct {
 	tenantModelMu      sync.RWMutex
 	tenantModelAccess  map[uuid.UUID]map[string]struct{}
 	tenantRateLimitMu  sync.RWMutex
+	keyRateLimitMu     sync.RWMutex
 	ReportingLocation  *time.Location
 }
 
@@ -153,7 +154,13 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 		return nil, err
 	}
 
-	keyLimitOverrides := make(map[string]limits.LimitConfig)
+	keyLimitOverrides, err := LoadAPIKeyRateLimitOverrides(ctx, queries)
+	if err != nil {
+		return nil, fmt.Errorf("load api key rate limits: %w", err)
+	}
+	if keyLimitOverrides == nil {
+		keyLimitOverrides = make(map[string]limits.LimitConfig)
+	}
 	tenantLimitOverrides, err := LoadTenantRateLimitOverrides(ctx, queries)
 	if err != nil {
 		return nil, fmt.Errorf("load tenant rate limits: %w", err)
@@ -243,7 +250,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	container.AdminCatalog = admincatalogsvc.NewService(queries, container.ReloadRouter)
 	container.AdminBudgets = adminbudgetsvc.NewService(queries, cfg)
 	container.AdminRateLimits = adminratelimitsvc.NewService(queries, cfg)
-container.AdminTenants = admintenantsvc.NewService(cfg, queries, reportingLoc, pool, personalSvc, adminAuth, container.SetTenantModels, container.UpdateTenantRateLimit)
+	container.AdminTenants = admintenantsvc.NewService(cfg, queries, reportingLoc, pool, personalSvc, adminAuth, container.SetTenantModels, container.UpdateTenantRateLimit, container.UpdateAPIKeyRateLimit)
 	container.AdminRBAC = adminrbacsvc.NewService(queries)
 	container.AdminAudit = adminauditsvc.NewService(auditservice.NewService(queries))
 
@@ -421,6 +428,49 @@ func (c *Container) UpdateTenantRateLimit(tenantID uuid.UUID, cfg *limits.LimitC
 	c.TenantRateLimits[tenantID] = *cfg
 }
 
+// UpdateAPIKeyRateLimit overrides (or clears) the key-level rate limit.
+func (c *Container) UpdateAPIKeyRateLimit(prefix string, cfg *limits.LimitConfig) {
+	if c == nil {
+		return
+	}
+	c.keyRateLimitMu.Lock()
+	defer c.keyRateLimitMu.Unlock()
+	if c.KeyRateLimits == nil {
+		c.KeyRateLimits = make(map[string]limits.LimitConfig)
+	}
+	if cfg == nil {
+		delete(c.KeyRateLimits, prefix)
+		return
+	}
+	c.KeyRateLimits[prefix] = *cfg
+}
+
+// EffectiveTenantBudget returns the tenant's budget limit (USD) and warning threshold.
+func (c *Container) EffectiveTenantBudget(ctx context.Context, tenantID uuid.UUID) (float64, float64, error) {
+	if c == nil || c.Config == nil {
+		return 0, 0, errors.New("configuration unavailable")
+	}
+	limit := c.Config.Budgets.DefaultUSD
+	warning := c.Config.Budgets.WarningThresholdPerc
+	if tenantID == uuid.Nil || c.Queries == nil {
+		return limit, warning, nil
+	}
+	override, err := c.Queries.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return limit, warning, nil
+		}
+		return 0, 0, err
+	}
+	if value, ok := override.BudgetUsd.Float64(); ok && value > 0 {
+		limit = value
+	}
+	if value, ok := override.WarningThreshold.Float64(); ok && value > 0 {
+		warning = value
+	}
+	return limit, warning, nil
+}
+
 func ensureCatalogPersisted(ctx context.Context, queries *db.Queries, entries []config.ModelCatalogEntry) error {
 	for _, entry := range entries {
 		modalitiesJSON, err := json.Marshal(entry.Modalities)
@@ -565,14 +615,17 @@ func ensureBootstrap(ctx context.Context, queries *db.Queries, adminAuth *auth.A
 		if prefix == "" {
 			continue
 		}
-		_, err := queries.GetAPIKeyByPrefix(ctx, prefix)
+		var keyRecord db.ApiKey
 		notFound := false
+		record, err := queries.GetAPIKeyByPrefix(ctx, prefix)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				notFound = true
 			} else {
 				return fmt.Errorf("bootstrap api key %q lookup: %w", prefix, err)
 			}
+		} else {
+			keyRecord = record
 		}
 
 		tenantName := strings.TrimSpace(key.Tenant)
@@ -590,7 +643,7 @@ func ensureBootstrap(ctx context.Context, queries *db.Queries, adminAuth *auth.A
 				return fmt.Errorf("bootstrap api key %q hash: %w", prefix, err)
 			}
 
-			if _, err := queries.CreateAPIKey(ctx, db.CreateAPIKeyParams{
+			created, err := queries.CreateAPIKey(ctx, db.CreateAPIKeyParams{
 				TenantID:    tenant.ID,
 				Prefix:      prefix,
 				SecretHash:  hash,
@@ -599,11 +652,24 @@ func ensureBootstrap(ctx context.Context, queries *db.Queries, adminAuth *auth.A
 				QuotaJson:   []byte("{}"),
 				Kind:        db.ApiKeyKindService,
 				OwnerUserID: pgtype.UUID{Valid: false},
-			}); err != nil {
+			})
+			if err != nil {
 				return fmt.Errorf("bootstrap api key %q create: %w", prefix, err)
 			}
+			keyRecord = created
 		}
-		keyLimits[prefix] = limitFromBootstrapRate(key.RateLimit)
+		override := limitFromBootstrapRate(key.RateLimit)
+		keyLimits[prefix] = override
+		if keyRecord.ID.Valid && (override.RequestsPerMinute > 0 || override.TokensPerMinute > 0 || override.ParallelRequests > 0) {
+			if _, err := queries.UpsertAPIKeyRateLimit(ctx, db.UpsertAPIKeyRateLimitParams{
+				ApiKeyID:          keyRecord.ID,
+				RequestsPerMinute: int32(override.RequestsPerMinute),
+				TokensPerMinute:   int32(override.TokensPerMinute),
+				ParallelRequests:  int32(override.ParallelRequests),
+			}); err != nil {
+				return fmt.Errorf("bootstrap api key %q rate limit upsert: %w", prefix, err)
+			}
+		}
 	}
 
 	for _, member := range bootstrap.Memberships {
@@ -772,9 +838,11 @@ func mergeLimitConfigs(base limits.LimitConfig, override limits.LimitConfig) lim
 // without requiring a request context.
 func (c *Container) EffectiveRateLimits(prefix string, tenantID uuid.UUID) (limits.LimitConfig, limits.LimitConfig) {
 	keyCfg := c.DefaultKeyLimit
+	c.keyRateLimitMu.RLock()
 	if override, ok := c.KeyRateLimits[prefix]; ok {
 		keyCfg = mergeLimitConfigs(keyCfg, override)
 	}
+	c.keyRateLimitMu.RUnlock()
 	tenantCfg := c.DefaultTenantLimit
 	c.tenantRateLimitMu.RLock()
 	override, ok := c.TenantRateLimits[tenantID]
@@ -792,9 +860,11 @@ func (c *Container) ResolveRateLimits(ctx context.Context, alias string) (string
 	}
 
 	keyCfg := c.DefaultKeyLimit
+	c.keyRateLimitMu.RLock()
 	if override, ok := c.KeyRateLimits[rc.APIKeyPrefix]; ok {
 		keyCfg = mergeLimitConfigs(keyCfg, override)
 	}
+	c.keyRateLimitMu.RUnlock()
 	tenantCfg := c.DefaultTenantLimit
 	c.tenantRateLimitMu.RLock()
 	override, ok := c.TenantRateLimits[rc.TenantID]

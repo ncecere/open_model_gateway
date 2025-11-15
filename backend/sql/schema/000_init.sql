@@ -203,6 +203,19 @@ CREATE TRIGGER tenant_rate_limits_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION trigger_set_timestamp();
 
+CREATE TABLE IF NOT EXISTS api_key_rate_limits (
+    api_key_id UUID PRIMARY KEY REFERENCES api_keys(id) ON DELETE CASCADE,
+    requests_per_minute INTEGER NOT NULL CHECK (requests_per_minute >= 0),
+    tokens_per_minute INTEGER NOT NULL CHECK (tokens_per_minute >= 0),
+    parallel_requests INTEGER NOT NULL CHECK (parallel_requests >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TRIGGER api_key_rate_limits_updated_at
+    BEFORE UPDATE ON api_key_rate_limits
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_set_timestamp();
+
 CREATE TABLE IF NOT EXISTS files (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),

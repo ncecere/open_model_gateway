@@ -207,6 +207,15 @@ type ApiKey struct {
 	LastUsedAt  pgtype.Timestamptz `json:"last_used_at"`
 }
 
+type ApiKeyRateLimit struct {
+	ApiKeyID          pgtype.UUID        `json:"api_key_id"`
+	RequestsPerMinute int32              `json:"requests_per_minute"`
+	TokensPerMinute   int32              `json:"tokens_per_minute"`
+	ParallelRequests  int32              `json:"parallel_requests"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Batch struct {
 	ID                    pgtype.UUID        `json:"id"`
 	TenantID              pgtype.UUID        `json:"tenant_id"`

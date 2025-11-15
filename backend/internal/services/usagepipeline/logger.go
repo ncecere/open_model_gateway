@@ -62,6 +62,7 @@ type Record struct {
 	TraceID           string
 	Timestamp         time.Time
 	Success           bool
+	Billable          bool
 	OverrideCostCents *int64
 }
 
@@ -122,7 +123,11 @@ func (l *Logger) Record(ctx context.Context, rec Record) (BudgetStatus, error) {
 
 	var costCents int64
 	var costMicros int64
-	if rec.Success {
+	chargeable := rec.Success
+	if rec.Billable {
+		chargeable = true
+	}
+	if chargeable {
 		if rec.OverrideCostCents != nil {
 			costCents = *rec.OverrideCostCents
 			costMicros = *rec.OverrideCostCents * 10000 // convert cents to micros (1 cent = 10,000 micros)
@@ -139,7 +144,7 @@ func (l *Logger) Record(ctx context.Context, rec Record) (BudgetStatus, error) {
 	if l.metrics != nil {
 		tenantLabel := rec.Context.TenantID.String()
 		l.metrics.RecordAPILatency(tenantLabel, rec.Alias, rec.Provider, rec.Status, rec.Latency)
-		if rec.Success {
+		if chargeable {
 			l.metrics.RecordTokens(tenantLabel, rec.Alias, rec.Provider, int64(rec.Usage.PromptTokens), int64(rec.Usage.CompletionTokens))
 		}
 	}
@@ -165,6 +170,14 @@ func (l *Logger) Record(ctx context.Context, rec Record) (BudgetStatus, error) {
 	}
 
 	return status, nil
+}
+
+// AlertDispatcher exposes the underlying dispatcher so other services can trigger alerts.
+func (l *Logger) AlertDispatcher() *AlertDispatcher {
+	if l == nil {
+		return nil
+	}
+	return l.alerts
 }
 
 func (l *Logger) insertRequest(ctx context.Context, q *db.Queries, rec Record, ts time.Time, costCents int64, costMicros int64) error {

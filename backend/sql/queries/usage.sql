@@ -37,6 +37,14 @@ WHERE ($1::uuid IS NULL OR tenant_id = $1)
   AND ts >= $2
   AND ts < $3;
 
+-- name: CountGuardrailRequests :one
+SELECT
+    COALESCE(COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked'), 0)::bigint AS guardrail_blocks
+FROM requests
+WHERE ($1::uuid IS NULL OR tenant_id = $1)
+  AND ts >= $2
+  AND ts < $3;
+
 -- name: AggregateUsageDaily :many
 SELECT
     timezone($4::text, date_trunc('day', ts AT TIME ZONE $4::text))::timestamptz AS day,
@@ -45,6 +53,17 @@ SELECT
     COALESCE(SUM(cost_cents), 0)::bigint AS cost_cents,
     COALESCE(SUM(cost_usd_micros), 0)::bigint AS cost_usd_micros
 FROM usage_records
+WHERE ($1::uuid IS NULL OR tenant_id = $1)
+  AND ts >= $2
+  AND ts < $3
+GROUP BY day
+ORDER BY day;
+
+-- name: AggregateGuardrailDaily :many
+SELECT
+    timezone($4::text, date_trunc('day', ts AT TIME ZONE $4::text))::timestamptz AS day,
+    COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+FROM requests
 WHERE ($1::uuid IS NULL OR tenant_id = $1)
   AND ts >= $2
   AND ts < $3
@@ -114,26 +133,42 @@ SELECT
     COALESCE(SUM(u.requests), 0)::bigint AS requests,
     COALESCE(SUM(u.input_tokens + u.output_tokens), 0)::bigint AS tokens,
     COALESCE(SUM(u.cost_cents), 0)::bigint AS cost_cents,
-    COALESCE(SUM(u.cost_usd_micros), 0)::bigint AS cost_usd_micros
+    COALESCE(SUM(u.cost_usd_micros), 0)::bigint AS cost_usd_micros,
+    COALESCE(gr.guardrail_blocks, 0)::bigint AS guardrail_blocks
 FROM usage_records u
 JOIN tenants t ON t.id = u.tenant_id
+LEFT JOIN LATERAL (
+    SELECT COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+    FROM requests r
+    WHERE r.tenant_id = u.tenant_id
+      AND r.ts >= $1
+      AND r.ts < $2
+) gr ON TRUE
 WHERE u.ts >= $1
   AND u.ts < $2
-GROUP BY u.tenant_id, t.name
+GROUP BY u.tenant_id, t.name, gr.guardrail_blocks
 ORDER BY cost_cents DESC, requests DESC
 LIMIT $3;
 
 -- name: AggregateUsageByModel :many
 SELECT
-    model_alias,
+    u.model_alias,
     COALESCE(SUM(requests), 0)::bigint AS requests,
     COALESCE(SUM(input_tokens + output_tokens), 0)::bigint AS tokens,
     COALESCE(SUM(cost_cents), 0)::bigint AS cost_cents,
-    COALESCE(SUM(cost_usd_micros), 0)::bigint AS cost_usd_micros
-FROM usage_records
-WHERE ts >= $1
-  AND ts < $2
-GROUP BY model_alias
+    COALESCE(SUM(cost_usd_micros), 0)::bigint AS cost_usd_micros,
+    COALESCE(gr.guardrail_blocks, 0)::bigint AS guardrail_blocks
+FROM usage_records u
+LEFT JOIN LATERAL (
+    SELECT COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+    FROM requests r
+    WHERE r.model_alias = u.model_alias
+      AND r.ts >= $1
+      AND r.ts < $2
+) gr ON TRUE
+WHERE u.ts >= $1
+  AND u.ts < $2
+GROUP BY u.model_alias, gr.guardrail_blocks
 ORDER BY cost_cents DESC, requests DESC
 LIMIT $3;
 
@@ -145,15 +180,52 @@ SELECT
     COALESCE(SUM(r.requests), 0)::bigint AS requests,
     COALESCE(SUM(r.input_tokens + r.output_tokens), 0)::bigint AS tokens,
     COALESCE(SUM(r.cost_cents), 0)::bigint AS cost_cents,
-    COALESCE(SUM(r.cost_usd_micros), 0)::bigint AS cost_usd_micros
+    COALESCE(SUM(r.cost_usd_micros), 0)::bigint AS cost_usd_micros,
+    COALESCE(gr.guardrail_blocks, 0)::bigint AS guardrail_blocks
 FROM usage_records r
 JOIN api_keys k ON r.api_key_id = k.id
 JOIN users u ON u.id = k.owner_user_id
+LEFT JOIN LATERAL (
+    SELECT COUNT(*) FILTER (WHERE rq.error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+    FROM requests rq
+    JOIN api_keys kk ON rq.api_key_id = kk.id
+    WHERE kk.owner_user_id = k.owner_user_id
+      AND rq.ts >= $1
+      AND rq.ts < $2
+) gr ON TRUE
 WHERE r.ts >= $1
   AND r.ts < $2
-GROUP BY k.owner_user_id, u.email, u.name
+GROUP BY k.owner_user_id, u.email, u.name, gr.guardrail_blocks
 ORDER BY cost_cents DESC, requests DESC
 LIMIT $3;
+
+-- name: AggregateGuardrailByTenant :many
+SELECT
+    tenant_id,
+    COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+FROM requests
+WHERE ts >= $1
+  AND ts < $2
+GROUP BY tenant_id;
+
+-- name: AggregateGuardrailByModel :many
+SELECT
+    model_alias,
+    COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+FROM requests
+WHERE ts >= $1
+  AND ts < $2
+GROUP BY model_alias;
+
+-- name: AggregateGuardrailByUser :many
+SELECT
+    k.owner_user_id AS user_id,
+    COUNT(*) FILTER (WHERE r.error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+FROM requests r
+JOIN api_keys k ON r.api_key_id = k.id
+WHERE r.ts >= $1
+  AND r.ts < $2
+GROUP BY k.owner_user_id;
 
 -- name: AggregateTenantUsageDaily :many
 SELECT

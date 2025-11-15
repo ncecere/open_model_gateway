@@ -238,13 +238,27 @@ func (w *Worker) runChatItem(ctx context.Context, rc *requestctx.Context, traceP
 
 	callCtx := requestctx.WithContext(ctx, rc)
 	traceID := fmt.Sprintf("%s%d", tracePrefix, item.Index)
-	result, err := w.executor.Chat(callCtx, rc, alias, req, traceID, "")
+	result, err := w.executor.Chat(callCtx, rc, alias, req, traceID)
 	if err != nil {
 		status, msg, ok := executor.AsAPIError(err)
 		if !ok {
 			return nil, encodeErrorPayload("provider_error", err.Error())
 		}
 		return nil, encodeErrorPayload(mapStatusToCode(status), msg)
+	}
+	record := usagepipeline.Record{
+		Context:   rc,
+		Alias:     alias,
+		Provider:  result.Provider,
+		Usage:     result.Response.Usage,
+		Latency:   result.Latency,
+		Status:    fiber.StatusOK,
+		TraceID:   traceID,
+		Timestamp: time.Now().UTC(),
+		Success:   true,
+	}
+	if _, err := w.container.UsageLogger.Record(callCtx, record); err != nil {
+		return nil, encodeErrorPayload("usage_error", err.Error())
 	}
 
 	response := convertChatResponse(result.Response, alias)

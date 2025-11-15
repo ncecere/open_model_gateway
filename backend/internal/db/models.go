@@ -294,6 +294,26 @@ type File struct {
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
+type GuardrailEvent struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	ApiKeyID   pgtype.UUID        `json:"api_key_id"`
+	ModelAlias pgtype.Text        `json:"model_alias"`
+	Action     string             `json:"action"`
+	Category   pgtype.Text        `json:"category"`
+	Details    []byte             `json:"details"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type GuardrailPolicy struct {
+	ID         int64              `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	ApiKeyID   pgtype.UUID        `json:"api_key_id"`
+	ConfigJson []byte             `json:"config_json"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ModelCatalog struct {
 	Alias              string             `json:"alias"`
 	Provider           string             `json:"provider"`

@@ -1,5 +1,6 @@
 # Local runtime configuration (contains secrets)
 router.local.yaml
+Plan.md
 
 # OS junk
 .DS_Store

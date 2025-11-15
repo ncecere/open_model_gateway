@@ -143,11 +143,12 @@ type scopeEntry struct {
 
 // UsagePoint is a daily time-series datapoint.
 type UsagePoint struct {
-	Date      string  `json:"date"`
-	Requests  int64   `json:"requests"`
-	Tokens    int64   `json:"tokens"`
-	CostCents int64   `json:"cost_cents"`
-	CostUSD   float64 `json:"cost_usd"`
+	Date            string  `json:"date"`
+	Requests        int64   `json:"requests"`
+	Tokens          int64   `json:"tokens"`
+	CostCents       int64   `json:"cost_cents"`
+	CostUSD         float64 `json:"cost_usd"`
+	GuardrailBlocks int64   `json:"guardrail_blocks,omitempty"`
 }
 
 type UsageCompareSeriesKind string
@@ -275,16 +276,17 @@ type CompareUsageParams struct {
 
 // AdminUsageSummary mirrors the admin usage summary payload.
 type AdminUsageSummary struct {
-	Period         string       `json:"period"`
-	Start          string       `json:"start"`
-	End            string       `json:"end"`
-	Timezone       string       `json:"timezone"`
-	TotalRequests  int64        `json:"total_requests"`
-	TotalTokens    int64        `json:"total_tokens"`
-	TotalCostCents int64        `json:"total_cost_cents"`
-	TotalCostUSD   float64      `json:"total_cost_usd"`
-	Points         []UsagePoint `json:"points"`
-	TenantID       *string      `json:"tenant_id,omitempty"`
+	Period          string       `json:"period"`
+	Start           string       `json:"start"`
+	End             string       `json:"end"`
+	Timezone        string       `json:"timezone"`
+	TotalRequests   int64        `json:"total_requests"`
+	TotalTokens     int64        `json:"total_tokens"`
+	TotalCostCents  int64        `json:"total_cost_cents"`
+	TotalCostUSD    float64      `json:"total_cost_usd"`
+	GuardrailBlocks int64        `json:"guardrail_blocks"`
+	Points          []UsagePoint `json:"points"`
+	TenantID        *string      `json:"tenant_id,omitempty"`
 }
 
 // AdminBreakdownParams configures the admin usage breakdown query.
@@ -300,12 +302,13 @@ type AdminBreakdownParams struct {
 
 // AdminBreakdownItem represents an item row in the breakdown response.
 type AdminBreakdownItem struct {
-	ID        string  `json:"id"`
-	Label     string  `json:"label"`
-	Requests  int64   `json:"requests"`
-	Tokens    int64   `json:"tokens"`
-	CostCents int64   `json:"cost_cents"`
-	CostUSD   float64 `json:"cost_usd"`
+	ID              string  `json:"id"`
+	Label           string  `json:"label"`
+	Requests        int64   `json:"requests"`
+	Tokens          int64   `json:"tokens"`
+	CostCents       int64   `json:"cost_cents"`
+	CostUSD         float64 `json:"cost_usd"`
+	GuardrailBlocks int64   `json:"guardrail_blocks"`
 }
 
 // AdminBreakdownSeries captures the time-series for the selected entity.
@@ -1408,19 +1411,37 @@ func (s *Service) SummarizeAdminUsage(ctx context.Context, period string, tenant
 	if err != nil {
 		return AdminUsageSummary{}, err
 	}
+	guardrailTotal, err := s.queries.CountGuardrailRequests(ctx, db.CountGuardrailRequestsParams{
+		Column1: tenantParam,
+		Ts:      toPgTime(start),
+		Ts_2:    toPgTime(end),
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return AdminUsageSummary{}, err
+	}
+	guardrailRows, err := s.queries.AggregateGuardrailDaily(ctx, db.AggregateGuardrailDailyParams{
+		Column1: tenantParam,
+		Ts:      toPgTime(start),
+		Ts_2:    toPgTime(end),
+		Column4: zone,
+	})
+	if err != nil {
+		return AdminUsageSummary{}, err
+	}
 
-	points := buildAggregateUsagePoints(start, end, dailyRows, loc)
+	points := buildAggregateUsagePoints(start, end, dailyRows, guardrailRows, loc)
 	return AdminUsageSummary{
-		Period:         periodLabel,
-		Start:          start.In(loc).Format(time.RFC3339),
-		End:            end.In(loc).Format(time.RFC3339),
-		Timezone:       zone,
-		TotalRequests:  sum.TotalRequests,
-		TotalTokens:    sum.TotalTokens,
-		TotalCostCents: sum.TotalCostCents,
-		TotalCostUSD:   microsToUSD(sum.TotalCostUsdMicros),
-		Points:         points,
-		TenantID:       tenantRef,
+		Period:          periodLabel,
+		Start:           start.In(loc).Format(time.RFC3339),
+		End:             end.In(loc).Format(time.RFC3339),
+		Timezone:        zone,
+		TotalRequests:   sum.TotalRequests,
+		TotalTokens:     sum.TotalTokens,
+		TotalCostCents:  sum.TotalCostCents,
+		TotalCostUSD:    microsToUSD(sum.TotalCostUsdMicros),
+		GuardrailBlocks: guardrailTotal,
+		Points:          points,
+		TenantID:        tenantRef,
 	}, nil
 }
 
@@ -1496,6 +1517,21 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 
 	switch group {
 	case "tenant":
+		guardrailRows, err := s.queries.AggregateGuardrailByTenant(ctx, db.AggregateGuardrailByTenantParams{
+			Ts:   toPgTime(start),
+			Ts_2: toPgTime(end),
+		})
+		if err != nil {
+			return AdminBreakdown{}, err
+		}
+		guardrailMap := make(map[string]int64, len(guardrailRows))
+		for _, row := range guardrailRows {
+			tenantID, err := uuidFromPg(row.TenantID)
+			if err != nil {
+				continue
+			}
+			guardrailMap[tenantID.String()] = row.GuardrailBlocks
+		}
 		rows, err := s.queries.AggregateUsageByTenant(ctx, db.AggregateUsageByTenantParams{
 			Ts:    toPgTime(start),
 			Ts_2:  toPgTime(end),
@@ -1513,12 +1549,13 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 			id := tenantID.String()
 			labelMap[id] = row.Name
 			result.Items = append(result.Items, AdminBreakdownItem{
-				ID:        id,
-				Label:     row.Name,
-				Requests:  row.Requests,
-				Tokens:    row.Tokens,
-				CostCents: row.CostCents,
-				CostUSD:   microsToUSD(row.CostUsdMicros),
+				ID:              id,
+				Label:           row.Name,
+				Requests:        row.Requests,
+				Tokens:          row.Tokens,
+				CostCents:       row.CostCents,
+				CostUSD:         microsToUSD(row.CostUsdMicros),
+				GuardrailBlocks: guardrailMap[id],
 			})
 		}
 		if selected == "" && len(result.Items) > 0 {
@@ -1545,6 +1582,21 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 			}
 		}
 	case "model":
+		guardrailRows, err := s.queries.AggregateGuardrailByModel(ctx, db.AggregateGuardrailByModelParams{
+			Ts:   toPgTime(start),
+			Ts_2: toPgTime(end),
+		})
+		if err != nil {
+			return AdminBreakdown{}, err
+		}
+		guardrailMap := make(map[string]int64, len(guardrailRows))
+		for _, row := range guardrailRows {
+			alias := strings.TrimSpace(row.ModelAlias)
+			if alias == "" {
+				alias = "unknown"
+			}
+			guardrailMap[alias] = row.GuardrailBlocks
+		}
 		rows, err := s.queries.AggregateUsageByModel(ctx, db.AggregateUsageByModelParams{
 			Ts:    toPgTime(start),
 			Ts_2:  toPgTime(end),
@@ -1561,12 +1613,13 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 			}
 			labelMap[label] = label
 			result.Items = append(result.Items, AdminBreakdownItem{
-				ID:        label,
-				Label:     label,
-				Requests:  row.Requests,
-				Tokens:    row.Tokens,
-				CostCents: row.CostCents,
-				CostUSD:   microsToUSD(row.CostUsdMicros),
+				ID:              label,
+				Label:           label,
+				Requests:        row.Requests,
+				Tokens:          row.Tokens,
+				CostCents:       row.CostCents,
+				CostUSD:         microsToUSD(row.CostUsdMicros),
+				GuardrailBlocks: guardrailMap[label],
 			})
 		}
 		if selected == "" && len(result.Items) > 0 {
@@ -1591,6 +1644,21 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 			result.Series.Points = buildModelUsagePoints(start, end, dailyRows, loc)
 		}
 	case "user":
+		guardrailRows, err := s.queries.AggregateGuardrailByUser(ctx, db.AggregateGuardrailByUserParams{
+			Ts:   toPgTime(start),
+			Ts_2: toPgTime(end),
+		})
+		if err != nil {
+			return AdminBreakdown{}, err
+		}
+		guardrailMap := make(map[string]int64, len(guardrailRows))
+		for _, row := range guardrailRows {
+			userID, err := uuidFromPg(row.UserID)
+			if err != nil {
+				continue
+			}
+			guardrailMap[userID.String()] = row.GuardrailBlocks
+		}
 		rows, err := s.queries.AggregateUsageByUser(ctx, db.AggregateUsageByUserParams{
 			Ts:    toPgTime(start),
 			Ts_2:  toPgTime(end),
@@ -1615,12 +1683,13 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 			}
 			labelMap[id] = label
 			result.Items = append(result.Items, AdminBreakdownItem{
-				ID:        id,
-				Label:     label,
-				Requests:  row.Requests,
-				Tokens:    row.Tokens,
-				CostCents: row.CostCents,
-				CostUSD:   microsToUSD(row.CostUsdMicros),
+				ID:              id,
+				Label:           label,
+				Requests:        row.Requests,
+				Tokens:          row.Tokens,
+				CostCents:       row.CostCents,
+				CostUSD:         microsToUSD(row.CostUsdMicros),
+				GuardrailBlocks: guardrailMap[id],
 			})
 		}
 		if selected == "" && len(result.Items) > 0 {
@@ -1782,7 +1851,7 @@ func buildTenantUsagePoints(start, end time.Time, rows []db.AggregateTenantUsage
 	return points
 }
 
-func buildAggregateUsagePoints(start, end time.Time, rows []db.AggregateUsageDailyRow, loc *time.Location) []UsagePoint {
+func buildAggregateUsagePoints(start, end time.Time, rows []db.AggregateUsageDailyRow, guardrail []db.AggregateGuardrailDailyRow, loc *time.Location) []UsagePoint {
 	loc = timeutil.EnsureLocation(loc)
 	startDay := timeutil.TruncateToDay(start, loc)
 	endDay := timeutil.TruncateToDay(end, loc)
@@ -1795,6 +1864,15 @@ func buildAggregateUsagePoints(start, end time.Time, rows []db.AggregateUsageDai
 		day := timeutil.TruncateToDay(dayTime, loc)
 		daily[day.Unix()] = row
 	}
+	guardrailMap := make(map[int64]int64, len(guardrail))
+	for _, row := range guardrail {
+		dayTime, err := timeFromPg(row.Day)
+		if err != nil {
+			continue
+		}
+		day := timeutil.TruncateToDay(dayTime, loc)
+		guardrailMap[day.Unix()] = row.GuardrailBlocks
+	}
 	points := make([]UsagePoint, 0, int(endDay.Sub(startDay).Hours()/24)+1)
 	for day := startDay; !day.After(endDay); day = day.AddDate(0, 0, 1) {
 		key := day.Unix()
@@ -1806,12 +1884,14 @@ func buildAggregateUsagePoints(start, end time.Time, rows []db.AggregateUsageDai
 			cost = row.CostCents
 			costUSD = microsToUSD(row.CostUsdMicros)
 		}
+		blocks := guardrailMap[key]
 		points = append(points, UsagePoint{
-			Date:      day.Format(time.RFC3339),
-			Requests:  requests,
-			Tokens:    tokens,
-			CostCents: cost,
-			CostUSD:   costUSD,
+			Date:            day.Format(time.RFC3339),
+			Requests:        requests,
+			Tokens:          tokens,
+			CostCents:       cost,
+			CostUSD:         costUSD,
+			GuardrailBlocks: blocks,
 		})
 	}
 	return points

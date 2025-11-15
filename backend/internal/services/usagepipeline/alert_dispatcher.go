@@ -19,8 +19,10 @@ type AlertDispatcher struct {
 	sink    AlertSink
 	queries *db.Queries
 
-	stateMu sync.Mutex
-	state   map[uuid.UUID]alertSnapshot
+	stateMu        sync.Mutex
+	state          map[uuid.UUID]alertSnapshot
+	guardrailMu    sync.Mutex
+	guardrailState map[uuid.UUID]time.Time
 }
 
 func NewAlertDispatcher(queries *db.Queries, sink AlertSink) *AlertDispatcher {
@@ -28,9 +30,10 @@ func NewAlertDispatcher(queries *db.Queries, sink AlertSink) *AlertDispatcher {
 		sink = NewLogAlertSink(nil)
 	}
 	return &AlertDispatcher{
-		sink:    sink,
-		queries: queries,
-		state:   make(map[uuid.UUID]alertSnapshot),
+		sink:           sink,
+		queries:        queries,
+		state:          make(map[uuid.UUID]alertSnapshot),
+		guardrailState: make(map[uuid.UUID]time.Time),
 	}
 }
 
@@ -148,6 +151,8 @@ func parseAlertLevel(value string) AlertLevel {
 		return AlertLevelExceeded
 	case string(AlertLevelWarning):
 		return AlertLevelWarning
+	case string(AlertLevelGuardrail):
+		return AlertLevelGuardrail
 	default:
 		return AlertLevelNone
 	}
@@ -159,9 +164,75 @@ func alertSeverity(level AlertLevel) int {
 		return 2
 	case AlertLevelWarning:
 		return 1
+	case AlertLevelGuardrail:
+		return 3
 	default:
 		return 0
 	}
+}
+
+type GuardrailAlertInfo struct {
+	Stage      string
+	Action     string
+	Category   string
+	Violations []string
+	ModelAlias string
+}
+
+func (a *AlertDispatcher) DispatchGuardrail(ctx context.Context, rc *requestctx.Context, info GuardrailAlertInfo) error {
+	if a == nil || rc == nil {
+		return nil
+	}
+	channels := AlertChannels{Emails: rc.AlertEmails, Webhooks: rc.AlertWebhooks}
+	if !rc.AlertsEnabled || (len(channels.Emails) == 0 && len(channels.Webhooks) == 0) {
+		return nil
+	}
+	cooldown := rc.AlertCooldown
+	if cooldown <= 0 {
+		cooldown = time.Hour
+	}
+	now := time.Now().UTC()
+	last := a.lastGuardrailAlert(rc.TenantID)
+	if !last.IsZero() && now.Sub(last) < cooldown {
+		return nil
+	}
+	payload := AlertPayload{
+		TenantID:     rc.TenantID,
+		Level:        AlertLevelGuardrail,
+		Channels:     channels,
+		Timestamp:    now,
+		APIKeyPrefix: rc.APIKeyPrefix,
+		ModelAlias:   info.ModelAlias,
+		Guardrail: &GuardrailAlert{
+			Stage:      info.Stage,
+			Action:     info.Action,
+			Category:   info.Category,
+			Violations: info.Violations,
+		},
+	}
+	if err := a.sink.Notify(ctx, payload); err != nil {
+		a.recordAlertEvent(ctx, payload, false, err)
+		return err
+	}
+	a.recordAlertEvent(ctx, payload, true, nil)
+	a.setLastGuardrailAlert(rc.TenantID, now)
+	return nil
+}
+
+func (a *AlertDispatcher) lastGuardrailAlert(tenantID uuid.UUID) time.Time {
+	a.guardrailMu.Lock()
+	defer a.guardrailMu.Unlock()
+	return a.guardrailState[tenantID]
+}
+
+func (a *AlertDispatcher) setLastGuardrailAlert(tenantID uuid.UUID, ts time.Time) {
+	a.guardrailMu.Lock()
+	defer a.guardrailMu.Unlock()
+	if ts.IsZero() {
+		delete(a.guardrailState, tenantID)
+		return
+	}
+	a.guardrailState[tenantID] = ts
 }
 
 func (a *AlertDispatcher) recordAlertEvent(ctx context.Context, payload AlertPayload, success bool, notifyErr error) {
@@ -179,6 +250,7 @@ func (a *AlertDispatcher) recordAlertEvent(ctx context.Context, payload AlertPay
 		APIKeyPrefix: payload.APIKeyPrefix,
 		ModelAlias:   payload.ModelAlias,
 		Timestamp:    payload.Timestamp.UTC(),
+		Guardrail:    payload.Guardrail,
 	})
 	if err != nil {
 		return
@@ -199,10 +271,11 @@ func (a *AlertDispatcher) recordAlertEvent(ctx context.Context, payload AlertPay
 }
 
 type alertEventBody struct {
-	TenantID     string       `json:"tenant_id"`
-	Level        AlertLevel   `json:"level"`
-	Status       BudgetStatus `json:"status"`
-	APIKeyPrefix string       `json:"api_key_prefix"`
-	ModelAlias   string       `json:"model_alias"`
-	Timestamp    time.Time    `json:"timestamp"`
+	TenantID     string          `json:"tenant_id"`
+	Level        AlertLevel      `json:"level"`
+	Status       BudgetStatus    `json:"status"`
+	APIKeyPrefix string          `json:"api_key_prefix"`
+	ModelAlias   string          `json:"model_alias"`
+	Timestamp    time.Time       `json:"timestamp"`
+	Guardrail    *GuardrailAlert `json:"guardrail,omitempty"`
 }

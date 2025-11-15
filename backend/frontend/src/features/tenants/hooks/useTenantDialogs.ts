@@ -91,6 +91,18 @@ export function useTenantEditDialog() {
   const [alertCooldown, setAlertCooldown] = useState("");
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [originalModels, setOriginalModels] = useState<string[]>([]);
+  const [guardrailOverride, setGuardrailOverride] = useState(false);
+  const [guardrailHadOverride, setGuardrailHadOverride] = useState(false);
+  const [guardrailEnabled, setGuardrailEnabled] = useState(true);
+  const [guardrailPromptKeywords, setGuardrailPromptKeywords] = useState("");
+  const [guardrailResponseKeywords, setGuardrailResponseKeywords] = useState("");
+  const [guardrailModerationEnabled, setGuardrailModerationEnabled] = useState(false);
+  const [guardrailModerationProvider, setGuardrailModerationProvider] = useState("keyword");
+  const [guardrailModerationAction, setGuardrailModerationAction] = useState("block");
+  const [guardrailWebhookURL, setGuardrailWebhookURL] = useState("");
+  const [guardrailWebhookHeader, setGuardrailWebhookHeader] = useState("");
+  const [guardrailWebhookValue, setGuardrailWebhookValue] = useState("");
+  const [guardrailWebhookTimeout, setGuardrailWebhookTimeout] = useState("5");
 
   const reset = () => {
     setTenant(null);
@@ -104,6 +116,18 @@ export function useTenantEditDialog() {
     setAlertCooldown("");
     setSelectedModels([]);
     setOriginalModels([]);
+    setGuardrailOverride(false);
+    setGuardrailHadOverride(false);
+    setGuardrailEnabled(true);
+    setGuardrailPromptKeywords("");
+    setGuardrailResponseKeywords("");
+    setGuardrailModerationEnabled(false);
+    setGuardrailModerationProvider("keyword");
+    setGuardrailModerationAction("block");
+    setGuardrailWebhookURL("");
+    setGuardrailWebhookHeader("");
+    setGuardrailWebhookValue("");
+    setGuardrailWebhookTimeout("5");
   };
 
   useEffect(() => {
@@ -138,6 +162,30 @@ export function useTenantEditDialog() {
     originalModels,
     setOriginalModels,
     reset,
+    guardrailOverride,
+    setGuardrailOverride,
+    guardrailHadOverride,
+    setGuardrailHadOverride,
+    guardrailEnabled,
+    setGuardrailEnabled,
+    guardrailPromptKeywords,
+    setGuardrailPromptKeywords,
+    guardrailResponseKeywords,
+    setGuardrailResponseKeywords,
+    guardrailModerationEnabled,
+    setGuardrailModerationEnabled,
+    guardrailModerationProvider,
+    setGuardrailModerationProvider,
+    guardrailModerationAction,
+    setGuardrailModerationAction,
+    guardrailWebhookURL,
+    setGuardrailWebhookURL,
+    guardrailWebhookHeader,
+    setGuardrailWebhookHeader,
+    guardrailWebhookValue,
+    setGuardrailWebhookValue,
+    guardrailWebhookTimeout,
+    setGuardrailWebhookTimeout,
   };
 }
 

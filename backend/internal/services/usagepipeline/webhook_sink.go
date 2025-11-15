@@ -47,7 +47,7 @@ func (s *WebhookSink) Notify(ctx context.Context, payload AlertPayload) error {
 		return nil
 	}
 
-	body, err := json.Marshal(webhookPayload{
+	wp := webhookPayload{
 		TenantID:       payload.TenantID.String(),
 		Level:          string(payload.Level),
 		LimitCents:     payload.Status.LimitCents,
@@ -57,7 +57,16 @@ func (s *WebhookSink) Notify(ctx context.Context, payload AlertPayload) error {
 		APIKeyPrefix:   payload.APIKeyPrefix,
 		ModelAlias:     payload.ModelAlias,
 		Timestamp:      payload.Timestamp.UTC(),
-	})
+	}
+	if payload.Guardrail != nil {
+		wp.Guardrail = &guardrailWebhookPayload{
+			Stage:      payload.Guardrail.Stage,
+			Action:     payload.Guardrail.Action,
+			Category:   payload.Guardrail.Category,
+			Violations: payload.Guardrail.Violations,
+		}
+	}
+	body, err := json.Marshal(wp)
 	if err != nil {
 		return err
 	}
@@ -114,13 +123,21 @@ func (s *WebhookSink) post(ctx context.Context, url string, body []byte) error {
 }
 
 type webhookPayload struct {
-	TenantID       string    `json:"tenant_id"`
-	Level          string    `json:"level"`
-	LimitCents     int64     `json:"limit_cents"`
-	TotalCostCents int64     `json:"total_cost_cents"`
-	Warning        bool      `json:"warning"`
-	Exceeded       bool      `json:"exceeded"`
-	APIKeyPrefix   string    `json:"api_key_prefix"`
-	ModelAlias     string    `json:"model_alias"`
-	Timestamp      time.Time `json:"timestamp"`
+	TenantID       string                   `json:"tenant_id"`
+	Level          string                   `json:"level"`
+	LimitCents     int64                    `json:"limit_cents"`
+	TotalCostCents int64                    `json:"total_cost_cents"`
+	Warning        bool                     `json:"warning"`
+	Exceeded       bool                     `json:"exceeded"`
+	APIKeyPrefix   string                   `json:"api_key_prefix"`
+	ModelAlias     string                   `json:"model_alias"`
+	Timestamp      time.Time                `json:"timestamp"`
+	Guardrail      *guardrailWebhookPayload `json:"guardrail,omitempty"`
+}
+
+type guardrailWebhookPayload struct {
+	Stage      string   `json:"stage"`
+	Action     string   `json:"action"`
+	Category   string   `json:"category,omitempty"`
+	Violations []string `json:"violations,omitempty"`
 }

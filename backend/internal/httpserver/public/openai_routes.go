@@ -70,6 +70,8 @@ func (h *openAIHandler) listModels(c *fiber.Ctx) error {
 
 type imageOperationConfig struct {
 	Alias          string
+	Prompt         string
+	Operation      string
 	IdempotencyKey string
 	Builder        func(route providers.Route) (models.ImageResponse, error)
 }
@@ -91,6 +93,18 @@ func (h *openAIHandler) runImageOperation(c *fiber.Ctx, cfg imageOperationConfig
 	routes := h.container.Engine.SelectRoutes(alias)
 	if len(routes) == 0 {
 		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
+	}
+
+	runtime, err := h.loadGuardrailRuntime(ctx, rc)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to load guardrail policy")
+	}
+	if res := runtime.PreCheck(cfg.Prompt); guardrailBlocked(res) {
+		h.recordGuardrailEvent(ctx, rc, alias, guardrailStagePrompt, res, map[string]any{
+			"endpoint":  "images",
+			"operation": cfg.Operation,
+		})
+		return httputil.WriteError(c, fiber.StatusForbidden, guardrailPromptMessage)
 	}
 
 	traceID := traceIDFromContext(c)
@@ -180,6 +194,22 @@ func (h *openAIHandler) runImageOperation(c *fiber.Ctx, cfg imageOperationConfig
 			Success:           true,
 			IdempotencyKey:    idempotencyKey,
 			OverrideCostCents: parseImageOverrideCost(route.Metadata),
+		}
+		if res := runtime.PostCheck(imageResponseText(resp)); guardrailBlocked(res) {
+			record.Status = fiber.StatusForbidden
+			record.Success = false
+			record.ErrorCode = guardrailErrorCode
+			record.Billable = true
+			budgetStatus, logErr := h.container.UsageLogger.Record(ctx, record)
+			if logErr != nil {
+				return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to persist usage")
+			}
+			setBudgetHeaders(c, budgetStatus)
+			h.recordGuardrailEvent(ctx, rc, alias, guardrailStageResponse, res, map[string]any{
+				"endpoint":  "images",
+				"operation": cfg.Operation,
+			})
+			return httputil.WriteError(c, fiber.StatusForbidden, guardrailResponseMessage)
 		}
 		budgetStatus, err := h.container.UsageLogger.Record(ctx, record)
 		if err != nil {
@@ -304,6 +334,14 @@ func (h *openAIHandler) chatCompletions(c *fiber.Ctx) error {
 	if !h.container.IsModelAllowed(rc.TenantID, req.Model) {
 		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
 	}
+	runtime, err := h.loadGuardrailRuntime(ctx, rc)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to load guardrail policy")
+	}
+	if res := runtime.PreCheck(chatPromptText(messages)); guardrailBlocked(res) {
+		h.recordGuardrailEvent(ctx, rc, req.Model, guardrailStagePrompt, res, map[string]any{"endpoint": "chat"})
+		return httputil.WriteError(c, fiber.StatusForbidden, guardrailPromptMessage)
+	}
 
 	traceID := traceIDFromContext(c)
 	alias := req.Model
@@ -318,7 +356,7 @@ func (h *openAIHandler) chatCompletions(c *fiber.Ctx) error {
 	}
 
 	if req.Stream {
-		return h.handleStreamChat(c, rc, alias, traceID, idempotencyKey, modelReq)
+		return h.handleStreamChat(c, rc, alias, traceID, idempotencyKey, modelReq, runtime)
 	}
 
 	if idempotencyKey != "" {
@@ -328,14 +366,43 @@ func (h *openAIHandler) chatCompletions(c *fiber.Ctx) error {
 		}
 	}
 
-	chatResult, err := h.executor.Chat(ctx, rc, alias, modelReq, traceID, idempotencyKey)
+	chatResult, err := h.executor.Chat(ctx, rc, alias, modelReq, traceID)
 	if err != nil {
 		if status, msg, ok := executor.AsAPIError(err); ok {
 			return httputil.WriteError(c, status, msg)
 		}
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
-	setBudgetHeaders(c, chatResult.BudgetStatus)
+	record := usagepipeline.Record{
+		Context:        rc,
+		Alias:          alias,
+		Provider:       chatResult.Provider,
+		Usage:          chatResult.Response.Usage,
+		Latency:        chatResult.Latency,
+		Status:         fiber.StatusOK,
+		TraceID:        traceID,
+		IdempotencyKey: idempotencyKey,
+		Timestamp:      time.Now().UTC(),
+		Success:        true,
+	}
+	if res := runtime.PostCheck(chatResponseText(chatResult.Response)); guardrailBlocked(res) {
+		record.Status = fiber.StatusForbidden
+		record.Success = false
+		record.ErrorCode = guardrailErrorCode
+		record.Billable = true
+		budgetStatus, logErr := h.container.UsageLogger.Record(ctx, record)
+		if logErr != nil {
+			return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to persist usage")
+		}
+		setBudgetHeaders(c, budgetStatus)
+		h.recordGuardrailEvent(ctx, rc, alias, guardrailStageResponse, res, map[string]any{"endpoint": "chat"})
+		return httputil.WriteError(c, fiber.StatusForbidden, guardrailResponseMessage)
+	}
+	budgetStatus, err := h.container.UsageLogger.Record(ctx, record)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to persist usage")
+	}
+	setBudgetHeaders(c, budgetStatus)
 
 	resp := convertChatResponse(chatResult.Response, alias)
 	if idempotencyKey != "" {
@@ -354,6 +421,7 @@ func (h *openAIHandler) handleStreamChat(
 	traceID string,
 	idempotencyKey string,
 	req models.ChatRequest,
+	runtime guardrailRuntime,
 ) error {
 	ctx := c.UserContext()
 	routes := h.container.Engine.SelectRoutes(alias)
@@ -391,7 +459,7 @@ func (h *openAIHandler) handleStreamChat(
 	var once sync.Once
 	releaseOnce := func() { once.Do(release) }
 
-	return h.streamChat(c, alias, rc, traceID, idempotencyKey, req, routes, keyKey, keyCfg, tenantKey, tenantCfg, releaseOnce)
+	return h.streamChat(c, alias, rc, traceID, idempotencyKey, req, routes, keyKey, keyCfg, tenantKey, tenantCfg, releaseOnce, runtime)
 }
 
 func (h *openAIHandler) streamChat(
@@ -406,6 +474,7 @@ func (h *openAIHandler) streamChat(
 	tenantKey string,
 	tenantCfg limits.LimitConfig,
 	release func(),
+	runtime guardrailRuntime,
 ) error {
 	ctx := c.UserContext()
 
@@ -442,6 +511,8 @@ func (h *openAIHandler) streamChat(
 			reported := false
 			var streamUsage models.Usage
 			usageCaptured := false
+			monitor := newGuardrailStreamMonitor(runtime)
+			guardrailViolation := false
 
 			recordUsage := func() {
 				tokensUsed := int(streamUsage.TotalTokens)
@@ -480,6 +551,10 @@ func (h *openAIHandler) streamChat(
 					Timestamp:      time.Now().UTC(),
 					Success:        recordSuccess && recordStatus == fiber.StatusOK,
 				}
+				if guardrailViolation {
+					record.ErrorCode = guardrailErrorCode
+					record.Billable = true
+				}
 
 				if _, err := h.container.UsageLogger.Record(ctx, record); err != nil {
 					slog.Error("record stream usage", slog.String("alias", alias), slog.String("error", err.Error()))
@@ -500,6 +575,19 @@ func (h *openAIHandler) streamChat(
 						usageCaptured = true
 					}
 					continue
+				}
+
+				if res, blocked := monitor.Process(chunk); blocked {
+					recordStatus = fiber.StatusForbidden
+					recordSuccess = false
+					guardrailViolation = true
+					h.recordGuardrailEvent(ctx, rc, alias, guardrailStageResponse, res, map[string]any{"endpoint": "chat_stream"})
+					if err := writeStreamError(w, guardrailResponseMessage); err != nil {
+						recordStatus = fiber.StatusInternalServerError
+					}
+					h.container.Engine.ReportSuccess(alias, route)
+					reported = true
+					return
 				}
 
 				if !firstTokenMeasured {
@@ -643,6 +731,14 @@ func (h *openAIHandler) embeddings(c *fiber.Ctx) error {
 	}
 
 	alias := req.Model
+	runtime, err := h.loadGuardrailRuntime(ctx, rc)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to load guardrail policy")
+	}
+	if res := runtime.PreCheck(embeddingPromptText(inputs)); guardrailBlocked(res) {
+		h.recordGuardrailEvent(ctx, rc, alias, guardrailStagePrompt, res, map[string]any{"endpoint": "embeddings"})
+		return httputil.WriteError(c, fiber.StatusForbidden, guardrailPromptMessage)
+	}
 
 	traceID := traceIDFromContext(c)
 
@@ -726,6 +822,19 @@ func (h *openAIHandler) embeddings(c *fiber.Ctx) error {
 			Timestamp: time.Now().UTC(),
 			Success:   true,
 		}
+		if res := runtime.PostCheck(embeddingResponseText(resp)); guardrailBlocked(res) {
+			record.Status = fiber.StatusForbidden
+			record.Success = false
+			record.ErrorCode = guardrailErrorCode
+			record.Billable = true
+			if status, err := h.container.UsageLogger.Record(ctx, record); err == nil {
+				setBudgetHeaders(c, status)
+			} else {
+				return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to persist usage")
+			}
+			h.recordGuardrailEvent(ctx, rc, alias, guardrailStageResponse, res, map[string]any{"endpoint": "embeddings"})
+			return httputil.WriteError(c, fiber.StatusForbidden, guardrailResponseMessage)
+		}
 		if status, err := h.container.UsageLogger.Record(ctx, record); err == nil {
 			setBudgetHeaders(c, status)
 		} else {
@@ -780,6 +889,8 @@ func (h *openAIHandler) imageGenerations(c *fiber.Ctx) error {
 	baseReq := req
 	return h.runImageOperation(c, imageOperationConfig{
 		Alias:          req.Model,
+		Prompt:         baseReq.Prompt,
+		Operation:      "generate",
 		IdempotencyKey: idempotencyKey,
 		Builder: func(route providers.Route) (models.ImageResponse, error) {
 			modelReq := models.ImageRequest{
@@ -853,7 +964,9 @@ func (h *openAIHandler) imageEdits(c *fiber.Ctx) error {
 	}
 	ctx := c.UserContext()
 	return h.runImageOperation(c, imageOperationConfig{
-		Alias: model,
+		Alias:     model,
+		Prompt:    prompt,
+		Operation: "edit",
 		Builder: func(route providers.Route) (models.ImageResponse, error) {
 			req := baseReq
 			req.Model = route.ResolveDeployment()
@@ -876,6 +989,7 @@ func (h *openAIHandler) imageVariations(c *fiber.Ctx) error {
 	if model == "" {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "model is required")
 	}
+	prompt := strings.TrimSpace(c.FormValue("prompt"))
 	imageHeaders := form.File["image"]
 	if len(imageHeaders) == 0 {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "image file is required")
@@ -901,7 +1015,9 @@ func (h *openAIHandler) imageVariations(c *fiber.Ctx) error {
 	}
 	ctx := c.UserContext()
 	return h.runImageOperation(c, imageOperationConfig{
-		Alias: model,
+		Alias:     model,
+		Prompt:    prompt,
+		Operation: "variation",
 		Builder: func(route providers.Route) (models.ImageResponse, error) {
 			req := baseReq
 			req.Model = route.ResolveDeployment()
@@ -1095,6 +1211,16 @@ type openAIStreamChunk struct {
 	Choices []openAIStreamChoice `json:"choices"`
 }
 
+type openAIStreamError struct {
+	Error openAIErrorBody `json:"error"`
+}
+
+type openAIErrorBody struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+	Code    string `json:"code,omitempty"`
+}
+
 func convertStreamChunk(chunk models.ChatChunk, alias string) openAIStreamChunk {
 	choices := make([]openAIStreamChoice, 0, len(chunk.Choices))
 	for _, choice := range chunk.Choices {
@@ -1116,6 +1242,33 @@ func convertStreamChunk(chunk models.ChatChunk, alias string) openAIStreamChunk 
 		Model:   alias,
 		Choices: choices,
 	}
+}
+
+func writeStreamError(w *bufio.Writer, message string) error {
+	payload := openAIStreamError{
+		Error: openAIErrorBody{
+			Message: message,
+			Type:    "guardrail_violation",
+			Code:    "guardrail_blocked",
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err = w.WriteString("event: error\n"); err != nil {
+		return err
+	}
+	if _, err = w.WriteString("data: "); err != nil {
+		return err
+	}
+	if _, err = w.Write(data); err != nil {
+		return err
+	}
+	if _, err = w.WriteString("\n\n"); err != nil {
+		return err
+	}
+	return w.Flush()
 }
 
 func convertImageResponse(resp models.ImageResponse) openAIImageResponse {

@@ -51,6 +51,7 @@ import { QueryAlert } from "@/features/usage";
 import { formatUsageDate } from "@/lib/dates";
 import { formatTokensShort } from "@/lib/numbers";
 import { cn } from "@/lib/utils";
+import { listGuardrailEvents } from "@/api/guardrails";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -102,6 +103,17 @@ export function UsagePage() {
   const [tenantMetric, setTenantMetric] = useState<UsageComparisonMetric>("spend");
   const [modelMetric, setModelMetric] = useState<UsageComparisonMetric>("spend");
   const [userMetric, setUserMetric] = useState<UsageComparisonMetric>("spend");
+  const [guardrailTenantId, setGuardrailTenantId] = useState<string | undefined>();
+  const [guardrailActionFilter, setGuardrailActionFilter] = useState("all");
+  const [guardrailStageFilter, setGuardrailStageFilter] = useState("all");
+  const [guardrailCategoryFilter, setGuardrailCategoryFilter] = useState("");
+  const [guardrailStartInput, setGuardrailStartInput] = useState(() =>
+    formatDateInput(addDays(startOfToday(), -6)),
+  );
+  const [guardrailEndInput, setGuardrailEndInput] = useState(() =>
+    formatDateInput(startOfToday()),
+  );
+  const [guardrailOffset, setGuardrailOffset] = useState(0);
 
   useEffect(() => {
     if (!tenants.length) {
@@ -133,6 +145,27 @@ export function UsagePage() {
     }
   }, [models, selectedModelAlias]);
 
+  useEffect(() => {
+    if (!tenants.length) {
+      setGuardrailTenantId(undefined);
+      return;
+    }
+    if (guardrailTenantId && !tenants.find((tenant) => tenant.id === guardrailTenantId)) {
+      setGuardrailTenantId(undefined);
+    }
+  }, [tenants, guardrailTenantId]);
+
+  useEffect(() => {
+    setGuardrailOffset(0);
+  }, [
+    guardrailTenantId,
+    guardrailActionFilter,
+    guardrailStageFilter,
+    guardrailCategoryFilter,
+    guardrailStartInput,
+    guardrailEndInput,
+  ]);
+
   const [startInput, setStartInput] = useState(() =>
     formatDateInput(addDays(startOfToday(), -6)),
   );
@@ -149,6 +182,16 @@ export function UsagePage() {
       : null;
 
   const overviewQueryEnabled = Boolean(activeRange && !rangeError);
+  const guardrailRangeResult = useMemo(
+    () => deriveRangeISO(guardrailStartInput, guardrailEndInput),
+    [guardrailStartInput, guardrailEndInput],
+  );
+  const guardrailRange = guardrailRangeResult?.range;
+  const guardrailRangeError = guardrailRangeResult?.error;
+  const guardrailRangeDisplay =
+    guardrailRange && !guardrailRangeError
+      ? `${formatInputDisplay(guardrailStartInput)} – ${formatInputDisplay(guardrailEndInput)}`
+      : null;
   const usageQuery = useUsageOverview(
     overviewQueryEnabled
       ? { start: activeRange!.start, end: activeRange!.end }
@@ -185,6 +228,32 @@ export function UsagePage() {
         }
       : undefined,
   );
+  const GUARDRAIL_PAGE_SIZE = 50;
+  const guardrailEventsQuery = useQuery({
+    queryKey: [
+      "guardrail-events",
+      guardrailTenantId ?? "all",
+      guardrailActionFilter,
+      guardrailStageFilter,
+      guardrailCategoryFilter,
+      guardrailStartInput,
+      guardrailEndInput,
+      guardrailOffset,
+    ],
+    queryFn: () =>
+      listGuardrailEvents({
+        tenantId: guardrailTenantId,
+        action:
+          guardrailActionFilter !== "all" ? guardrailActionFilter : undefined,
+        stage: guardrailStageFilter !== "all" ? guardrailStageFilter : undefined,
+        category: guardrailCategoryFilter.trim() || undefined,
+        start: guardrailRange?.start,
+        end: guardrailRange?.end,
+        limit: GUARDRAIL_PAGE_SIZE,
+        offset: guardrailOffset,
+      }),
+    enabled: !guardrailRangeError,
+  });
   const breakdownEnabled = overviewQueryEnabled;
   const tenantBreakdown = useUsageBreakdown(
     {
@@ -330,6 +399,11 @@ export function UsagePage() {
   const totalTokens = usageQuery.data?.total_tokens ?? 0;
   const totalCostUsd = usageQuery.data?.total_cost_usd;
   const totalCostCents = usageQuery.data?.total_cost_cents;
+  const totalGuardrailBlocks = usageQuery.data?.guardrail_blocks ?? 0;
+  const guardrailEvents = guardrailEventsQuery.data?.events ?? [];
+  const guardrailTotal = guardrailEventsQuery.data?.total ?? 0;
+  const guardrailHasNext = guardrailOffset + guardrailEvents.length < guardrailTotal;
+  const guardrailHasPrev = guardrailOffset > 0;
 
   return (
     <div className="space-y-6">
@@ -392,10 +466,11 @@ export function UsagePage() {
           <TabsTrigger value="tenants">Tenants</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="models">Models</TabsTrigger>
+          <TabsTrigger value="guardrails">Guardrails</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <SummaryCard
               title="Total requests"
               value={usageQuery.data ? totalRequests.toLocaleString() : "—"}
@@ -416,6 +491,12 @@ export function UsagePage() {
               title="Tokens processed"
               value={usageQuery.data ? formatTokensShort(totalTokens) : "—"}
               description="Prompt + completion"
+              loading={usageQuery.isLoading}
+            />
+            <SummaryCard
+              title="Guardrail blocks"
+              value={usageQuery.data ? totalGuardrailBlocks.toLocaleString() : "—"}
+              description="Requests stopped by guardrails"
               loading={usageQuery.isLoading}
             />
             <SummaryCard
@@ -657,6 +738,175 @@ export function UsagePage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="guardrails" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Guardrail events</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Review recent guardrail violations and filter by tenant, action, or date range.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="space-y-1">
+                  <Label>Tenant</Label>
+                  <Select
+                    value={guardrailTenantId ?? "all"}
+                    onValueChange={(value) =>
+                      setGuardrailTenantId(value === "all" ? undefined : value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All tenants" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All tenants</SelectItem>
+                      {tenants.map((tenant) => (
+                        <SelectItem key={tenant.id} value={tenant.id}>
+                          {tenant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Action</Label>
+                  <Select
+                    value={guardrailActionFilter}
+                    onValueChange={setGuardrailActionFilter}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Any action" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All actions</SelectItem>
+                      <SelectItem value="block">Block</SelectItem>
+                      <SelectItem value="warn">Warn</SelectItem>
+                      <SelectItem value="allow">Allow</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Stage</Label>
+                  <Select
+                    value={guardrailStageFilter}
+                    onValueChange={setGuardrailStageFilter}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Any stage" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All stages</SelectItem>
+                      <SelectItem value="prompt">Prompt</SelectItem>
+                      <SelectItem value="response">Response</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Category</Label>
+                  <Input
+                    value={guardrailCategoryFilter}
+                    onChange={(event) => setGuardrailCategoryFilter(event.target.value)}
+                    placeholder="e.g. pii"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Start date</Label>
+                  <Input
+                    type="date"
+                    value={guardrailStartInput}
+                    onChange={(event) => setGuardrailStartInput(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>End date</Label>
+                  <Input
+                    type="date"
+                    value={guardrailEndInput}
+                    onChange={(event) => setGuardrailEndInput(event.target.value)}
+                  />
+                </div>
+              </div>
+              {guardrailRangeError ? (
+                <p className="text-xs text-destructive">{guardrailRangeError}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Range: {guardrailRangeDisplay ?? "Select dates"}
+                </p>
+              )}
+              <QueryAlert
+                error={guardrailEventsQuery.isError ? (guardrailEventsQuery.error as Error) : null}
+                onRetry={guardrailEventsQuery.refetch}
+              />
+              {guardrailEventsQuery.isLoading ? (
+                <DailySkeleton />
+              ) : guardrailEvents.length ? (
+                <div className="space-y-3">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Timestamp</TableHead>
+                          <TableHead>Tenant</TableHead>
+                          <TableHead>API key</TableHead>
+                          <TableHead>Model</TableHead>
+                          <TableHead>Stage</TableHead>
+                          <TableHead>Action</TableHead>
+                          <TableHead>Violations</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {guardrailEvents.map((event) => (
+                          <TableRow key={event.id}>
+                            <TableCell>{formatDateTime(event.created_at)}</TableCell>
+                            <TableCell>{event.tenant_name || event.tenant_id || "—"}</TableCell>
+                            <TableCell>{event.api_key_name || event.api_key_id || "—"}</TableCell>
+                            <TableCell>{event.model_alias || "—"}</TableCell>
+                            <TableCell className="capitalize">
+                              {event.stage || "—"}
+                            </TableCell>
+                            <TableCell className="capitalize">{event.action}</TableCell>
+                            <TableCell>
+                              {event.violations?.length
+                                ? event.violations.join(", ")
+                                : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {guardrailEvents.length} of {guardrailTotal.toLocaleString()} events
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setGuardrailOffset(Math.max(0, guardrailOffset - GUARDRAIL_PAGE_SIZE))}
+                        disabled={!guardrailHasPrev}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setGuardrailOffset(guardrailOffset + GUARDRAIL_PAGE_SIZE)}
+                        disabled={!guardrailHasNext}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No guardrail events for this range.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -842,15 +1092,20 @@ function TopUsageList({ items, metric, resolvedId, onSelectId }: TopUsageListPro
               resolvedId === item.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50",
             )}
           >
-            <div className="flex items-center justify-between gap-4">
-              <span className="font-medium truncate">{item.label || "Unnamed"}</span>
-              <span className="text-sm font-semibold">{formatMetricDisplay(metric, value)}</span>
-            </div>
-            <div className="mt-2 h-1 w-full rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${percent}%` }}
-              />
+          <div className="flex items-center justify-between gap-4">
+            <span className="font-medium truncate">{item.label || "Unnamed"}</span>
+            <span className="text-sm font-semibold">{formatMetricDisplay(metric, value)}</span>
+          </div>
+          {typeof item.guardrail_blocks === "number" ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Guardrail blocks: {item.guardrail_blocks.toLocaleString()}
+            </p>
+          ) : null}
+          <div className="mt-2 h-1 w-full rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all"
+              style={{ width: `${percent}%` }}
+            />
             </div>
           </button>
         );
@@ -1029,6 +1284,14 @@ function formatInputDisplay(value: string) {
     return "Select dates";
   }
   return parsed.toLocaleDateString();
+}
+
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString();
 }
 
 function deriveRangeISO(startInput: string, endInput: string) {

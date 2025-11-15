@@ -7,6 +7,7 @@ export interface UsagePoint {
   cost_cents: number;
   tokens: number;
   cost_usd?: number;
+  guardrail_blocks?: number;
 }
 
 export type UsagePeriod = "7d" | "30d" | "90d";
@@ -21,6 +22,7 @@ export interface UsageOverview {
   total_cost_cents: number;
   total_cost_usd?: number;
   total_tokens: number;
+  guardrail_blocks?: number;
   points: UsagePoint[];
 }
 
@@ -61,6 +63,7 @@ export interface UsageBreakdownItem {
   tokens: number;
   cost_cents: number;
   cost_usd?: number;
+  guardrail_blocks?: number;
 }
 
 export interface UsageBreakdownSeriesPoint {
@@ -69,6 +72,7 @@ export interface UsageBreakdownSeriesPoint {
   tokens: number;
   cost_cents: number;
   cost_usd?: number;
+  guardrail_blocks?: number;
 }
 
 export interface UsageBreakdownSeries {

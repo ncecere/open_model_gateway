@@ -37,6 +37,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,6 +56,13 @@ import {
   RateLimitCard,
   formatScheduleLabel,
 } from "@/features/api-keys";
+import {
+  deleteApiKeyGuardrails,
+  getApiKeyGuardrails,
+  upsertApiKeyGuardrails,
+  type GuardrailConfig,
+} from "@/api/guardrails";
+import { formatKeywordInput, parseKeywordInput } from "@/utils/guardrails";
 
 const TENANTS_QUERY_KEY = ["tenants", "list"] as const;
 
@@ -101,7 +110,7 @@ export function KeysPage() {
     }
   }, [selectedTenantId, tenants]);
 
-  const keysQuery = useQuery({
+const keysQuery = useQuery({
     queryKey: ["admin-api-keys"],
     queryFn: () => listAdminApiKeys(),
   });
@@ -171,6 +180,27 @@ export function KeysPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "revoked">(
     "all",
   );
+  const [keyGuardrailLoading, setKeyGuardrailLoading] = useState(false);
+  const [keyGuardrailSaving, setKeyGuardrailSaving] = useState(false);
+  const [keyGuardrailOverride, setKeyGuardrailOverride] = useState(false);
+  const [keyGuardrailHadOverride, setKeyGuardrailHadOverride] = useState(false);
+  const [keyGuardrailEnabled, setKeyGuardrailEnabled] = useState(true);
+  const [keyGuardrailPromptKeywords, setKeyGuardrailPromptKeywords] =
+    useState("");
+  const [keyGuardrailResponseKeywords, setKeyGuardrailResponseKeywords] =
+    useState("");
+  const [keyGuardrailModerationEnabled, setKeyGuardrailModerationEnabled] =
+    useState(false);
+  const [keyGuardrailModerationProvider, setKeyGuardrailModerationProvider] =
+    useState("keyword");
+  const [keyGuardrailModerationAction, setKeyGuardrailModerationAction] =
+    useState("block");
+  const [keyGuardrailWebhookURL, setKeyGuardrailWebhookURL] = useState("");
+  const [keyGuardrailWebhookHeader, setKeyGuardrailWebhookHeader] =
+    useState("");
+  const [keyGuardrailWebhookValue, setKeyGuardrailWebhookValue] = useState("");
+  const [keyGuardrailWebhookTimeout, setKeyGuardrailWebhookTimeout] =
+    useState("5");
 
   const handleCreateKey = async () => {
     if (!selectedTenantId) return;
@@ -293,10 +323,148 @@ export function KeysPage() {
       toast({
         variant: "destructive",
         title: "Copy failed",
-        description: "Copy manually instead.",
+      description: "Copy manually instead.",
       });
     }
   };
+
+  const buildKeyGuardrailPayload = (): GuardrailConfig => {
+    const promptKeywords = parseKeywordInput(keyGuardrailPromptKeywords);
+    const responseKeywords = parseKeywordInput(keyGuardrailResponseKeywords);
+    const moderationProvider = keyGuardrailModerationProvider.trim();
+
+    const payload: GuardrailConfig = {
+      enabled: keyGuardrailEnabled,
+      prompt: { blocked_keywords: promptKeywords },
+      response: { blocked_keywords: responseKeywords },
+    };
+
+    if (
+      keyGuardrailModerationEnabled ||
+      moderationProvider ||
+      keyGuardrailModerationAction
+    ) {
+      const timeoutValue = Number.parseInt(
+        keyGuardrailWebhookTimeout.trim(),
+        10,
+      );
+      payload.moderation = {
+        enabled: keyGuardrailModerationEnabled,
+        provider: moderationProvider || undefined,
+        action: keyGuardrailModerationAction,
+        webhook_url: keyGuardrailWebhookURL.trim() || undefined,
+        webhook_auth_header:
+          keyGuardrailWebhookHeader.trim() || undefined,
+        webhook_auth_value:
+          keyGuardrailWebhookValue.trim() || undefined,
+        timeout_seconds:
+          Number.isFinite(timeoutValue) && timeoutValue > 0
+            ? timeoutValue
+            : undefined,
+      };
+    }
+
+    return payload;
+  };
+
+  const handleSaveKeyGuardrails = async () => {
+    if (!selectedKey) return;
+    setKeyGuardrailSaving(true);
+    try {
+      if (keyGuardrailOverride) {
+        const payload = buildKeyGuardrailPayload();
+        await upsertApiKeyGuardrails(
+          selectedKey.tenant_id,
+          selectedKey.id,
+          payload,
+        );
+        setKeyGuardrailHadOverride(true);
+        toast({ title: "Guardrail policy updated" });
+      } else if (keyGuardrailHadOverride) {
+        await deleteApiKeyGuardrails(selectedKey.tenant_id, selectedKey.id);
+        setKeyGuardrailHadOverride(false);
+        toast({ title: "Guardrail policy removed" });
+      } else {
+        toast({ title: "Guardrail policy updated" });
+      }
+    } catch (error) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update guardrails",
+        description: "Retry in a moment.",
+      });
+    } finally {
+      setKeyGuardrailSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    setKeyGuardrailOverride(false);
+    setKeyGuardrailHadOverride(false);
+    setKeyGuardrailEnabled(true);
+    setKeyGuardrailPromptKeywords("");
+    setKeyGuardrailResponseKeywords("");
+    setKeyGuardrailModerationEnabled(false);
+    setKeyGuardrailModerationProvider("keyword");
+    setKeyGuardrailModerationAction("block");
+    setKeyGuardrailWebhookURL("");
+    setKeyGuardrailWebhookHeader("");
+    setKeyGuardrailWebhookValue("");
+    setKeyGuardrailWebhookTimeout("5");
+
+    if (!selectedKey) {
+      setKeyGuardrailLoading(false);
+      setKeyGuardrailSaving(false);
+      return;
+    }
+
+    setKeyGuardrailLoading(true);
+    getApiKeyGuardrails(selectedKey.tenant_id, selectedKey.id)
+      .then(({ config }) => {
+        const hasOverride = hasGuardrailConfig(config);
+        setKeyGuardrailOverride(hasOverride);
+        setKeyGuardrailHadOverride(hasOverride);
+        setKeyGuardrailEnabled(
+          config.enabled ?? (hasOverride ? true : false),
+        );
+        setKeyGuardrailPromptKeywords(
+          formatKeywordInput(config.prompt?.blocked_keywords),
+        );
+        setKeyGuardrailResponseKeywords(
+          formatKeywordInput(config.response?.blocked_keywords),
+        );
+        setKeyGuardrailModerationEnabled(
+          config.moderation?.enabled ?? false,
+        );
+        setKeyGuardrailModerationProvider(
+          config.moderation?.provider || "keyword",
+        );
+        setKeyGuardrailModerationAction(
+          config.moderation?.action ?? "block",
+        );
+        setKeyGuardrailWebhookURL(config.moderation?.webhook_url ?? "");
+        setKeyGuardrailWebhookHeader(
+          config.moderation?.webhook_auth_header ?? "",
+        );
+        setKeyGuardrailWebhookValue(
+          config.moderation?.webhook_auth_value ?? "",
+        );
+        setKeyGuardrailWebhookTimeout(
+          config.moderation?.timeout_seconds != null
+            ? config.moderation.timeout_seconds.toString()
+            : "5",
+        );
+      })
+      .catch(() => {
+        toast({
+          variant: "destructive",
+          title: "Failed to load guardrail policy",
+          description: "Try reopening the key details dialog.",
+        });
+      })
+      .finally(() => setKeyGuardrailLoading(false));
+  }, [selectedKey, toast]);
 
   return (
     <div className="space-y-6">
@@ -576,10 +744,213 @@ export function KeysPage() {
                     />
                   </div>
                 </div>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        Guardrail policy
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Override the inherited guardrails for this key.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={keyGuardrailOverride}
+                      disabled={keyGuardrailLoading || keyGuardrailSaving}
+                      onCheckedChange={setKeyGuardrailOverride}
+                    />
+                  </div>
+                  {keyGuardrailOverride ? (
+                    <div className="space-y-4 rounded-lg border p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            Enforce guardrails
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Disable temporarily without removing the policy.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={keyGuardrailEnabled}
+                          disabled={keyGuardrailLoading || keyGuardrailSaving}
+                          onCheckedChange={setKeyGuardrailEnabled}
+                        />
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="key-guardrail-prompt">
+                            Prompt keywords
+                          </Label>
+                          <Textarea
+                            id="key-guardrail-prompt"
+                            value={keyGuardrailPromptKeywords}
+                            onChange={(event) =>
+                              setKeyGuardrailPromptKeywords(event.target.value)
+                            }
+                            placeholder="fraud\nhate"
+                            disabled={keyGuardrailLoading || keyGuardrailSaving}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="key-guardrail-response">
+                            Response keywords
+                          </Label>
+                          <Textarea
+                            id="key-guardrail-response"
+                            value={keyGuardrailResponseKeywords}
+                            onChange={(event) =>
+                              setKeyGuardrailResponseKeywords(
+                                event.target.value,
+                              )
+                            }
+                            placeholder="password\npii"
+                            disabled={keyGuardrailLoading || keyGuardrailSaving}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Moderation provider</Label>
+                        <Select
+                          value={keyGuardrailModerationProvider}
+                          onValueChange={setKeyGuardrailModerationProvider}
+                          disabled={keyGuardrailLoading || keyGuardrailSaving}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="keyword">Keyword only</SelectItem>
+                            <SelectItem value="webhook">Webhook</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Moderation action</Label>
+                          <Select
+                            value={keyGuardrailModerationAction}
+                            onValueChange={setKeyGuardrailModerationAction}
+                            disabled={keyGuardrailLoading || keyGuardrailSaving}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="block">Block</SelectItem>
+                              <SelectItem value="warn">Warn</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Moderation check</Label>
+                          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                            <p className="text-sm text-muted-foreground">
+                              Send prompts/responses for classification.
+                            </p>
+                            <Switch
+                              checked={keyGuardrailModerationEnabled}
+                              disabled={
+                                keyGuardrailLoading || keyGuardrailSaving
+                              }
+                              onCheckedChange={setKeyGuardrailModerationEnabled}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      {keyGuardrailModerationProvider === "webhook" ? (
+                        <div className="space-y-3 rounded-lg border p-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="key-guardrail-webhook-url">
+                              Webhook URL
+                            </Label>
+                            <Input
+                              id="key-guardrail-webhook-url"
+                              value={keyGuardrailWebhookURL}
+                              onChange={(event) =>
+                                setKeyGuardrailWebhookURL(event.target.value)
+                              }
+                              placeholder="https://example.com/moderate"
+                              disabled={keyGuardrailLoading || keyGuardrailSaving}
+                            />
+                          </div>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="key-guardrail-webhook-header">
+                                Auth header
+                              </Label>
+                              <Input
+                                id="key-guardrail-webhook-header"
+                                value={keyGuardrailWebhookHeader}
+                                onChange={(event) =>
+                                  setKeyGuardrailWebhookHeader(
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder="Authorization"
+                                disabled={keyGuardrailLoading || keyGuardrailSaving}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="key-guardrail-webhook-value">
+                                Auth value
+                              </Label>
+                              <Input
+                                id="key-guardrail-webhook-value"
+                                value={keyGuardrailWebhookValue}
+                                onChange={(event) =>
+                                  setKeyGuardrailWebhookValue(
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder="Bearer ..."
+                                disabled={keyGuardrailLoading || keyGuardrailSaving}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="key-guardrail-webhook-timeout">
+                              Timeout (seconds)
+                            </Label>
+                            <Input
+                              id="key-guardrail-webhook-timeout"
+                              value={keyGuardrailWebhookTimeout}
+                              onChange={(event) =>
+                                setKeyGuardrailWebhookTimeout(
+                                  event.target.value,
+                                )
+                              }
+                              disabled={keyGuardrailLoading || keyGuardrailSaving}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Webhook receives {"{ stage, content }"} and
+                            responds with {"{ action, violations[], category }"}.
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Inheriting tenant guardrails.
+                    </p>
+                  )}
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setSelectedKey(null)}>
                   Close
+                </Button>
+                <Button
+                  onClick={handleSaveKeyGuardrails}
+                  disabled={
+                    keyGuardrailSaving ||
+                    keyGuardrailLoading ||
+                    !selectedKey
+                  }
+                >
+                  {keyGuardrailSaving ? "Saving…" : "Save guardrails"}
                 </Button>
               </DialogFooter>
             </>
@@ -598,4 +969,9 @@ export function KeysPage() {
       />
     </div>
   );
+}
+
+function hasGuardrailConfig(config?: GuardrailConfig): boolean {
+  if (!config) return false;
+  return Object.keys(config).length > 0;
 }

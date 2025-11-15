@@ -72,6 +72,176 @@ func (q *Queries) AggregateAPIKeyUsageDaily(ctx context.Context, arg AggregateAP
 	return items, nil
 }
 
+const aggregateGuardrailByModel = `-- name: AggregateGuardrailByModel :many
+SELECT
+    model_alias,
+    COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+FROM requests
+WHERE ts >= $1
+  AND ts < $2
+GROUP BY model_alias
+`
+
+type AggregateGuardrailByModelParams struct {
+	Ts   pgtype.Timestamptz `json:"ts"`
+	Ts_2 pgtype.Timestamptz `json:"ts_2"`
+}
+
+type AggregateGuardrailByModelRow struct {
+	ModelAlias      string `json:"model_alias"`
+	GuardrailBlocks int64  `json:"guardrail_blocks"`
+}
+
+func (q *Queries) AggregateGuardrailByModel(ctx context.Context, arg AggregateGuardrailByModelParams) ([]AggregateGuardrailByModelRow, error) {
+	rows, err := q.db.Query(ctx, aggregateGuardrailByModel, arg.Ts, arg.Ts_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateGuardrailByModelRow{}
+	for rows.Next() {
+		var i AggregateGuardrailByModelRow
+		if err := rows.Scan(&i.ModelAlias, &i.GuardrailBlocks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const aggregateGuardrailByTenant = `-- name: AggregateGuardrailByTenant :many
+SELECT
+    tenant_id,
+    COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+FROM requests
+WHERE ts >= $1
+  AND ts < $2
+GROUP BY tenant_id
+`
+
+type AggregateGuardrailByTenantParams struct {
+	Ts   pgtype.Timestamptz `json:"ts"`
+	Ts_2 pgtype.Timestamptz `json:"ts_2"`
+}
+
+type AggregateGuardrailByTenantRow struct {
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	GuardrailBlocks int64       `json:"guardrail_blocks"`
+}
+
+func (q *Queries) AggregateGuardrailByTenant(ctx context.Context, arg AggregateGuardrailByTenantParams) ([]AggregateGuardrailByTenantRow, error) {
+	rows, err := q.db.Query(ctx, aggregateGuardrailByTenant, arg.Ts, arg.Ts_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateGuardrailByTenantRow{}
+	for rows.Next() {
+		var i AggregateGuardrailByTenantRow
+		if err := rows.Scan(&i.TenantID, &i.GuardrailBlocks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const aggregateGuardrailByUser = `-- name: AggregateGuardrailByUser :many
+SELECT
+    k.owner_user_id AS user_id,
+    COUNT(*) FILTER (WHERE r.error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+FROM requests r
+JOIN api_keys k ON r.api_key_id = k.id
+WHERE r.ts >= $1
+  AND r.ts < $2
+GROUP BY k.owner_user_id
+`
+
+type AggregateGuardrailByUserParams struct {
+	Ts   pgtype.Timestamptz `json:"ts"`
+	Ts_2 pgtype.Timestamptz `json:"ts_2"`
+}
+
+type AggregateGuardrailByUserRow struct {
+	UserID          pgtype.UUID `json:"user_id"`
+	GuardrailBlocks int64       `json:"guardrail_blocks"`
+}
+
+func (q *Queries) AggregateGuardrailByUser(ctx context.Context, arg AggregateGuardrailByUserParams) ([]AggregateGuardrailByUserRow, error) {
+	rows, err := q.db.Query(ctx, aggregateGuardrailByUser, arg.Ts, arg.Ts_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateGuardrailByUserRow{}
+	for rows.Next() {
+		var i AggregateGuardrailByUserRow
+		if err := rows.Scan(&i.UserID, &i.GuardrailBlocks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const aggregateGuardrailDaily = `-- name: AggregateGuardrailDaily :many
+SELECT
+    timezone($4::text, date_trunc('day', ts AT TIME ZONE $4::text))::timestamptz AS day,
+    COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+FROM requests
+WHERE ($1::uuid IS NULL OR tenant_id = $1)
+  AND ts >= $2
+  AND ts < $3
+GROUP BY day
+ORDER BY day
+`
+
+type AggregateGuardrailDailyParams struct {
+	Column1 pgtype.UUID        `json:"column_1"`
+	Ts      pgtype.Timestamptz `json:"ts"`
+	Ts_2    pgtype.Timestamptz `json:"ts_2"`
+	Column4 string             `json:"column_4"`
+}
+
+type AggregateGuardrailDailyRow struct {
+	Day             pgtype.Timestamptz `json:"day"`
+	GuardrailBlocks int64              `json:"guardrail_blocks"`
+}
+
+func (q *Queries) AggregateGuardrailDaily(ctx context.Context, arg AggregateGuardrailDailyParams) ([]AggregateGuardrailDailyRow, error) {
+	rows, err := q.db.Query(ctx, aggregateGuardrailDaily,
+		arg.Column1,
+		arg.Ts,
+		arg.Ts_2,
+		arg.Column4,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateGuardrailDailyRow{}
+	for rows.Next() {
+		var i AggregateGuardrailDailyRow
+		if err := rows.Scan(&i.Day, &i.GuardrailBlocks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const aggregateModelUsageDaily = `-- name: AggregateModelUsageDaily :many
 SELECT
     timezone($4::text, date_trunc('day', ts AT TIME ZONE $4::text))::timestamptz AS day,
@@ -335,15 +505,23 @@ func (q *Queries) AggregateTenantUsageDailyByAPIKeys(ctx context.Context, arg Ag
 
 const aggregateUsageByModel = `-- name: AggregateUsageByModel :many
 SELECT
-    model_alias,
+    u.model_alias,
     COALESCE(SUM(requests), 0)::bigint AS requests,
     COALESCE(SUM(input_tokens + output_tokens), 0)::bigint AS tokens,
     COALESCE(SUM(cost_cents), 0)::bigint AS cost_cents,
-    COALESCE(SUM(cost_usd_micros), 0)::bigint AS cost_usd_micros
-FROM usage_records
-WHERE ts >= $1
-  AND ts < $2
-GROUP BY model_alias
+    COALESCE(SUM(cost_usd_micros), 0)::bigint AS cost_usd_micros,
+    COALESCE(gr.guardrail_blocks, 0)::bigint AS guardrail_blocks
+FROM usage_records u
+LEFT JOIN LATERAL (
+    SELECT COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+    FROM requests r
+    WHERE r.model_alias = u.model_alias
+      AND r.ts >= $1
+      AND r.ts < $2
+) gr ON TRUE
+WHERE u.ts >= $1
+  AND u.ts < $2
+GROUP BY u.model_alias, gr.guardrail_blocks
 ORDER BY cost_cents DESC, requests DESC
 LIMIT $3
 `
@@ -355,11 +533,12 @@ type AggregateUsageByModelParams struct {
 }
 
 type AggregateUsageByModelRow struct {
-	ModelAlias    string `json:"model_alias"`
-	Requests      int64  `json:"requests"`
-	Tokens        int64  `json:"tokens"`
-	CostCents     int64  `json:"cost_cents"`
-	CostUsdMicros int64  `json:"cost_usd_micros"`
+	ModelAlias      string `json:"model_alias"`
+	Requests        int64  `json:"requests"`
+	Tokens          int64  `json:"tokens"`
+	CostCents       int64  `json:"cost_cents"`
+	CostUsdMicros   int64  `json:"cost_usd_micros"`
+	GuardrailBlocks int64  `json:"guardrail_blocks"`
 }
 
 func (q *Queries) AggregateUsageByModel(ctx context.Context, arg AggregateUsageByModelParams) ([]AggregateUsageByModelRow, error) {
@@ -377,6 +556,7 @@ func (q *Queries) AggregateUsageByModel(ctx context.Context, arg AggregateUsageB
 			&i.Tokens,
 			&i.CostCents,
 			&i.CostUsdMicros,
+			&i.GuardrailBlocks,
 		); err != nil {
 			return nil, err
 		}
@@ -395,12 +575,20 @@ SELECT
     COALESCE(SUM(u.requests), 0)::bigint AS requests,
     COALESCE(SUM(u.input_tokens + u.output_tokens), 0)::bigint AS tokens,
     COALESCE(SUM(u.cost_cents), 0)::bigint AS cost_cents,
-    COALESCE(SUM(u.cost_usd_micros), 0)::bigint AS cost_usd_micros
+    COALESCE(SUM(u.cost_usd_micros), 0)::bigint AS cost_usd_micros,
+    COALESCE(gr.guardrail_blocks, 0)::bigint AS guardrail_blocks
 FROM usage_records u
 JOIN tenants t ON t.id = u.tenant_id
+LEFT JOIN LATERAL (
+    SELECT COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+    FROM requests r
+    WHERE r.tenant_id = u.tenant_id
+      AND r.ts >= $1
+      AND r.ts < $2
+) gr ON TRUE
 WHERE u.ts >= $1
   AND u.ts < $2
-GROUP BY u.tenant_id, t.name
+GROUP BY u.tenant_id, t.name, gr.guardrail_blocks
 ORDER BY cost_cents DESC, requests DESC
 LIMIT $3
 `
@@ -412,12 +600,13 @@ type AggregateUsageByTenantParams struct {
 }
 
 type AggregateUsageByTenantRow struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
-	Name          string      `json:"name"`
-	Requests      int64       `json:"requests"`
-	Tokens        int64       `json:"tokens"`
-	CostCents     int64       `json:"cost_cents"`
-	CostUsdMicros int64       `json:"cost_usd_micros"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	Name            string      `json:"name"`
+	Requests        int64       `json:"requests"`
+	Tokens          int64       `json:"tokens"`
+	CostCents       int64       `json:"cost_cents"`
+	CostUsdMicros   int64       `json:"cost_usd_micros"`
+	GuardrailBlocks int64       `json:"guardrail_blocks"`
 }
 
 func (q *Queries) AggregateUsageByTenant(ctx context.Context, arg AggregateUsageByTenantParams) ([]AggregateUsageByTenantRow, error) {
@@ -436,6 +625,7 @@ func (q *Queries) AggregateUsageByTenant(ctx context.Context, arg AggregateUsage
 			&i.Tokens,
 			&i.CostCents,
 			&i.CostUsdMicros,
+			&i.GuardrailBlocks,
 		); err != nil {
 			return nil, err
 		}
@@ -455,13 +645,22 @@ SELECT
     COALESCE(SUM(r.requests), 0)::bigint AS requests,
     COALESCE(SUM(r.input_tokens + r.output_tokens), 0)::bigint AS tokens,
     COALESCE(SUM(r.cost_cents), 0)::bigint AS cost_cents,
-    COALESCE(SUM(r.cost_usd_micros), 0)::bigint AS cost_usd_micros
+    COALESCE(SUM(r.cost_usd_micros), 0)::bigint AS cost_usd_micros,
+    COALESCE(gr.guardrail_blocks, 0)::bigint AS guardrail_blocks
 FROM usage_records r
 JOIN api_keys k ON r.api_key_id = k.id
 JOIN users u ON u.id = k.owner_user_id
+LEFT JOIN LATERAL (
+    SELECT COUNT(*) FILTER (WHERE rq.error_code = 'guardrail_blocked')::bigint AS guardrail_blocks
+    FROM requests rq
+    JOIN api_keys kk ON rq.api_key_id = kk.id
+    WHERE kk.owner_user_id = k.owner_user_id
+      AND rq.ts >= $1
+      AND rq.ts < $2
+) gr ON TRUE
 WHERE r.ts >= $1
   AND r.ts < $2
-GROUP BY k.owner_user_id, u.email, u.name
+GROUP BY k.owner_user_id, u.email, u.name, gr.guardrail_blocks
 ORDER BY cost_cents DESC, requests DESC
 LIMIT $3
 `
@@ -473,13 +672,14 @@ type AggregateUsageByUserParams struct {
 }
 
 type AggregateUsageByUserRow struct {
-	UserID        pgtype.UUID `json:"user_id"`
-	Email         string      `json:"email"`
-	Name          string      `json:"name"`
-	Requests      int64       `json:"requests"`
-	Tokens        int64       `json:"tokens"`
-	CostCents     int64       `json:"cost_cents"`
-	CostUsdMicros int64       `json:"cost_usd_micros"`
+	UserID          pgtype.UUID `json:"user_id"`
+	Email           string      `json:"email"`
+	Name            string      `json:"name"`
+	Requests        int64       `json:"requests"`
+	Tokens          int64       `json:"tokens"`
+	CostCents       int64       `json:"cost_cents"`
+	CostUsdMicros   int64       `json:"cost_usd_micros"`
+	GuardrailBlocks int64       `json:"guardrail_blocks"`
 }
 
 func (q *Queries) AggregateUsageByUser(ctx context.Context, arg AggregateUsageByUserParams) ([]AggregateUsageByUserRow, error) {
@@ -499,6 +699,7 @@ func (q *Queries) AggregateUsageByUser(ctx context.Context, arg AggregateUsageBy
 			&i.Tokens,
 			&i.CostCents,
 			&i.CostUsdMicros,
+			&i.GuardrailBlocks,
 		); err != nil {
 			return nil, err
 		}
@@ -899,6 +1100,28 @@ func (q *Queries) AggregateUserUsageDailyByTenants(ctx context.Context, arg Aggr
 		return nil, err
 	}
 	return items, nil
+}
+
+const countGuardrailRequests = `-- name: CountGuardrailRequests :one
+SELECT
+    COALESCE(COUNT(*) FILTER (WHERE error_code = 'guardrail_blocked'), 0)::bigint AS guardrail_blocks
+FROM requests
+WHERE ($1::uuid IS NULL OR tenant_id = $1)
+  AND ts >= $2
+  AND ts < $3
+`
+
+type CountGuardrailRequestsParams struct {
+	Column1 pgtype.UUID        `json:"column_1"`
+	Ts      pgtype.Timestamptz `json:"ts"`
+	Ts_2    pgtype.Timestamptz `json:"ts_2"`
+}
+
+func (q *Queries) CountGuardrailRequests(ctx context.Context, arg CountGuardrailRequestsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countGuardrailRequests, arg.Column1, arg.Ts, arg.Ts_2)
+	var guardrail_blocks int64
+	err := row.Scan(&guardrail_blocks)
+	return guardrail_blocks, err
 }
 
 const insertUsageRecord = `-- name: InsertUsageRecord :one

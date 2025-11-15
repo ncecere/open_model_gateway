@@ -109,6 +109,9 @@ func (s *SMTPSink) newClient(ctx context.Context, addr string) (*smtp.Client, er
 
 func buildEmailMessage(from string, to []string, payload AlertPayload) []byte {
 	subject := fmt.Sprintf("[Budget %s] Tenant %s", strings.ToUpper(string(payload.Level)), payload.TenantID)
+	if payload.Guardrail != nil {
+		subject = fmt.Sprintf("[Guardrail] Tenant %s", payload.TenantID)
+	}
 	body := formatEmailBody(payload)
 
 	var buf bytes.Buffer
@@ -125,11 +128,30 @@ func buildEmailMessage(from string, to []string, payload AlertPayload) []byte {
 }
 
 func formatEmailBody(payload AlertPayload) string {
-	limit := formatCurrency(payload.Status.LimitCents)
-	spend := formatCurrency(payload.Status.TotalCostCents)
-
 	var b strings.Builder
 	fmt.Fprintf(&b, "Tenant ID: %s\n", payload.TenantID)
+	if payload.Guardrail != nil {
+		fmt.Fprintf(&b, "Type: Guardrail\n")
+		fmt.Fprintf(&b, "Stage: %s\n", payload.Guardrail.Stage)
+		fmt.Fprintf(&b, "Action: %s\n", payload.Guardrail.Action)
+		if payload.Guardrail.Category != "" {
+			fmt.Fprintf(&b, "Category: %s\n", payload.Guardrail.Category)
+		}
+		if len(payload.Guardrail.Violations) > 0 {
+			fmt.Fprintf(&b, "Violations: %s\n", strings.Join(payload.Guardrail.Violations, ", "))
+		}
+		if payload.APIKeyPrefix != "" {
+			fmt.Fprintf(&b, "API Key Prefix: %s\n", payload.APIKeyPrefix)
+		}
+		if payload.ModelAlias != "" {
+			fmt.Fprintf(&b, "Model Alias: %s\n", payload.ModelAlias)
+		}
+		fmt.Fprintf(&b, "Timestamp: %s\n", payload.Timestamp.UTC().Format(time.RFC3339))
+		return b.String()
+	}
+	limit := formatCurrency(payload.Status.LimitCents)
+	spend := formatCurrency(payload.Status.TotalCostCents)
+	fmt.Fprintf(&b, "Type: Budget\n")
 	fmt.Fprintf(&b, "Level: %s\n", strings.ToUpper(string(payload.Level)))
 	fmt.Fprintf(&b, "Spend: %s / %s\n", spend, limit)
 	fmt.Fprintf(&b, "Exceeded: %t\n", payload.Status.Exceeded)

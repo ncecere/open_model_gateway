@@ -30,6 +30,13 @@ import { useToast } from "@/hooks/use-toast";
 import type { AdminUser } from "@/api/users";
 import { listUsers } from "@/api/users";
 import {
+  deleteTenantGuardrails,
+  getTenantGuardrails,
+  upsertTenantGuardrails,
+  type GuardrailConfig,
+} from "@/api/guardrails";
+import { formatKeywordInput, parseKeywordInput } from "@/utils/guardrails";
+import {
   TenantDirectoryCard,
   TenantSummaryHeader,
   TenantCreateDialog,
@@ -45,6 +52,7 @@ import {
   useMembershipDialog,
   INHERIT_SCHEDULE,
 } from "@/features/tenants";
+import type { TenantEditDialogState } from "@/features/tenants";
 const MEMBERSHIPS_QUERY_KEY = (tenantId?: string) =>
   ["tenant-memberships", tenantId] as const;
 
@@ -355,6 +363,7 @@ export function TenantsPage() {
   const editDialog = useTenantEditDialog();
   const [editModelsLoading, setEditModelsLoading] = useState(false);
   const [editBudgetLoading, setEditBudgetLoading] = useState(false);
+  const [editGuardrailLoading, setEditGuardrailLoading] = useState(false);
   const [editHadOverride, setEditHadOverride] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
 
@@ -364,6 +373,7 @@ export function TenantsPage() {
         setEditSaving(false);
         setEditBudgetLoading(false);
         setEditModelsLoading(false);
+        setEditGuardrailLoading(false);
       }
       return;
     }
@@ -385,6 +395,14 @@ export function TenantsPage() {
       cooldownSeconds != null ? cooldownSeconds.toString() : "",
     );
     setEditHadOverride(false);
+    editDialog.setGuardrailOverride(false);
+    editDialog.setGuardrailHadOverride(false);
+    editDialog.setGuardrailEnabled(true);
+    editDialog.setGuardrailPromptKeywords("");
+    editDialog.setGuardrailResponseKeywords("");
+    editDialog.setGuardrailModerationEnabled(false);
+    editDialog.setGuardrailModerationProvider("");
+    editDialog.setGuardrailModerationAction("block");
 
     setEditBudgetLoading(true);
     getTenantBudget(editDialog.tenant.id)
@@ -426,6 +444,52 @@ export function TenantsPage() {
         });
       })
       .finally(() => setEditModelsLoading(false));
+
+    setEditGuardrailLoading(true);
+    getTenantGuardrails(editDialog.tenant.id)
+      .then(({ config }) => {
+        const hasOverride = hasGuardrailConfig(config);
+        editDialog.setGuardrailOverride(hasOverride);
+        editDialog.setGuardrailHadOverride(hasOverride);
+        editDialog.setGuardrailEnabled(
+          config.enabled ?? (hasOverride ? true : false),
+        );
+        editDialog.setGuardrailPromptKeywords(
+          formatKeywordInput(config.prompt?.blocked_keywords),
+        );
+        editDialog.setGuardrailResponseKeywords(
+          formatKeywordInput(config.response?.blocked_keywords),
+        );
+    editDialog.setGuardrailModerationEnabled(
+      config.moderation?.enabled ?? false,
+    );
+    editDialog.setGuardrailModerationProvider(
+      config.moderation?.provider || "keyword",
+    );
+    editDialog.setGuardrailModerationAction(
+      config.moderation?.action ?? "block",
+    );
+    editDialog.setGuardrailWebhookURL(config.moderation?.webhook_url ?? "");
+    editDialog.setGuardrailWebhookHeader(
+      config.moderation?.webhook_auth_header ?? "",
+    );
+    editDialog.setGuardrailWebhookValue(
+      config.moderation?.webhook_auth_value ?? "",
+    );
+    editDialog.setGuardrailWebhookTimeout(
+      config.moderation?.timeout_seconds != null
+        ? config.moderation.timeout_seconds.toString()
+        : "5",
+    );
+      })
+      .catch(() => {
+        toast({
+          variant: "destructive",
+          title: "Failed to load guardrail policy",
+          description: "Try reopening the dialog.",
+        });
+      })
+      .finally(() => setEditGuardrailLoading(false));
   }, [editDialog.open, editDialog.tenant, budgetDefaultsQuery.data, toast]);
 
   const toggleEditModel = (alias: string, checked: boolean) => {
@@ -583,6 +647,15 @@ export function TenantsPage() {
         editDialog.setOriginalModels(editDialog.selectedModels);
       }
 
+      if (editDialog.guardrailOverride) {
+        const guardrailPayload = buildGuardrailConfigFromDialog(editDialog);
+        await upsertTenantGuardrails(tenantId, guardrailPayload);
+        editDialog.setGuardrailHadOverride(true);
+      } else if (editDialog.guardrailHadOverride) {
+        await deleteTenantGuardrails(tenantId);
+        editDialog.setGuardrailHadOverride(false);
+      }
+
       toast({ title: "Tenant updated" });
       editDialog.setOpen(false);
       queryClient.invalidateQueries({ queryKey: TENANTS_QUERY_KEY });
@@ -677,6 +750,7 @@ export function TenantsPage() {
         isSubmitting={editSaving}
         editModelsLoading={editModelsLoading}
         editBudgetLoading={editBudgetLoading}
+        guardrailLoading={editGuardrailLoading}
         onToggleModel={toggleEditModel}
         onSelectAllModels={handleSelectAllEditModels}
         onClearModels={handleClearEditModels}
@@ -684,6 +758,52 @@ export function TenantsPage() {
       />
     </div>
   );
+}
+
+function hasGuardrailConfig(config?: GuardrailConfig): boolean {
+  if (!config) return false;
+  return Object.keys(config).length > 0;
+}
+
+function buildGuardrailConfigFromDialog(
+  dialog: TenantEditDialogState,
+): GuardrailConfig {
+  const promptKeywords = parseKeywordInput(dialog.guardrailPromptKeywords);
+  const responseKeywords = parseKeywordInput(dialog.guardrailResponseKeywords);
+  const moderationProvider = dialog.guardrailModerationProvider.trim();
+
+  const config: GuardrailConfig = {
+    enabled: dialog.guardrailEnabled,
+    prompt: { blocked_keywords: promptKeywords },
+    response: { blocked_keywords: responseKeywords },
+  };
+
+  if (
+    dialog.guardrailModerationEnabled ||
+    moderationProvider ||
+    dialog.guardrailModerationAction
+  ) {
+    const timeoutValue = Number.parseInt(
+      dialog.guardrailWebhookTimeout.trim(),
+      10,
+    );
+    config.moderation = {
+      enabled: dialog.guardrailModerationEnabled,
+      provider: moderationProvider || undefined,
+      action: dialog.guardrailModerationAction,
+      webhook_url: dialog.guardrailWebhookURL.trim() || undefined,
+      webhook_auth_header:
+        dialog.guardrailWebhookHeader.trim() || undefined,
+      webhook_auth_value:
+        dialog.guardrailWebhookValue.trim() || undefined,
+      timeout_seconds:
+        Number.isFinite(timeoutValue) && timeoutValue > 0
+          ? timeoutValue
+          : undefined,
+    };
+  }
+
+  return config;
 }
 
 function parseListInput(value: string): string[] {

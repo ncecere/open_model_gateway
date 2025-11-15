@@ -27,8 +27,9 @@ func New(container *app.Container) *Executor {
 
 // ChatResult captures the outcome of a chat execution.
 type ChatResult struct {
-	Response     models.ChatResponse
-	BudgetStatus usagepipeline.BudgetStatus
+	Response models.ChatResponse
+	Provider string
+	Latency  time.Duration
 }
 
 // apiError wraps an error with an HTTP status code so callers can map it
@@ -55,7 +56,7 @@ func AsAPIError(err error) (int, string, bool) {
 }
 
 // Chat executes a chat completion against the routed providers.
-func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias string, req models.ChatRequest, traceID string, idempotencyKey string) (ChatResult, error) {
+func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias string, req models.ChatRequest, traceID string) (ChatResult, error) {
 	routes := e.container.Engine.SelectRoutes(alias)
 	if len(routes) == 0 {
 		return ChatResult{}, NewAPIError(fiber.StatusServiceUnavailable, "no backend available for model")
@@ -76,7 +77,7 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 			Timestamp: time.Now().UTC(),
 			Success:   false,
 		})
-		return ChatResult{BudgetStatus: budgetStatus}, NewAPIError(fiber.StatusForbidden, "tenant budget exceeded")
+		return ChatResult{}, NewAPIError(fiber.StatusForbidden, "tenant budget exceeded")
 	}
 
 	keyKey, keyCfg, tenantKey, tenantCfg, release, err := e.container.AcquireRateLimits(ctx, alias)
@@ -120,26 +121,10 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 			}
 		}
 
-		record := usagepipeline.Record{
-			Context:        rc,
-			Alias:          alias,
-			Provider:       route.Provider,
-			Usage:          resp.Usage,
-			Latency:        elapsed,
-			Status:         fiber.StatusOK,
-			IdempotencyKey: idempotencyKey,
-			TraceID:        traceID,
-			Timestamp:      time.Now().UTC(),
-			Success:        true,
-		}
-		budgetStatus, err := e.container.UsageLogger.Record(ctx, record)
-		if err != nil {
-			return ChatResult{}, err
-		}
-
 		return ChatResult{
-			Response:     resp,
-			BudgetStatus: budgetStatus,
+			Response: resp,
+			Provider: route.Provider,
+			Latency:  elapsed,
 		}, nil
 	}
 

@@ -21,6 +21,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 
 import {
   INHERIT_SCHEDULE,
@@ -38,6 +39,7 @@ type TenantEditDialogProps = {
   isSubmitting: boolean;
   editModelsLoading: boolean;
   editBudgetLoading: boolean;
+  guardrailLoading: boolean;
   onToggleModel: (alias: string, checked: boolean) => void;
   onSelectAllModels: () => void;
   onClearModels: () => void;
@@ -53,6 +55,7 @@ export function TenantEditDialog({
   isSubmitting,
   editModelsLoading,
   editBudgetLoading,
+  guardrailLoading,
   onToggleModel,
   onSelectAllModels,
   onClearModels,
@@ -198,6 +201,215 @@ export function TenantEditDialog({
               isLoading={isModelCatalogLoading || editModelsLoading}
               disabled={isSubmitting || editModelsLoading}
             />
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <Label>Guardrail policy</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Override prompt/response guardrails for this tenant.
+                  </p>
+                </div>
+                <Switch
+                  checked={dialog.guardrailOverride}
+                  disabled={guardrailLoading || fullyDisabled || isSubmitting}
+                  onCheckedChange={(checked) =>
+                    dialog.setGuardrailOverride(checked)
+                  }
+                />
+              </div>
+              {dialog.guardrailOverride ? (
+                <div className="space-y-4 rounded-lg border p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        Enforce guardrails
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Temporarily disable without removing this policy.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={dialog.guardrailEnabled}
+                      disabled={guardrailLoading || isSubmitting}
+                      onCheckedChange={(checked) =>
+                        dialog.setGuardrailEnabled(checked)
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="tenant-guardrail-prompt">
+                        Prompt keywords
+                      </Label>
+                      <Textarea
+                        id="tenant-guardrail-prompt"
+                        value={dialog.guardrailPromptKeywords}
+                        onChange={(event) =>
+                          dialog.setGuardrailPromptKeywords(event.target.value)
+                        }
+                        placeholder="fraud\nhate"
+                        disabled={guardrailLoading || isSubmitting}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Block requests containing these keywords before they
+                        reach providers.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tenant-guardrail-response">
+                        Response keywords
+                      </Label>
+                      <Textarea
+                        id="tenant-guardrail-response"
+                        value={dialog.guardrailResponseKeywords}
+                        onChange={(event) =>
+                          dialog.setGuardrailResponseKeywords(
+                            event.target.value,
+                          )
+                        }
+                        placeholder="password\npii"
+                        disabled={guardrailLoading || isSubmitting}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Block responses that contain any of these keywords.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Moderation provider</Label>
+                      <Select
+                        value={dialog.guardrailModerationProvider}
+                        onValueChange={dialog.setGuardrailModerationProvider}
+                        disabled={guardrailLoading || isSubmitting}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="keyword">
+                            Keyword only
+                          </SelectItem>
+                          <SelectItem value="webhook">Webhook</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Moderation action</Label>
+                      <Select
+                        value={dialog.guardrailModerationAction}
+                        onValueChange={(value) =>
+                          dialog.setGuardrailModerationAction(value)
+                        }
+                        disabled={guardrailLoading || isSubmitting}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="block">Block</SelectItem>
+                          <SelectItem value="warn">Warn</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="flex items-start justify-between gap-4 rounded-lg border px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        Enable moderation checks
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Run prompts and responses through the provider for
+                        classification.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={dialog.guardrailModerationEnabled}
+                      disabled={guardrailLoading || isSubmitting}
+                      onCheckedChange={(checked) =>
+                        dialog.setGuardrailModerationEnabled(checked)
+                      }
+                    />
+                  </div>
+                  {dialog.guardrailModerationProvider === "webhook" ? (
+                    <div className="space-y-3 rounded-lg border p-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="tenant-guardrail-webhook-url">
+                          Webhook URL
+                        </Label>
+                        <Input
+                          id="tenant-guardrail-webhook-url"
+                          value={dialog.guardrailWebhookURL}
+                          onChange={(event) =>
+                            dialog.setGuardrailWebhookURL(event.target.value)
+                          }
+                          placeholder="https://example.com/moderate"
+                          disabled={guardrailLoading || isSubmitting}
+                        />
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="tenant-guardrail-webhook-header">
+                            Auth header
+                          </Label>
+                          <Input
+                            id="tenant-guardrail-webhook-header"
+                            value={dialog.guardrailWebhookHeader}
+                            onChange={(event) =>
+                              dialog.setGuardrailWebhookHeader(
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Authorization"
+                            disabled={guardrailLoading || isSubmitting}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="tenant-guardrail-webhook-value">
+                            Auth value
+                          </Label>
+                          <Input
+                            id="tenant-guardrail-webhook-value"
+                            value={dialog.guardrailWebhookValue}
+                            onChange={(event) =>
+                              dialog.setGuardrailWebhookValue(
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Bearer ..."
+                            disabled={guardrailLoading || isSubmitting}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tenant-guardrail-webhook-timeout">
+                          Timeout (seconds)
+                        </Label>
+                        <Input
+                          id="tenant-guardrail-webhook-timeout"
+                          value={dialog.guardrailWebhookTimeout}
+                          onChange={(event) =>
+                            dialog.setGuardrailWebhookTimeout(
+                              event.target.value,
+                            )
+                          }
+                          disabled={guardrailLoading || isSubmitting}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        The webhook receives {"{ stage, content }"} and should
+                        respond with {"{ action, violations[], category }"}.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Inheriting project-level guardrails.
+                </p>
+              )}
+            </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -215,7 +427,11 @@ export function TenantEditDialog({
           <Button
             onClick={onSubmit}
             disabled={
-              isSubmitting || editBudgetLoading || fullyDisabled
+              isSubmitting ||
+              editBudgetLoading ||
+              editModelsLoading ||
+              guardrailLoading ||
+              fullyDisabled
             }
           >
             {isSubmitting ? "Saving…" : "Save changes"}

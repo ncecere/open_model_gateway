@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
 ## [Unreleased]
+### Added
+- Guardrail webhook moderation adapter: tenants and API keys can now configure a webhook provider (URL, auth header/value, timeout) to classify prompts/responses; admin UI exposes the new controls.
+- Guardrail events feed (`/admin/guardrails/events`) with tenant/API key/action/stage filters and a corresponding Usage → Guardrails tab in the admin portal.
+- Guardrail alerts reuse budget alert channels (email/webhook) so blocked requests trigger notifications with cooldown enforcement.
+
+### Changed
+- Usage dashboard summary now shows a "Guardrail blocks" KPI and includes guardrail counts in top tenants/users/models lists; daily usage points expose `guardrail_blocks` for charting.
+- Tenant/API key guardrail dialogs reorganized to surface moderation provider/action + webhook settings inline, matching the new backend capabilities.
+
+### Docs
+- `docs/runtime/guardrails.md` now documents the webhook contract, events feed, and guardrail alerts; README highlights the guardrail UI/alerting improvements.
 
 ## [v0.1.3] - 2025-02-20
 ### Added

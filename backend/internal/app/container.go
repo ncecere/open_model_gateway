@@ -42,6 +42,7 @@ import (
 	adminusersvc "github.com/ncecere/open_model_gateway/backend/internal/services/adminuser"
 	auditservice "github.com/ncecere/open_model_gateway/backend/internal/services/audit"
 	batchsvc "github.com/ncecere/open_model_gateway/backend/internal/services/batches"
+	guardrailsvc "github.com/ncecere/open_model_gateway/backend/internal/services/guardrails"
 	filesvc "github.com/ncecere/open_model_gateway/backend/internal/services/files"
 	tenantservice "github.com/ncecere/open_model_gateway/backend/internal/services/tenant"
 	usageService "github.com/ncecere/open_model_gateway/backend/internal/services/usage"
@@ -66,6 +67,7 @@ type Container struct {
 	AdminConfig        *adminconfigsvc.Service
 	AdminAudit         *adminauditsvc.Service
 	Batches            *batchsvc.Service
+	Guardrails         *guardrailsvc.Service
 	DefaultModels      *catalog.DefaultModelService
 	UsageService       *usageService.Service
 	TenantService      *tenantservice.Service
@@ -115,6 +117,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	usageSvc := usageService.NewService(queries, reportingLoc)
 	tenantSvc := tenantservice.NewService(cfg, queries, reportingLoc)
 	providerSvc := adminprovidersvc.NewService()
+	guardrailSvc := guardrailsvc.NewService(queries)
 
 	if err := LoadRateLimitDefaults(ctx, queries, cfg); err != nil {
 		return nil, fmt.Errorf("load rate limit defaults: %w", err)
@@ -225,6 +228,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 		Files:              filesService,
 		AdminConfig:        adminConfigService,
 		Batches:            batchesService,
+		Guardrails:         guardrailSvc,
 		ReportingLocation:  reportingLoc,
 		tenantModelAccess:  make(map[uuid.UUID]map[string]struct{}),
 	}

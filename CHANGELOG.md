@@ -3,6 +3,8 @@
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
 ## [Unreleased]
+
+## [v0.1.3] - 2025-02-20
 ### Added
 - Read-only model catalog page in the **user portal** with pricing, model type, throughput, latency, and router health status per alias.
 - `/admin/model-catalog/status` API so the admin UI can surface live status badges matching the user portal.

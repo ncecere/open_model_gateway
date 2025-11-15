@@ -22,10 +22,12 @@ INSERT INTO files (
     storage_key,
     checksum,
     encrypted,
-    expires_at
+    expires_at,
+    status,
+    status_updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-) RETURNING id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
+) RETURNING id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at, status, status_details, status_updated_at
 `
 
 type CreateFileParams struct {
@@ -39,6 +41,7 @@ type CreateFileParams struct {
 	Checksum       pgtype.Text        `json:"checksum"`
 	Encrypted      bool               `json:"encrypted"`
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	Status         string             `json:"status"`
 }
 
 func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, error) {
@@ -53,6 +56,7 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 		arg.Checksum,
 		arg.Encrypted,
 		arg.ExpiresAt,
+		arg.Status,
 	)
 	var i File
 	err := row.Scan(
@@ -70,28 +74,35 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.Status,
+		&i.StatusDetails,
+		&i.StatusUpdatedAt,
 	)
 	return i, err
 }
 
 const deleteFile = `-- name: DeleteFile :exec
 UPDATE files
-SET deleted_at = NOW()
-WHERE tenant_id = $1 AND id = $2
+SET deleted_at = NOW(),
+    status = 'deleted',
+    status_details = $3::text,
+    status_updated_at = NOW()
+WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 `
 
 type DeleteFileParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	ID       pgtype.UUID `json:"id"`
+	Reason   pgtype.Text `json:"reason"`
 }
 
 func (q *Queries) DeleteFile(ctx context.Context, arg DeleteFileParams) error {
-	_, err := q.db.Exec(ctx, deleteFile, arg.TenantID, arg.ID)
+	_, err := q.db.Exec(ctx, deleteFile, arg.TenantID, arg.ID, arg.Reason)
 	return err
 }
 
 const getFile = `-- name: GetFile :one
-SELECT id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at
+SELECT id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at, status, status_details, status_updated_at
 FROM files
 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 `
@@ -119,12 +130,15 @@ func (q *Queries) GetFile(ctx context.Context, arg GetFileParams) (File, error) 
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.Status,
+		&i.StatusDetails,
+		&i.StatusUpdatedAt,
 	)
 	return i, err
 }
 
 const getFileByID = `-- name: GetFileByID :one
-SELECT id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at
+SELECT id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at, status, status_details, status_updated_at
 FROM files
 WHERE id = $1
 `
@@ -147,12 +161,15 @@ func (q *Queries) GetFileByID(ctx context.Context, id pgtype.UUID) (File, error)
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.Status,
+		&i.StatusDetails,
+		&i.StatusUpdatedAt,
 	)
 	return i, err
 }
 
 const listExpiredFiles = `-- name: ListExpiredFiles :many
-SELECT id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at
+SELECT id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at, status, status_details, status_updated_at
 FROM files
 WHERE deleted_at IS NULL AND expires_at <= $1
 LIMIT $2
@@ -187,6 +204,9 @@ func (q *Queries) ListExpiredFiles(ctx context.Context, arg ListExpiredFilesPara
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.Status,
+			&i.StatusDetails,
+			&i.StatusUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -199,21 +219,39 @@ func (q *Queries) ListExpiredFiles(ctx context.Context, arg ListExpiredFilesPara
 }
 
 const listFiles = `-- name: ListFiles :many
-SELECT id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at
+SELECT id, tenant_id, filename, purpose, content_type, bytes, storage_backend, storage_key, checksum, encrypted, metadata, expires_at, created_at, deleted_at, status, status_details, status_updated_at
 FROM files
-WHERE tenant_id = $1 AND deleted_at IS NULL
-ORDER BY created_at DESC
-LIMIT $2 OFFSET $3
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+  AND ($3::text IS NULL OR purpose = $3::text)
+  AND (
+    $4::timestamptz IS NULL
+    OR created_at < $4::timestamptz
+    OR (
+      created_at = $4::timestamptz
+      AND ($5::uuid IS NULL OR id < $5::uuid)
+    )
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $2
 `
 
 type ListFilesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Limit    int32       `json:"limit"`
-	Offset   int32       `json:"offset"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Limit          int32              `json:"limit"`
+	Purpose        pgtype.Text        `json:"purpose"`
+	AfterCreatedAt pgtype.Timestamptz `json:"after_created_at"`
+	AfterID        pgtype.UUID        `json:"after_id"`
 }
 
 func (q *Queries) ListFiles(ctx context.Context, arg ListFilesParams) ([]File, error) {
-	rows, err := q.db.Query(ctx, listFiles, arg.TenantID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listFiles,
+		arg.TenantID,
+		arg.Limit,
+		arg.Purpose,
+		arg.AfterCreatedAt,
+		arg.AfterID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +274,9 @@ func (q *Queries) ListFiles(ctx context.Context, arg ListFilesParams) ([]File, e
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.Status,
+			&i.StatusDetails,
+			&i.StatusUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -248,7 +289,7 @@ func (q *Queries) ListFiles(ctx context.Context, arg ListFilesParams) ([]File, e
 }
 
 const listFilesAdmin = `-- name: ListFilesAdmin :many
-SELECT f.id, f.tenant_id, f.filename, f.purpose, f.content_type, f.bytes, f.storage_backend, f.storage_key, f.checksum, f.encrypted, f.metadata, f.expires_at, f.created_at, f.deleted_at, t.name AS tenant_name, COUNT(*) OVER() AS total_count
+SELECT f.id, f.tenant_id, f.filename, f.purpose, f.content_type, f.bytes, f.storage_backend, f.storage_key, f.checksum, f.encrypted, f.metadata, f.expires_at, f.created_at, f.deleted_at, f.status, f.status_details, f.status_updated_at, t.name AS tenant_name, COUNT(*) OVER() AS total_count
 FROM files f
 JOIN tenants t ON t.id = f.tenant_id
 WHERE ($1::uuid IS NULL OR f.tenant_id = $1)
@@ -278,22 +319,25 @@ type ListFilesAdminParams struct {
 }
 
 type ListFilesAdminRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	Filename       string             `json:"filename"`
-	Purpose        string             `json:"purpose"`
-	ContentType    string             `json:"content_type"`
-	Bytes          int64              `json:"bytes"`
-	StorageBackend string             `json:"storage_backend"`
-	StorageKey     string             `json:"storage_key"`
-	Checksum       pgtype.Text        `json:"checksum"`
-	Encrypted      bool               `json:"encrypted"`
-	Metadata       []byte             `json:"metadata"`
-	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	TenantName     string             `json:"tenant_name"`
-	TotalCount     int64              `json:"total_count"`
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Filename        string             `json:"filename"`
+	Purpose         string             `json:"purpose"`
+	ContentType     string             `json:"content_type"`
+	Bytes           int64              `json:"bytes"`
+	StorageBackend  string             `json:"storage_backend"`
+	StorageKey      string             `json:"storage_key"`
+	Checksum        pgtype.Text        `json:"checksum"`
+	Encrypted       bool               `json:"encrypted"`
+	Metadata        []byte             `json:"metadata"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	Status          string             `json:"status"`
+	StatusDetails   pgtype.Text        `json:"status_details"`
+	StatusUpdatedAt pgtype.Timestamptz `json:"status_updated_at"`
+	TenantName      string             `json:"tenant_name"`
+	TotalCount      int64              `json:"total_count"`
 }
 
 func (q *Queries) ListFilesAdmin(ctx context.Context, arg ListFilesAdminParams) ([]ListFilesAdminRow, error) {
@@ -327,6 +371,9 @@ func (q *Queries) ListFilesAdmin(ctx context.Context, arg ListFilesAdminParams) 
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.Status,
+			&i.StatusDetails,
+			&i.StatusUpdatedAt,
 			&i.TenantName,
 			&i.TotalCount,
 		); err != nil {

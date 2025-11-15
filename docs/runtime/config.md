@@ -110,6 +110,8 @@ Configures storage for `/v1/files`, batch outputs, etc.
 | `max_size_mb` | Hard upload limit. | `200` |
 | `default_ttl` | TTL applied when callers omit `expires_in`. | `168h` |
 | `max_ttl` | Ceiling TTL even if caller requests more. | `720h` |
+| `sweep_interval` | How often expired files are reaped. | `15m` |
+| `sweep_batch_size` | Number of expired rows to delete per sweep. | `200` |
 | `encryption_key` | Optional base64 AES key (16/24/32 bytes) for envelope encryption at rest. | _empty_ |
 | `local.directory` | Filesystem root when `storage=local`. | `./data/files` |
 | `s3.bucket/prefix/region/endpoint/use_path_style` | S3 backend details. | _empty_ |

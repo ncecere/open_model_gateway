@@ -22,7 +22,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AdminFileRecord } from "@/api/files";
 import { dateFormatter, formatBytes } from "../utils";
-import { AlertTriangle, Eye, MoreHorizontal, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, Download, Eye, MoreHorizontal, Search, Trash2 } from "lucide-react";
+import { FileStatusBadge } from "./FileStatusBadge";
 
 const PURPOSE_OPTIONS = [
   { value: "all", label: "All purposes" },
@@ -58,6 +59,7 @@ type AdminFilesTableProps = {
   onLoadMore: (direction: "next" | "prev") => void;
   onViewDetails: (file: AdminFileRecord) => void;
   onDelete: (file: AdminFileRecord) => void;
+  onDownload: (file: AdminFileRecord) => void;
 };
 
 export function AdminFilesTable({
@@ -76,6 +78,7 @@ export function AdminFilesTable({
   onLoadMore,
   onViewDetails,
   onDelete,
+  onDownload,
 }: AdminFilesTableProps) {
   const tenantOptions = tenants.filter((tenant) => !personalTenantIds.has(tenant.id));
 
@@ -201,10 +204,13 @@ export function AdminFilesTable({
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="capitalize">
-                      <Badge variant={file.deleted_at ? "destructive" : "secondary"}>
-                        {file.deleted_at ? "deleted" : "active"}
-                      </Badge>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <FileStatusBadge status={file.status} />
+                        {file.status_details ? (
+                          <p className="text-xs text-muted-foreground">{file.status_details}</p>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {dateFormatter.format(new Date(file.created_at))}
@@ -221,6 +227,9 @@ export function AdminFilesTable({
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => onViewDetails(file)}>
                             <Eye className="mr-2 h-4 w-4" /> View details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onDownload(file)}>
+                            <Download className="mr-2 h-4 w-4" /> Download
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             disabled={Boolean(file.deleted_at)}
@@ -272,3 +281,5 @@ function EmptyState() {
     </div>
   );
 }
+
+// formatFileStatus re-exported for dialog usage if needed

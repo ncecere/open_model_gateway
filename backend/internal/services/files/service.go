@@ -20,25 +20,52 @@ import (
 )
 
 const (
-	PurposeFineTune = "fine-tune"
-	PurposeBatch    = "batch"
-	PurposeAssist   = "assistants"
+	StatusUploading = "uploading"
+	StatusUploaded  = "uploaded"
+	StatusProcessed = "processed"
+	StatusError     = "error"
+	StatusDeleted   = "deleted"
+
+	PurposeFineTune         = "fine-tune"
+	PurposeBatch            = "batch"
+	PurposeAssist           = "assistants"
+	PurposeAssistantsOutput = "assistants_output"
+	PurposeVision           = "vision"
+	PurposeModeration       = "moderation"
+	PurposeResponses        = "responses"
+	PurposeFineTuneResults  = "fine-tune-results"
 )
 
 var allowedPurposes = map[string]struct{}{
-	PurposeFineTune: {},
-	PurposeBatch:    {},
-	PurposeAssist:   {},
+	PurposeFineTune:         {},
+	PurposeBatch:            {},
+	PurposeAssist:           {},
+	PurposeAssistantsOutput: {},
+	PurposeVision:           {},
+	PurposeModeration:       {},
+	PurposeResponses:        {},
+	PurposeFineTuneResults:  {},
 }
 
 // Service coordinates file metadata + blob storage.
 type Service struct {
-	queries *db.Queries
+	queries fileQueries
 	store   blob.Store
 	cfg     *config.FilesConfig
 }
 
-func NewService(queries *db.Queries, store blob.Store, cfg *config.FilesConfig) *Service {
+type fileQueries interface {
+	CreateFile(context.Context, db.CreateFileParams) (db.File, error)
+	GetFile(context.Context, db.GetFileParams) (db.File, error)
+	DeleteFile(context.Context, db.DeleteFileParams) error
+	ListFiles(context.Context, db.ListFilesParams) ([]db.File, error)
+	ListFilesAdmin(context.Context, db.ListFilesAdminParams) ([]db.ListFilesAdminRow, error)
+	GetFileByID(context.Context, pgtype.UUID) (db.File, error)
+	GetTenantByID(context.Context, pgtype.UUID) (db.Tenant, error)
+	ListExpiredFiles(context.Context, db.ListExpiredFilesParams) ([]db.File, error)
+}
+
+func NewService(queries fileQueries, store blob.Store, cfg *config.FilesConfig) *Service {
 	return &Service{queries: queries, store: store, cfg: cfg}
 }
 
@@ -54,24 +81,40 @@ type UploadParams struct {
 }
 
 type FileRecord struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	Filename       string
-	Purpose        string
-	ContentType    string
-	Bytes          int64
-	StorageKey     string
-	StorageBackend string
-	Encrypted      bool
-	Checksum       string
-	ExpiresAt      time.Time
-	CreatedAt      time.Time
-	DeletedAt      *time.Time
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	Filename        string
+	Purpose         string
+	ContentType     string
+	Bytes           int64
+	StorageKey      string
+	StorageBackend  string
+	Encrypted       bool
+	Checksum        string
+	ExpiresAt       time.Time
+	CreatedAt       time.Time
+	DeletedAt       *time.Time
+	Status          string
+	StatusDetails   string
+	StatusUpdatedAt time.Time
 }
 
 type FileWithTenant struct {
 	FileRecord
 	TenantName string
+}
+
+type ListOptions struct {
+	Purpose string
+	Limit   int32
+	AfterID *uuid.UUID
+}
+
+type ListResult struct {
+	Files   []FileRecord
+	HasMore bool
+	FirstID *uuid.UUID
+	LastID  *uuid.UUID
 }
 
 func (s *Service) Upload(ctx context.Context, params UploadParams) (FileRecord, error) {
@@ -125,6 +168,7 @@ func (s *Service) Upload(ctx context.Context, params UploadParams) (FileRecord, 
 		Checksum:       pgtype.Text{String: checksum, Valid: true},
 		Encrypted:      info.Encrypted,
 		ExpiresAt:      toPgTime(expiresAt),
+		Status:         StatusUploaded,
 	})
 	if err != nil {
 		_ = s.store.Delete(ctx, key)
@@ -147,31 +191,73 @@ func (s *Service) Delete(ctx context.Context, tenantID uuid.UUID, id uuid.UUID) 
 	return s.queries.DeleteFile(ctx, db.DeleteFileParams{
 		TenantID: toPgUUID(tenantID),
 		ID:       toPgUUID(id),
+		Reason:   pgtype.Text{String: "deleted by tenant request", Valid: true},
 	})
 }
 
-// List returns tenant files with pagination.
-func (s *Service) List(ctx context.Context, tenantID uuid.UUID, limit, offset int32) ([]FileRecord, error) {
+// List returns tenant files ordered by created_at DESC using cursor pagination.
+func (s *Service) List(ctx context.Context, tenantID uuid.UUID, opts ListOptions) (ListResult, error) {
+	limit := opts.Limit
 	if limit <= 0 {
-		limit = 50
+		limit = 100
 	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	afterCreated := pgtype.Timestamptz{Valid: false}
+	afterIDParam := pgtype.UUID{Valid: false}
+	if opts.AfterID != nil {
+		row, err := s.queries.GetFile(ctx, db.GetFileParams{
+			TenantID: toPgUUID(tenantID),
+			ID:       toPgUUID(*opts.AfterID),
+		})
+		if err != nil {
+			return ListResult{}, err
+		}
+		afterCreated = row.CreatedAt
+		afterIDParam = row.ID
+	}
+
 	rows, err := s.queries.ListFiles(ctx, db.ListFilesParams{
-		TenantID: toPgUUID(tenantID),
-		Limit:    limit,
-		Offset:   offset,
+		TenantID:       toPgUUID(tenantID),
+		Limit:          limit + 1,
+		Purpose:        toPgText(opts.Purpose),
+		AfterCreatedAt: afterCreated,
+		AfterID:        afterIDParam,
 	})
 	if err != nil {
-		return nil, err
+		return ListResult{}, err
 	}
-	out := make([]FileRecord, 0, len(rows))
+
+	hasMore := int32(len(rows)) > limit
+	if hasMore {
+		rows = rows[:len(rows)-1]
+	}
+
+	files := make([]FileRecord, 0, len(rows))
 	for _, row := range rows {
 		rec, err := toFileRecord(row)
 		if err != nil {
-			return nil, err
+			return ListResult{}, err
 		}
-		out = append(out, rec)
+		files = append(files, rec)
 	}
-	return out, nil
+
+	var firstID, lastID *uuid.UUID
+	if len(files) > 0 {
+		first := files[0].ID
+		last := files[len(files)-1].ID
+		firstID = &first
+		lastID = &last
+	}
+
+	return ListResult{
+		Files:   files,
+		HasMore: hasMore,
+		FirstID: firstID,
+		LastID:  lastID,
+	}, nil
 }
 
 // ListAll returns paginated files across all tenants for admin auditing.
@@ -266,6 +352,7 @@ func (s *Service) DeleteByID(ctx context.Context, id uuid.UUID) error {
 	return s.queries.DeleteFile(ctx, db.DeleteFileParams{
 		TenantID: record.TenantID,
 		ID:       record.ID,
+		Reason:   pgtype.Text{String: "deleted by admin", Valid: true},
 	})
 }
 
@@ -283,7 +370,11 @@ func (s *Service) SweepExpired(ctx context.Context, batchSize int32) error {
 	}
 	for _, rec := range expired {
 		_ = s.store.Delete(ctx, rec.StorageKey)
-		_ = s.queries.DeleteFile(ctx, db.DeleteFileParams{TenantID: rec.TenantID, ID: rec.ID})
+		_ = s.queries.DeleteFile(ctx, db.DeleteFileParams{
+			TenantID: rec.TenantID,
+			ID:       rec.ID,
+			Reason:   pgtype.Text{String: "expired", Valid: true},
+		})
 	}
 	return nil
 }
@@ -307,19 +398,22 @@ func toFileRecord(row db.File) (FileRecord, error) {
 		deletedAt = &t
 	}
 	return FileRecord{
-		ID:             id,
-		TenantID:       tenant,
-		Filename:       row.Filename,
-		Purpose:        row.Purpose,
-		ContentType:    row.ContentType,
-		Bytes:          row.Bytes,
-		StorageKey:     row.StorageKey,
-		StorageBackend: row.StorageBackend,
-		Encrypted:      row.Encrypted,
-		Checksum:       checksum,
-		ExpiresAt:      row.ExpiresAt.Time,
-		CreatedAt:      row.CreatedAt.Time,
-		DeletedAt:      deletedAt,
+		ID:              id,
+		TenantID:        tenant,
+		Filename:        row.Filename,
+		Purpose:         row.Purpose,
+		ContentType:     row.ContentType,
+		Bytes:           row.Bytes,
+		StorageKey:      row.StorageKey,
+		StorageBackend:  row.StorageBackend,
+		Encrypted:       row.Encrypted,
+		Checksum:        checksum,
+		ExpiresAt:       row.ExpiresAt.Time,
+		CreatedAt:       row.CreatedAt.Time,
+		DeletedAt:       deletedAt,
+		Status:          row.Status,
+		StatusDetails:   fromPgText(row.StatusDetails),
+		StatusUpdatedAt: row.StatusUpdatedAt.Time,
 	}, nil
 }
 
@@ -370,6 +464,13 @@ func fromPgUUID(value pgtype.UUID) (uuid.UUID, error) {
 		return uuid.UUID{}, fmt.Errorf("uuid is null")
 	}
 	return value.Bytes, nil
+}
+
+func fromPgText(value pgtype.Text) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 func toPgTime(t time.Time) pgtype.Timestamptz {

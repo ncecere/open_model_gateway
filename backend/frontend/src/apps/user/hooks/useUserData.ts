@@ -205,11 +205,16 @@ export function useUserTenantBatchesQuery(
   });
 }
 
-export function useUserFilesQuery(tenantId?: string, limit = 50) {
+export function useUserFilesQuery(
+  tenantId?: string,
+  params?: { limit?: number; after?: string; purpose?: string },
+) {
   return useQuery({
-    queryKey: ["user-files", tenantId, limit],
+    queryKey: ["user-files", tenantId, params?.limit, params?.after, params?.purpose],
     queryFn: () =>
-      tenantId ? listUserFiles(tenantId, { limit }) : Promise.resolve([]),
+      tenantId
+        ? listUserFiles(tenantId, params)
+        : Promise.resolve({ files: [], has_more: false }),
     enabled: Boolean(tenantId),
   });
 }

@@ -90,10 +90,13 @@ When a provider does not support an operation the router returns a structured er
 
 ### Files & Storage
 
-- `files.*` config controls storage. For S3:
-  - Ensure credentials are available via IAM roles or env vars.
-  - Set `files.encryption_key` for client-side AES-GCM encryption.
-  - Monitor the sweeper logs (`files.Service.SweepExpired`) for deletion activity.
+- `files.*` config controls storage:
+  - `files.sweep_interval` / `files.sweep_batch_size` drive the background sweeper that now runs inside `routerd` to remove expired blobs and mark their metadata as `status="deleted"`. Increase the interval if you retain large data sets, or shrink it when you want near-real-time cleanup.
+  - `files.storage=s3` uses the configured bucket/prefix; local mode keeps blobs under `./data/files`.
+  - Set `files.encryption_key` for client-side AES-GCM encryption regardless of backend.
+  - Monitor the sweeper logs (`files.Service.SweepExpired`) to verify expired objects are being reclaimed; errors are surfaced in the router logs so you can spot misconfigured credentials early.
+- `/v1/files` now mirrors the OpenAI response contract: list calls support `limit` (1–100), cursor-based `after` parameters, and purpose filters. Responses include `has_more`, `first_id`, `last_id`, and per-file `status` / `status_details` fields so operators can see whether a file is `uploading`, `uploaded`, `processed`, or `deleted`.
+- `DELETE /v1/files/:id` returns `{id, object:"file", deleted:true}` to match client expectations, and the admin/user portals display the same `status` metadata when browsing tenant files.
 
 ### Batches
 

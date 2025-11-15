@@ -290,20 +290,23 @@ type DefaultModel struct {
 }
 
 type File struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	Filename       string             `json:"filename"`
-	Purpose        string             `json:"purpose"`
-	ContentType    string             `json:"content_type"`
-	Bytes          int64              `json:"bytes"`
-	StorageBackend string             `json:"storage_backend"`
-	StorageKey     string             `json:"storage_key"`
-	Checksum       pgtype.Text        `json:"checksum"`
-	Encrypted      bool               `json:"encrypted"`
-	Metadata       []byte             `json:"metadata"`
-	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Filename        string             `json:"filename"`
+	Purpose         string             `json:"purpose"`
+	ContentType     string             `json:"content_type"`
+	Bytes           int64              `json:"bytes"`
+	StorageBackend  string             `json:"storage_backend"`
+	StorageKey      string             `json:"storage_key"`
+	Checksum        pgtype.Text        `json:"checksum"`
+	Encrypted       bool               `json:"encrypted"`
+	Metadata        []byte             `json:"metadata"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	Status          string             `json:"status"`
+	StatusDetails   pgtype.Text        `json:"status_details"`
+	StatusUpdatedAt pgtype.Timestamptz `json:"status_updated_at"`
 }
 
 type ModelCatalog struct {

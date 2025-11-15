@@ -10,8 +10,8 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-
 	"github.com/jackc/pgx/v5"
+
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
@@ -28,20 +28,48 @@ func (h *filesHandler) list(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	limit := parseQueryInt(c, "limit", 50)
-	offset := parseQueryInt(c, "offset", 0)
+	limit := clampLimit(parseQueryInt(c, "limit", 100), 1, 100, 100)
+	purpose := strings.TrimSpace(c.Query("purpose"))
+	var afterID *uuid.UUID
+	if cursor := strings.TrimSpace(c.Query("after")); cursor != "" {
+		parsed, err := parseUUID(cursor)
+		if err != nil {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "invalid after cursor")
+		}
+		afterID = &parsed
+	}
 	if h.container.Files == nil {
 		return httputil.WriteError(c, fiber.StatusNotImplemented, "files service disabled")
 	}
-	records, err := h.container.Files.List(c.UserContext(), rc.TenantID, int32(limit), int32(offset))
+	result, err := h.container.Files.List(c.UserContext(), rc.TenantID, filesvc.ListOptions{
+		Purpose: purpose,
+		Limit:   int32(limit),
+		AfterID: afterID,
+	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "after cursor not found")
+		}
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
-	resp := make([]openAIFile, 0, len(records))
-	for _, rec := range records {
+	resp := make([]openAIFile, 0, len(result.Files))
+	for _, rec := range result.Files {
 		resp = append(resp, toOpenAIFile(rec))
 	}
-	return c.JSON(openAIFileList{Object: "list", Data: resp})
+	response := openAIFileList{
+		Object:  "list",
+		Data:    resp,
+		HasMore: result.HasMore,
+	}
+	if result.FirstID != nil {
+		value := result.FirstID.String()
+		response.FirstID = &value
+	}
+	if result.LastID != nil {
+		value := result.LastID.String()
+		response.LastID = &value
+	}
+	return c.JSON(response)
 }
 
 func (h *filesHandler) get(c *fiber.Ctx) error {
@@ -79,7 +107,11 @@ func (h *filesHandler) delete(c *fiber.Ctx) error {
 	if err := h.container.Files.Delete(c.UserContext(), rc.TenantID, id); err != nil {
 		return translateFileError(c, err)
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.JSON(openAIDeleteFile{
+		ID:      id.String(),
+		Object:  "file",
+		Deleted: true,
+	})
 }
 
 func (h *filesHandler) download(c *fiber.Ctx) error {
@@ -178,30 +210,48 @@ func translateFileError(c *fiber.Ctx, err error) error {
 }
 
 func toOpenAIFile(rec filesvc.FileRecord) openAIFile {
+	var statusDetails *string
+	if strings.TrimSpace(rec.StatusDetails) != "" {
+		value := rec.StatusDetails
+		statusDetails = &value
+	}
 	return openAIFile{
-		ID:        rec.ID.String(),
-		Object:    "file",
-		Bytes:     rec.Bytes,
-		CreatedAt: rec.CreatedAt.Unix(),
-		Filename:  rec.Filename,
-		Purpose:   rec.Purpose,
-		ExpiresAt: rec.ExpiresAt.Unix(),
+		ID:            rec.ID.String(),
+		Object:        "file",
+		Bytes:         rec.Bytes,
+		CreatedAt:     rec.CreatedAt.Unix(),
+		Filename:      rec.Filename,
+		Purpose:       rec.Purpose,
+		ExpiresAt:     rec.ExpiresAt.Unix(),
+		Status:        rec.Status,
+		StatusDetails: statusDetails,
 	}
 }
 
 type openAIFile struct {
-	ID        string `json:"id"`
-	Object    string `json:"object"`
-	Bytes     int64  `json:"bytes"`
-	CreatedAt int64  `json:"created_at"`
-	Filename  string `json:"filename"`
-	Purpose   string `json:"purpose"`
-	ExpiresAt int64  `json:"expires_at"`
+	ID            string  `json:"id"`
+	Object        string  `json:"object"`
+	Bytes         int64   `json:"bytes"`
+	CreatedAt     int64   `json:"created_at"`
+	Filename      string  `json:"filename"`
+	Purpose       string  `json:"purpose"`
+	ExpiresAt     int64   `json:"expires_at"`
+	Status        string  `json:"status"`
+	StatusDetails *string `json:"status_details,omitempty"`
 }
 
 type openAIFileList struct {
-	Object string       `json:"object"`
-	Data   []openAIFile `json:"data"`
+	Object  string       `json:"object"`
+	Data    []openAIFile `json:"data"`
+	HasMore bool         `json:"has_more"`
+	FirstID *string      `json:"first_id,omitempty"`
+	LastID  *string      `json:"last_id,omitempty"`
+}
+
+type openAIDeleteFile struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Deleted bool   `json:"deleted"`
 }
 
 func parseUUID(str string) (uuid.UUID, error) {
@@ -215,6 +265,19 @@ func parseQueryInt(c *fiber.Ctx, key string, def int) int {
 		}
 	}
 	return def
+}
+
+func clampLimit(value, min, max, fallback int) int {
+	if value <= 0 {
+		value = fallback
+	}
+	if value < min {
+		value = min
+	}
+	if value > max {
+		value = max
+	}
+	return value
 }
 
 func firstValue(values []string) string {

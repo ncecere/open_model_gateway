@@ -151,13 +151,15 @@ type ProviderConfig struct {
 }
 
 type FilesConfig struct {
-	Storage       string           `mapstructure:"storage"`
-	MaxSizeMB     int              `mapstructure:"max_size_mb"`
-	DefaultTTL    time.Duration    `mapstructure:"default_ttl"`
-	MaxTTL        time.Duration    `mapstructure:"max_ttl"`
-	EncryptionKey string           `mapstructure:"encryption_key"`
-	S3            FilesS3Config    `mapstructure:"s3"`
-	Local         FilesLocalConfig `mapstructure:"local"`
+	Storage        string           `mapstructure:"storage"`
+	MaxSizeMB      int              `mapstructure:"max_size_mb"`
+	DefaultTTL     time.Duration    `mapstructure:"default_ttl"`
+	MaxTTL         time.Duration    `mapstructure:"max_ttl"`
+	EncryptionKey  string           `mapstructure:"encryption_key"`
+	SweepInterval  time.Duration    `mapstructure:"sweep_interval"`
+	SweepBatchSize int              `mapstructure:"sweep_batch_size"`
+	S3             FilesS3Config    `mapstructure:"s3"`
+	Local          FilesLocalConfig `mapstructure:"local"`
 }
 
 type FilesS3Config struct {
@@ -534,6 +536,12 @@ func (f *FilesConfig) validate() error {
 	if strings.TrimSpace(f.Storage) == "" {
 		f.Storage = "local"
 	}
+	if f.SweepInterval <= 0 {
+		f.SweepInterval = 15 * time.Minute
+	}
+	if f.SweepBatchSize <= 0 {
+		f.SweepBatchSize = 200
+	}
 	return nil
 }
 
@@ -619,6 +627,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("files.max_size_mb", 200)
 	v.SetDefault("files.default_ttl", "168h")
 	v.SetDefault("files.max_ttl", "720h")
+	v.SetDefault("files.sweep_interval", "15m")
+	v.SetDefault("files.sweep_batch_size", 200)
 	v.SetDefault("files.local.directory", "./data/files")
 
 	v.SetDefault("audio.max_upload_mb", 50)

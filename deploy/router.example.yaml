@@ -83,6 +83,8 @@ files:
   max_size_mb: 200
   default_ttl: 168h          # 7d
   max_ttl: 720h              # 30d
+  sweep_interval: 15m
+  sweep_batch_size: 200
   encryption_key: ""         # optional base64 AES key
   local:
     directory: "./data/files"

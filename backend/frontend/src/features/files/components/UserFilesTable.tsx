@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,7 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { UserFileRecord } from "@/api/user/files";
 import type { UserTenant } from "@/api/user/tenants";
 import { dateFormatter, formatBytes } from "../utils";
-import { Eye } from "lucide-react";
+import { Download, Eye } from "lucide-react";
+import { FileStatusBadge } from "./FileStatusBadge";
 
 export type UserFilesTableProps = {
   tenants: UserTenant[];
@@ -23,6 +24,10 @@ export type UserFilesTableProps = {
   files: UserFileRecord[];
   isLoading: boolean;
   onViewFile: (file: UserFileRecord) => void;
+  onDownload: (file: UserFileRecord) => void;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+  isFetchingMore?: boolean;
 };
 
 export function UserFilesTable({
@@ -38,6 +43,10 @@ export function UserFilesTable({
   files,
   isLoading,
   onViewFile,
+  onDownload,
+  hasMore,
+  onLoadMore,
+  isFetchingMore,
 }: UserFilesTableProps) {
   const formatTenantLabel = (tenant?: UserTenant) =>
     tenant?.is_personal ? "Personal" : tenant?.name ?? "—";
@@ -119,6 +128,7 @@ export function UserFilesTable({
                 <TableRow>
                   <TableHead>Filename</TableHead>
                   <TableHead>Purpose</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Size</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Expires</TableHead>
@@ -134,6 +144,14 @@ export function UserFilesTable({
                         {file.purpose || "unknown"}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <FileStatusBadge status={file.status} />
+                        {file.status_details ? (
+                          <p className="text-xs text-muted-foreground">{file.status_details}</p>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell>{formatBytes(file.bytes)}</TableCell>
                     <TableCell>{dateFormatter.format(new Date(file.created_at))}</TableCell>
                     <TableCell>
@@ -141,9 +159,12 @@ export function UserFilesTable({
                         ? dateFormatter.format(new Date(file.expires_at))
                         : "—"}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="space-x-1 text-right">
                       <Button variant="ghost" size="icon" onClick={() => onViewFile(file)}>
                         <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => onDownload(file)}>
+                        <Download className="h-4 w-4" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -152,6 +173,17 @@ export function UserFilesTable({
             </Table>
           )}
         </div>
+        {hasMore ? (
+          <CardFooter className="flex justify-center">
+            <Button
+              variant="outline"
+              disabled={isFetchingMore}
+              onClick={() => onLoadMore?.()}
+            >
+              {isFetchingMore ? "Loading..." : "Load more"}
+            </Button>
+          </CardFooter>
+        ) : null}
       </CardContent>
     </Card>
   );

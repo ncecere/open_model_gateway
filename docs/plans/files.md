@@ -9,12 +9,22 @@
 
 | Endpoint | Behavior |
 |----------|----------|
-| `GET /v1/files` | List files scoped to the authenticated tenant. |
+| `GET /v1/files` | List files scoped to the authenticated tenant. Supports `limit` (1-100), cursor-based `after`, and optional `purpose` filter. Response mirrors OpenAI’s `{object:\"list\", data:[...], has_more:false}` envelope. |
 | `POST /v1/files` | Upload file (multipart/form-data). Supports configurable max size (e.g., 200 MB). |
-| `GET /v1/files/:id` | Return metadata (id, filename, bytes, purpose, created_at, expires_at, status). |
-| `DELETE /v1/files/:id` | Soft delete (mark deleted, remove object from storage). |
+| `GET /v1/files/:id` | Return metadata (id, filename, bytes, purpose, created_at, expires_at, status). We also expose `status_details` and `deleted` fields. |
+| `DELETE /v1/files/:id` | Soft delete (mark deleted, remove object from storage) and return `{id, object:\"file\", deleted:true}`. |
 | `GET /v1/files/:id/content` | Stream raw file bytes back to the tenant (with `Content-Type` from metadata). |
-| `POST /v1/uploads` | Optional chunked upload endpoint (match OpenAI “upload sessions”) if needed for larger files. |
+| `POST /v1/uploads` | OpenAI’s “upload session” endpoint. Returns an upload session ID, chunk `part_size`, and `url`. Clients upload chunks via the provided pre-signed URL, then finalize with `/v1/uploads/{upload_id}/complete`. (We can initially respond with 501 until the session flow is ready.) |
+
+### OpenAI Spec Summary
+
+- **FileObject fields**: `id`, `object` (`"file"`), `bytes`, `created_at` (unix seconds), `filename`, `purpose`, `status` (`"uploading"`, `"uploaded"`, `"processed"`, `"error"`, `"deleted"`), `status_details` (string), `deletion_strategy` (optional), `document_type` (optional future), and for lists `deleted` (bool) when returned by `DELETE`.
+- **List response**: `{"object":"list","data":[FileObject...],"has_more":false,"first_id":...,"last_id":...}`. `limit` defaults to 100 (max 100), `after` is a cursor referencing the last returned ID.
+- **Upload request**: multipart with fields `purpose` (e.g., `fine-tune`, `batch`, `assistants`, `assistants_output`, `vision`, `moderation`, `responses`, `fine-tune-results`) and `file`. Optional `expires_in` (seconds) controls TTL but must not exceed `max_ttl`. OpenAI returns a FileObject with `status="uploaded"`.
+- **Download**: `GET /v1/files/{id}/content` returns raw bytes with `Content-Type` header; 404/403 when missing or unauthorized.
+- **Delete**: Soft delete, returning `{id, object:"file", deleted:true}` while the file remains queryable in audit logs.
+- **Chunked uploads**: `/v1/uploads` returns `{id, object:"upload", created_at, expires_at, part_size, url}`; clients `PUT` parts to the provided pre-signed URL and call `/v1/uploads/{id}/parts` + `/complete`. We can stub `POST /v1/uploads` initially with 501 but need the types defined for future compatibility.
+- **Error semantics**: invalid purpose → 400, file too large → 400, TTL > max → 400, expired/deleted → 404, unauthorized tenant → 403.
 
 ## Storage Architecture
 
@@ -67,4 +77,3 @@
 3. **HTTP routes**: Add `/v1/files` handlers under `internal/httpserver/public/files.go`, following OpenAI response schema.
 4. **Background sweeper**: Cron/goroutine that deletes expired files and cleans storage.
 5. **Docs**: Update PRD + `API.md`; add new doc explaining config, TTL, curl examples.
-

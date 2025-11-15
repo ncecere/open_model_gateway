@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"fmt"
+	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +20,7 @@ func registerAdminFileRoutes(router fiber.Router, container *app.Container) {
 	group := router.Group("/files")
 	group.Get("/", handler.list)
 	group.Get(":fileID", handler.get)
+	group.Get(":fileID/content", handler.download)
 	group.Delete(":fileID", handler.delete)
 }
 
@@ -38,6 +42,8 @@ type fileResponse struct {
 	ExpiresAt      string  `json:"expires_at"`
 	CreatedAt      string  `json:"created_at"`
 	DeletedAt      *string `json:"deleted_at,omitempty"`
+	Status         string  `json:"status"`
+	StatusDetails  string  `json:"status_details,omitempty"`
 }
 
 type fileListResponse struct {
@@ -130,6 +136,30 @@ func (h *fileHandler) delete(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *fileHandler) download(c *fiber.Ctx) error {
+	if h.container == nil || h.container.Files == nil {
+		return httputil.WriteError(c, fiber.StatusNotImplemented, "files service unavailable")
+	}
+	fileID, err := uuid.Parse(strings.TrimSpace(c.Params("fileID")))
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid file id")
+	}
+	record, err := h.container.Files.GetWithTenant(c.UserContext(), fileID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusNotFound, "file not found")
+	}
+	reader, meta, err := h.container.Files.Open(c.UserContext(), record.TenantID, fileID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	defer reader.Close()
+	c.Set("Content-Type", meta.ContentType)
+	c.Set("Content-Length", strconv.FormatInt(meta.Bytes, 10))
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", meta.Filename))
+	_, err = io.Copy(c, reader)
+	return err
+}
+
 func marshalFileRecord(record filesvc.FileWithTenant) fileResponse {
 	var deleted *string
 	if record.DeletedAt != nil {
@@ -150,5 +180,7 @@ func marshalFileRecord(record filesvc.FileWithTenant) fileResponse {
 		ExpiresAt:      record.ExpiresAt.Format(time.RFC3339),
 		CreatedAt:      record.CreatedAt.Format(time.RFC3339),
 		DeletedAt:      deleted,
+		Status:         record.Status,
+		StatusDetails:  record.StatusDetails,
 	}
 }

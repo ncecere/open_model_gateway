@@ -9,9 +9,11 @@ INSERT INTO files (
     storage_key,
     checksum,
     encrypted,
-    expires_at
+    expires_at,
+    status,
+    status_updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
 ) RETURNING *;
 
 -- name: GetFile :one
@@ -21,15 +23,28 @@ WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL;
 
 -- name: DeleteFile :exec
 UPDATE files
-SET deleted_at = NOW()
-WHERE tenant_id = $1 AND id = $2;
+SET deleted_at = NOW(),
+    status = 'deleted',
+    status_details = sqlc.narg(reason)::text,
+    status_updated_at = NOW()
+WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL;
 
 -- name: ListFiles :many
 SELECT *
 FROM files
-WHERE tenant_id = $1 AND deleted_at IS NULL
-ORDER BY created_at DESC
-LIMIT $2 OFFSET $3;
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+  AND (sqlc.narg(purpose)::text IS NULL OR purpose = sqlc.narg(purpose)::text)
+  AND (
+    sqlc.narg(after_created_at)::timestamptz IS NULL
+    OR created_at < sqlc.narg(after_created_at)::timestamptz
+    OR (
+      created_at = sqlc.narg(after_created_at)::timestamptz
+      AND (sqlc.narg(after_id)::uuid IS NULL OR id < sqlc.narg(after_id)::uuid)
+    )
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $2;
 
 -- name: ListFilesAdmin :many
 SELECT f.*, t.name AS tenant_name, COUNT(*) OVER() AS total_count

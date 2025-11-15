@@ -20,6 +20,7 @@ If your organization configures OIDC role requirements, make sure your Authentik
 | **Usage** | Detailed spend graphs with tenant/model selectors, timezone overrides, and a “Custom range” picker to match specific billing windows. |
 | **Tenants** | Lists the tenants you belong to, their budgets/rate limits, and (for owners/admins) membership management tools. |
 | **API Keys** | Generate/revoke API keys per tenant. |
+| **Files** | Upload JSONL/docs, view per-file status, paginate through history, and download raw content without leaving the browser. |
 | **Batches** | Monitor NDJSON batch jobs and download output/error NDJSON from the UI. The table defaults to your Personal tenant and only lists tenants you belong to. |
 
 The Batches view includes:
@@ -89,7 +90,7 @@ All requests use the standard OpenAI headers (`Authorization: Bearer <api-key>`,
 | `POST /v1/images/edits` | Supply images + optional mask for edit/extension (OpenAI/OpenAI-compatible adapters today). |
 | `POST /v1/images/variations` | Remix a single image (`n` ≤ 10). Same provider constraints as edits. |
 | `GET /v1/models` | Lists the catalog. |
-| `POST /v1/files` / `GET /v1/files` / `DELETE /v1/files/:id` | File upload, listing, download. |
+| `POST /v1/files` / `GET /v1/files` / `DELETE /v1/files/:id` | File upload, listing, download. Supports `limit` (1–100), cursor-based `after`, optional `purpose=batch|fine-tune|...` filters, and OpenAI-style `{has_more, first_id, last_id}` metadata. |
 | `POST /v1/audio/transcriptions` / `/translations` | Audio transcription/translation (subject to provider support). |
 | `POST /v1/audio/speech` | Text-to-speech (returns binary audio; use `-o` when using curl). |
 | `POST /v1/batches` | NDJSON batch ingestion. Supports `limit` (1–100) + `after` cursors on `GET /v1/batches` and returns OpenAI-style `errors`, `cancelling_at`, and `expired_at` fields. Metadata is limited to 16 key/value pairs (keys ≤ 64 chars, values ≤ 512 chars). |
@@ -112,17 +113,53 @@ curl http://localhost:8090/v1/chat/completions \
 
 For streaming responses, set `"stream": true` and read the SSE frames exactly like OpenAI’s API.
 
-### File Upload Example
+### Files API Examples
 
 ```bash
 curl http://localhost:8090/v1/files \
   -H "Authorization: Bearer $API_KEY" \
   -F "file=@prompt.jsonl" \
   -F "purpose=batch" \
-  -F "expires_in=168h"
+  -F "expires_in=604800"
 ```
 
-Files larger than `files.max_size_mb` are rejected. TTLs are clamped to `files.max_ttl`.
+Notes:
+- `expires_in` is expressed in seconds (e.g., `604800` for seven days). The backend clamps the value to `files.max_ttl` and defaults to `files.default_ttl` if omitted.
+- Responses include `status` (`uploading`, `uploaded`, `processed`, `error`, or `deleted`) plus optional `status_details` to mirror OpenAI’s FileObject shape.
+- `DELETE /v1/files/:id` responds with `{id, object:"file", deleted:true}`.
+
+List files with cursor pagination and purpose filtering:
+
+```bash
+curl "http://localhost:8090/v1/files?limit=20&after=$LAST_ID&purpose=batch" \
+  -H "Authorization: Bearer $API_KEY" | jq
+```
+
+Sample response:
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "file_abc123",
+      "object": "file",
+      "filename": "prompt.jsonl",
+      "purpose": "batch",
+      "bytes": 1024,
+      "created_at": 1739908702,
+      "expires_at": 1740513502,
+      "status": "uploaded",
+      "status_details": null
+    }
+  ],
+  "has_more": true,
+  "first_id": "file_abc123",
+  "last_id": "file_abc123"
+}
+```
+
+Use the returned `last_id` as the next `after` cursor while `has_more` is `true`. Download file contents through `GET /v1/files/{id}/content`—the router streams the persisted blob with the original `Content-Type`.
 
 ### Image Edit Example
 

@@ -230,11 +230,16 @@ CREATE TABLE IF NOT EXISTS files (
     metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'uploaded',
+    status_details TEXT,
+    status_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS files_tenant_idx ON files (tenant_id);
 CREATE INDEX IF NOT EXISTS files_expires_at_idx ON files (expires_at);
+CREATE INDEX IF NOT EXISTS files_tenant_created_idx ON files (tenant_id, created_at DESC, id);
+CREATE INDEX IF NOT EXISTS files_purpose_idx ON files (purpose);
 
 CREATE TABLE IF NOT EXISTS batches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

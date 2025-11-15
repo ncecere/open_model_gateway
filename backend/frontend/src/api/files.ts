@@ -14,6 +14,8 @@ export interface AdminFileRecord {
   expires_at: string;
   created_at: string;
   deleted_at?: string | null;
+  status: string;
+  status_details?: string | null;
 }
 
 export interface ListFilesResponse {
@@ -45,4 +47,9 @@ export async function getFile(fileId: string) {
 
 export async function deleteFile(fileId: string) {
   await api.delete(`/files/${fileId}`);
+}
+
+export function downloadAdminFileContent(fileId: string) {
+  const url = `/admin/files/${fileId}/content`;
+  window.open(url, "_blank", "noopener");
 }

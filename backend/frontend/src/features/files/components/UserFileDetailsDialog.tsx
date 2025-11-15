@@ -8,6 +8,7 @@ import {
 import type { UserFileRecord } from "@/api/user/files";
 import type { ReactNode } from "react";
 import { dateFormatter, formatBytes } from "../utils";
+import { formatFileStatus } from "./FileStatusBadge";
 
 type UserFileDetailsDialogProps = {
   file: UserFileRecord | null;
@@ -35,7 +36,14 @@ export function UserFileDetailsDialog({ file, tenantLabel, open, onOpenChange }:
                 <DetailItem label="Size">{formatBytes(file.bytes)}</DetailItem>
                 <DetailItem label="Content type">{file.content_type}</DetailItem>
                 <DetailItem label="Status" className="capitalize">
-                  {file.deleted_at ? "deleted" : "active"}
+                  {formatFileStatus(file.status)}
+                </DetailItem>
+                <DetailItem label="Status details">
+                  {file.status_details ? (
+                    <span className="text-sm text-muted-foreground">{file.status_details}</span>
+                  ) : (
+                    "—"
+                  )}
                 </DetailItem>
                 <DetailItem label="Created">
                   {dateFormatter.format(new Date(file.created_at))}

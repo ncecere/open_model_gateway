@@ -10,14 +10,28 @@ export interface UserFileRecord {
   created_at: string;
   expires_at: string;
   deleted_at?: string | null;
+  status: string;
+  status_details?: string | null;
 }
 
-export async function listUserFiles(tenantId: string, params?: { limit?: number; offset?: number }) {
-  const { data } = await userApi.get<{ files: UserFileRecord[] }>(
-    `/tenants/${tenantId}/files`,
-    {
-      params,
-    },
-  );
-  return data.files;
+export interface UserFilesListResponse {
+  files: UserFileRecord[];
+  has_more: boolean;
+  next_cursor?: string;
+}
+
+export async function listUserFiles(
+  tenantId: string,
+  params?: { limit?: number; after?: string; purpose?: string },
+) {
+  const { data } = await userApi.get<UserFilesListResponse>(`/tenants/${tenantId}/files`, {
+    params,
+  });
+  return data;
+}
+
+export async function downloadUserFile(tenantId: string, fileId: string) {
+  return userApi.get<Blob>(`/tenants/${tenantId}/files/${fileId}/content`, {
+    responseType: "blob",
+  });
 }

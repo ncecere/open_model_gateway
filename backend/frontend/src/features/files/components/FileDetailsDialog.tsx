@@ -8,9 +8,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { AdminFileRecord } from "@/api/files";
-import { Badge } from "@/components/ui/badge";
 import { dateFormatter, formatBytes } from "../utils";
 import type { ReactNode } from "react";
+import { FileStatusBadge } from "./FileStatusBadge";
 
 type FileRecord = Pick<
   AdminFileRecord,
@@ -67,9 +67,14 @@ export function FileDetailsDialog({ file, isPersonal, open, onOpenChange }: File
                 <DetailItem label="Encrypted">{file.encrypted ? "Yes" : "No"}</DetailItem>
                 <DetailItem label="Storage backend">{file.storage_backend}</DetailItem>
                 <DetailItem label="Status" className="capitalize">
-                  <Badge variant={file.deleted_at ? "destructive" : "secondary"}>
-                    {file.deleted_at ? "deleted" : "active"}
-                  </Badge>
+                  <FileStatusBadge status={file.status} />
+                </DetailItem>
+                <DetailItem label="Status details">
+                  {file.status_details ? (
+                    <span className="text-sm text-muted-foreground">{file.status_details}</span>
+                  ) : (
+                    "—"
+                  )}
                 </DetailItem>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">

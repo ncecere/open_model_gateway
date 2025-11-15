@@ -147,19 +147,19 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 
 **Goal**: Become a drop-in replacement for the full OpenAI REST surface so SDKs work without code changes.
 
-**Implemented today**
+- **Implemented today**
 - `GET /v1/models`
 - `POST /v1/chat/completions` (sync + SSE; tool calling limited to JSON schema outputs)
 - `POST /v1/embeddings`
 - `POST /v1/images/generations`
 - `POST /v1/audio/speech`
+- `POST /v1/batches` (create/list/retrieve/cancel, output/error downloads, and portal surfaces)
 
-**Missing / planned**
+- **Missing / planned**
 - `POST /v1/audio/transcriptions`, `POST /v1/audio/translations`
 - `POST /v1/images/edits`, `POST /v1/images/variations`
 - `POST /v1/moderations`
 - `GET/POST /v1/files` (complete CRUD + content streaming)
-- `POST /v1/batches`
 - `POST /v1/responses`, Assistants/Threads/Runs APIs (future stretch goal)
 
 ### Batches API

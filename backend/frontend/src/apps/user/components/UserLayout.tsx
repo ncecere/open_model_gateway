@@ -32,10 +32,10 @@ type LogoutFn = () => Promise<void> | void;
 
 const navItems = [
   { path: "/", label: "Dashboard" },
-  { path: "/usage", label: "Usage" },
   { path: "/models", label: "Models" },
   { path: "/tenants", label: "Tenants" },
   { path: "/api-keys", label: "API Keys" },
+  { path: "/usage", label: "Usage" },
   { path: "/files", label: "Files" },
   { path: "/batches", label: "Batches" },
 ];

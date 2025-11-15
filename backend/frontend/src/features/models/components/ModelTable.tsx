@@ -27,20 +27,13 @@ const currency = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 4,
 });
 
-const dateTime = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
 type ModelTableProps = {
   models: ModelCatalogEntry[];
   isLoading: boolean;
   hasAnyModels: boolean;
   onEdit: (model: ModelCatalogEntry) => void;
   onDelete: (model: ModelCatalogEntry) => void;
+  statuses?: Record<string, string>;
 };
 
 export function ModelTable({
@@ -49,6 +42,7 @@ export function ModelTable({
   hasAnyModels,
   onEdit,
   onDelete,
+  statuses,
 }: ModelTableProps) {
   if (isLoading) {
     return (
@@ -86,13 +80,16 @@ export function ModelTable({
           <TableHead>Deployment</TableHead>
           <TableHead>Pricing</TableHead>
           <TableHead>Model type</TableHead>
-          <TableHead>Updated</TableHead>
+          <TableHead>Status</TableHead>
           <TableHead className="w-12 text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {models.map((model) => (
-          <TableRow key={model.alias}>
+        {models.map((model) => {
+          const status = statuses?.[model.alias]
+            ?? (model.enabled ? "unknown" : "disabled");
+          return (
+            <TableRow key={model.alias}>
             <TableCell className="font-medium">
               <div className="flex flex-col">
                 <span>{model.alias}</span>
@@ -120,10 +117,10 @@ export function ModelTable({
             <TableCell className="text-sm">
               <div className="flex flex-col">
                 <span>
-                  {currency.format(model.price_input)} / 1M input tokens
+                  {currency.format(model.price_input)} input
                 </span>
                 <span>
-                  {currency.format(model.price_output)} / 1M output tokens
+                  {currency.format(model.price_output)} output
                 </span>
               </div>
             </TableCell>
@@ -132,8 +129,10 @@ export function ModelTable({
                 {formatModelTypeLabel(model.model_type)}
               </Badge>
             </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              {dateTime.format(new Date(model.updated_at))}
+            <TableCell>
+              <Badge className={statusClassName(status)}>
+                {formatStatusLabel(status)}
+              </Badge>
             </TableCell>
             <TableCell className="text-right">
               <DropdownMenu>
@@ -158,8 +157,30 @@ export function ModelTable({
               </DropdownMenu>
             </TableCell>
           </TableRow>
-        ))}
+        );
+        })}
       </TableBody>
     </Table>
   );
+}
+
+function statusClassName(status: string) {
+  switch (status) {
+    case "online":
+      return "bg-emerald-500 text-white hover:bg-emerald-500";
+    case "degraded":
+      return "bg-amber-500/80 text-black hover:bg-amber-500";
+    case "offline":
+    case "disabled":
+      return "bg-destructive text-destructive-foreground hover:bg-destructive";
+    default:
+      return "bg-muted text-foreground";
+  }
+}
+
+function formatStatusLabel(status: string) {
+  if (!status) {
+    return "Unknown";
+  }
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }

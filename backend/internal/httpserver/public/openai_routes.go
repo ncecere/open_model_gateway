@@ -430,6 +430,8 @@ func (h *openAIHandler) streamChat(
 		c.Set("Connection", "keep-alive")
 
 		streamStart := time.Now()
+		var firstTokenLatency time.Duration
+		var firstTokenMeasured bool
 
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 			defer cancel()
@@ -462,12 +464,16 @@ func (h *openAIHandler) streamChat(
 					}
 				}
 
+				latency := time.Since(streamStart)
+				if firstTokenMeasured && firstTokenLatency > 0 {
+					latency = firstTokenLatency
+				}
 				record := usagepipeline.Record{
 					Context:        rc,
 					Alias:          alias,
 					Provider:       route.Provider,
 					Usage:          streamUsage,
-					Latency:        time.Since(streamStart),
+					Latency:        latency,
 					Status:         recordStatus,
 					TraceID:        traceID,
 					IdempotencyKey: idempotencyKey,
@@ -494,6 +500,11 @@ func (h *openAIHandler) streamChat(
 						usageCaptured = true
 					}
 					continue
+				}
+
+				if !firstTokenMeasured {
+					firstTokenLatency = time.Since(streamStart)
+					firstTokenMeasured = true
 				}
 
 				payload := convertStreamChunk(chunk, alias)

@@ -5,6 +5,7 @@ import { RefreshCcw } from "lucide-react";
 import {
   deleteModel,
   listModelCatalog,
+  listModelStatuses,
   type ModelCatalogEntry,
   type ModelCatalogUpsertRequest,
   upsertModel,
@@ -45,6 +46,18 @@ export function ModelsPage() {
   });
 
   const models = catalogQuery.data ?? [];
+  const statusQuery = useQuery({
+    queryKey: ["model-catalog", "status"],
+    queryFn: listModelStatuses,
+    refetchInterval: 60_000,
+  });
+  const statusMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    statusQuery.data?.forEach((entry) => {
+      map[entry.alias] = entry.status;
+    });
+    return map;
+  }, [statusQuery.data]);
   const providerOptions = useMemo(() => {
     const unique = Array.from(new Set(models.map((model) => model.provider)));
     return unique.sort((a, b) => a.localeCompare(b));
@@ -185,6 +198,7 @@ export function ModelsPage() {
             models={filteredModels}
             isLoading={catalogQuery.isLoading}
             hasAnyModels={models.length > 0}
+            statuses={statusMap}
             onEdit={openEdit}
             onDelete={setDeleteTarget}
           />

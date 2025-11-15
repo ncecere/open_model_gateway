@@ -11,6 +11,97 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const aggregateLatencyByModel = `-- name: AggregateLatencyByModel :many
+SELECT
+    model_alias,
+    COALESCE(AVG(latency_ms), 0)::double precision AS avg_latency_ms,
+    COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms), 0)::double precision AS p95_latency_ms,
+    COUNT(*)::bigint AS sample_count
+FROM requests
+WHERE ts >= $1
+  AND ts < $2
+GROUP BY model_alias
+`
+
+type AggregateLatencyByModelParams struct {
+	Ts   pgtype.Timestamptz `json:"ts"`
+	Ts_2 pgtype.Timestamptz `json:"ts_2"`
+}
+
+type AggregateLatencyByModelRow struct {
+	ModelAlias   string  `json:"model_alias"`
+	AvgLatencyMs float64 `json:"avg_latency_ms"`
+	P95LatencyMs float64 `json:"p95_latency_ms"`
+	SampleCount  int64   `json:"sample_count"`
+}
+
+func (q *Queries) AggregateLatencyByModel(ctx context.Context, arg AggregateLatencyByModelParams) ([]AggregateLatencyByModelRow, error) {
+	rows, err := q.db.Query(ctx, aggregateLatencyByModel, arg.Ts, arg.Ts_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateLatencyByModelRow{}
+	for rows.Next() {
+		var i AggregateLatencyByModelRow
+		if err := rows.Scan(
+			&i.ModelAlias,
+			&i.AvgLatencyMs,
+			&i.P95LatencyMs,
+			&i.SampleCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const aggregateRequestMetricsByModel = `-- name: AggregateRequestMetricsByModel :many
+SELECT
+    model_alias,
+    COALESCE(SUM(input_tokens + output_tokens), 0)::bigint AS tokens,
+    COUNT(*)::bigint AS requests
+FROM requests
+WHERE ts >= $1
+  AND ts < $2
+GROUP BY model_alias
+`
+
+type AggregateRequestMetricsByModelParams struct {
+	Ts   pgtype.Timestamptz `json:"ts"`
+	Ts_2 pgtype.Timestamptz `json:"ts_2"`
+}
+
+type AggregateRequestMetricsByModelRow struct {
+	ModelAlias string `json:"model_alias"`
+	Tokens     int64  `json:"tokens"`
+	Requests   int64  `json:"requests"`
+}
+
+func (q *Queries) AggregateRequestMetricsByModel(ctx context.Context, arg AggregateRequestMetricsByModelParams) ([]AggregateRequestMetricsByModelRow, error) {
+	rows, err := q.db.Query(ctx, aggregateRequestMetricsByModel, arg.Ts, arg.Ts_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateRequestMetricsByModelRow{}
+	for rows.Next() {
+		var i AggregateRequestMetricsByModelRow
+		if err := rows.Scan(&i.ModelAlias, &i.Tokens, &i.Requests); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRequestByIdempotencyKey = `-- name: GetRequestByIdempotencyKey :one
 SELECT id, tenant_id, api_key_id, ts, model_alias, provider, latency_ms, status, error_code, input_tokens, output_tokens, cost_cents, cost_usd_micros, idempotency_key, trace_id
 FROM requests

@@ -106,6 +106,11 @@ export interface ModelCatalogEntry {
   provider_overrides: ProviderOverrides;
 }
 
+export interface ModelStatus {
+  alias: string;
+  status: string;
+}
+
 export interface ModelCatalogUpsertRequest {
   alias: string;
   provider: string;
@@ -201,6 +206,13 @@ function mapCatalogEntry(entry: ModelCatalogDTO): ModelCatalogEntry {
 export async function listModelCatalog() {
   const { data } = await api.get<ModelCatalogDTO[]>("/model-catalog");
   return data.map(mapCatalogEntry);
+}
+
+export async function listModelStatuses() {
+  const { data } = await api.get<{ statuses: ModelStatus[] }>(
+    "/model-catalog/status",
+  );
+  return data.statuses;
 }
 
 export async function upsertModel(payload: ModelCatalogUpsertRequest) {

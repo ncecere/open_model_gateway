@@ -21,6 +21,13 @@ type Engine struct {
 	state  map[string]*routeState
 }
 
+// RouteHealth describes the current health for an alias.
+type RouteHealth struct {
+	Alias         string `json:"alias"`
+	HealthyRoutes int    `json:"healthy_routes"`
+	TotalRoutes   int    `json:"total_routes"`
+}
+
 type routeState struct {
 	consecutiveFailures int
 	openUntil           time.Time
@@ -165,6 +172,30 @@ func (e *Engine) ListAliases() map[string][]providers.Route {
 		copyMap[alias] = out
 	}
 	return copyMap
+}
+
+// HealthStatus returns a snapshot of healthy vs total routes per alias.
+func (e *Engine) HealthStatus() map[string]RouteHealth {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	result := make(map[string]RouteHealth, len(e.routes))
+	now := time.Now()
+	for alias, routes := range e.routes {
+		healthy := 0
+		for _, route := range routes {
+			st := e.state[routeKey(alias, route)]
+			if st == nil || st.openUntil.Before(now) {
+				healthy++
+			}
+		}
+		result[alias] = RouteHealth{
+			Alias:         alias,
+			HealthyRoutes: healthy,
+			TotalRoutes:   len(routes),
+		}
+	}
+	return result
 }
 
 func MergeEntries(cfgEntries []config.ModelCatalogEntry, dbEntries []db.ModelCatalog) ([]config.ModelCatalogEntry, error) {

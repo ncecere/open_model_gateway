@@ -34,6 +34,17 @@ type Service struct {
 	timezone *time.Location
 }
 
+// ModelPerformanceStats captures recent performance data for a model alias.
+type ModelPerformanceStats struct {
+	Alias                  string  `json:"alias"`
+	Requests               int64   `json:"requests"`
+	Tokens                 int64   `json:"tokens"`
+	ThroughputTokensPerSec float64 `json:"throughput_tokens_per_sec"`
+	AvgLatencyMs           float64 `json:"avg_latency_ms"`
+	P95LatencyMs           float64 `json:"p95_latency_ms"`
+	LatencySampleCount     int64   `json:"latency_sample_count"`
+}
+
 const (
 	maxUsageCompareSeries  = 10
 	maxCustomCompareDays   = 180
@@ -751,6 +762,53 @@ func (s *Service) buildModelCompareSeries(ctx context.Context, aliases []string,
 		})
 	}
 	return series, nil
+}
+
+// ModelPerformance aggregates recent throughput and latency metrics per model alias.
+func (s *Service) ModelPerformance(ctx context.Context, start, end time.Time) (map[string]ModelPerformanceStats, error) {
+	result := make(map[string]ModelPerformanceStats)
+	if s == nil || s.queries == nil {
+		return result, nil
+	}
+	if end.Before(start) {
+		start, end = end, start
+	}
+	windowSeconds := end.Sub(start).Seconds()
+	if windowSeconds <= 0 {
+		windowSeconds = 1
+	}
+	metricRows, err := s.queries.AggregateRequestMetricsByModel(ctx, db.AggregateRequestMetricsByModelParams{
+		Ts:   toPgTime(start),
+		Ts_2: toPgTime(end),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range metricRows {
+		stats := ModelPerformanceStats{
+			Alias:                  row.ModelAlias,
+			Requests:               row.Requests,
+			Tokens:                 row.Tokens,
+			ThroughputTokensPerSec: float64(row.Tokens) / windowSeconds,
+		}
+		result[row.ModelAlias] = stats
+	}
+	latencyRows, err := s.queries.AggregateLatencyByModel(ctx, db.AggregateLatencyByModelParams{
+		Ts:   toPgTime(start),
+		Ts_2: toPgTime(end),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range latencyRows {
+		stats := result[row.ModelAlias]
+		stats.Alias = row.ModelAlias
+		stats.AvgLatencyMs = row.AvgLatencyMs
+		stats.P95LatencyMs = row.P95LatencyMs
+		stats.LatencySampleCount = row.SampleCount
+		result[row.ModelAlias] = stats
+	}
+	return result, nil
 }
 
 func (s *Service) buildUserCompareSeries(ctx context.Context, userIDs []uuid.UUID, start, end time.Time, zone string, loc *time.Location) ([]UsageCompareSeries, error) {

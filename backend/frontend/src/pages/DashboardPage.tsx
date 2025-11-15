@@ -14,54 +14,13 @@ import { MetricCard } from "@/ui/kit/Cards";
 import { Globe } from "lucide-react";
 import PostgresIcon from "@/assets/system/postgres.svg";
 import RedisIcon from "@/assets/system/redis.svg";
-import AnthropicIconDark from "@/assets/providers/anthropic_dark.svg";
-import AnthropicIconLight from "@/assets/providers/anthropic_light.svg";
-import BedrockIcon from "@/assets/providers/bedrock.svg";
-import VertexIcon from "@/assets/providers/vertexai.svg";
-import AzureIcon from "@/assets/providers/azure.svg";
-import OpenAIIconLight from "@/assets/providers/openai_light.svg";
-import OpenAIIconDark from "@/assets/providers/openai_dark.svg";
-import OpenAICompatIcon from "@/assets/providers/openai_compatable.svg";
 import { useTheme } from "@/providers/ThemeProvider";
+import { getProviderIcon } from "@/features/models/provider-icons";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
   currency: "USD",
 });
-
-const providerIcons: Record<
-  string,
-  { light: string; dark: string }
-> = {
-  anthropic: {
-    light: AnthropicIconLight,
-    dark: AnthropicIconDark,
-  },
-  bedrock: {
-    light: BedrockIcon,
-    dark: BedrockIcon,
-  },
-  vertex: {
-    light: VertexIcon,
-    dark: VertexIcon,
-  },
-  azure: {
-    light: AzureIcon,
-    dark: AzureIcon,
-  },
-  openai: {
-    light: OpenAIIconLight,
-    dark: OpenAIIconDark,
-  },
-  "openai-compatible": {
-    light: OpenAICompatIcon,
-    dark: OpenAICompatIcon,
-  },
-  openai_compatible: {
-    light: OpenAICompatIcon,
-    dark: OpenAICompatIcon,
-  },
-};
 
 const formatSpendAmount = (usd?: number, cents?: number) =>
   currencyFormatter.format(
@@ -240,8 +199,7 @@ function ModelHealthCard({
                   : group.enabled === 0
                     ? "destructive"
                     : "outline";
-              const iconSet = providerIcons[group.provider];
-              const icon = iconSet ? iconSet[theme] : null;
+              const icon = getProviderIcon(group.provider, theme);
               return (
                 <div key={group.provider} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">

@@ -9,6 +9,7 @@ import { UserApiKeysPage } from "./pages/ApiKeysPage";
 import { UserTenantsPage } from "./pages/TenantsPage";
 import { UserBatchesPage } from "./pages/BatchesPage";
 import { UserFilesPage } from "./pages/FilesPage";
+import { UserModelsPage } from "./pages/ModelsPage";
 import { UserOIDCRedirectPage } from "./pages/OIDCRedirectPage";
 
 function ProtectedRoute({ children }: { children: ReactElement }) {
@@ -50,6 +51,7 @@ export function UserRoutes() {
         <Route index element={<UserDashboardPage />} />
         <Route path="tenants" element={<UserTenantsPage />} />
         <Route path="usage" element={<UserUsagePage />} />
+        <Route path="models" element={<UserModelsPage />} />
         <Route path="api-keys" element={<UserApiKeysPage />} />
         <Route path="files" element={<UserFilesPage />} />
         <Route path="batches" element={<UserBatchesPage />} />

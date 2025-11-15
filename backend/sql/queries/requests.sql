@@ -38,3 +38,24 @@ FROM requests
 WHERE api_key_id = ANY($1::uuid[])
 ORDER BY ts DESC
 LIMIT $2;
+
+-- name: AggregateLatencyByModel :many
+SELECT
+    model_alias,
+    COALESCE(AVG(latency_ms), 0)::double precision AS avg_latency_ms,
+    COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms), 0)::double precision AS p95_latency_ms,
+    COUNT(*)::bigint AS sample_count
+FROM requests
+WHERE ts >= $1
+  AND ts < $2
+GROUP BY model_alias;
+
+-- name: AggregateRequestMetricsByModel :many
+SELECT
+    model_alias,
+    COALESCE(SUM(input_tokens + output_tokens), 0)::bigint AS tokens,
+    COUNT(*)::bigint AS requests
+FROM requests
+WHERE ts >= $1
+  AND ts < $2
+GROUP BY model_alias;

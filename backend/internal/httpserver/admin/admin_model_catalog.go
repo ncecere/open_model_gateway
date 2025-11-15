@@ -8,6 +8,7 @@ import (
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/router"
 	admincatalogsvc "github.com/ncecere/open_model_gateway/backend/internal/services/admincatalog"
 )
 
@@ -19,6 +20,7 @@ func registerAdminModelCatalogRoutes(router fiber.Router, container *app.Contain
 
 	group := router.Group("/model-catalog")
 	group.Get("/", handler.list)
+	group.Get("/status", handler.status)
 	group.Post("/", handler.upsert)
 	group.Delete("/:alias", handler.remove)
 }
@@ -37,6 +39,26 @@ func (h *modelCatalogHandler) list(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(items)
+}
+
+func (h *modelCatalogHandler) status(c *fiber.Ctx) error {
+	if h.service == nil || h.container == nil || h.container.Engine == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "model catalog service unavailable")
+	}
+	models, err := h.service.List(c.Context())
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	health := h.container.Engine.HealthStatus()
+	resp := make([]fiber.Map, 0, len(models))
+	for _, model := range models {
+		status := deriveModelStatus(model.Enabled, health[model.Alias])
+		resp = append(resp, fiber.Map{
+			"alias":  model.Alias,
+			"status": status,
+		})
+	}
+	return c.JSON(fiber.Map{"statuses": resp})
 }
 
 func (h *modelCatalogHandler) upsert(c *fiber.Ctx) error {
@@ -90,4 +112,20 @@ func writeCatalogError(c *fiber.Ctx, err error) error {
 		status = fiber.StatusInternalServerError
 	}
 	return httputil.WriteError(c, status, err.Error())
+}
+
+func deriveModelStatus(enabled bool, health router.RouteHealth) string {
+	if !enabled {
+		return "disabled"
+	}
+	if health.TotalRoutes == 0 {
+		return "unknown"
+	}
+	if health.HealthyRoutes == 0 {
+		return "offline"
+	}
+	if health.HealthyRoutes < health.TotalRoutes {
+		return "degraded"
+	}
+	return "online"
 }

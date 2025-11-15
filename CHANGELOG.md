@@ -3,7 +3,20 @@
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
 ## [Unreleased]
-_No changes yet._
+### Added
+- Read-only model catalog page in the **user portal** with pricing, model type, throughput, latency, and router health status per alias.
+- `/admin/model-catalog/status` API so the admin UI can surface live status badges matching the user portal.
+- Model type support across backend/frontend (schema column, admin editor control, YAML config) so aliases can be labeled `LLM`, `Embedding`, etc.
+- Performance aggregation endpoints combining throughput + latency data for both portals, powered by new SQL aggregates.
+
+### Changed
+- Pricing columns now display as simple input/output amounts (no "per 1M" suffix) in the admin catalog table.
+- Admin catalog table replaces the "Updated" column with the new health-aware status badges.
+- Provider logos in both portals now pick the correct light/dark variant automatically.
+- Streaming latency metrics record time-to-first-token and throughput calculations pull from the last 24 hours of request data for more accurate performance snapshots.
+- Budget/usage calculations now treat catalog prices as "per million tokens" to match OpenAI-style contracts, fixing prior cost inflation.
+- Provider slugs are normalized end-to-end (API/UI/YAML) so `openai-compatible` works consistently.
+- User portal UI now consumes the enriched `/user/models` response and shares the same badge colors/status semantics as the admin portal.
 
 ## [v0.1.2] - 2025-02-20
 ### Added

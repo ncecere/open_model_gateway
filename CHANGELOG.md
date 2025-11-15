@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.5] - 2025-02-20
 ### Added
 - Files API now mirrors OpenAI’s contract end-to-end: new schema columns for `status`/`status_details`, cursor-based listing with `has_more`/`first_id`/`last_id`, `deleted` responses, configurable sweep intervals/batch sizes, updated admin/user documentation, and a routerd background sweeper that reaps expired blobs automatically.
 - Admin and user portals now surface the richer Files metadata (status badges, details, TTL hints) along with cursor-driven pagination, “Load more” behavior, and download actions powered by the new admin/user download endpoints.

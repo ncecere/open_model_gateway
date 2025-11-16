@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file. The format 
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.10] - 2025-11-18
 ### Added
 - Added a native Groq provider adapter (sync + streaming chat, health checks) with config overrides (`providers.groq.*`, `provider_overrides.groq`, and new `groq_*` metadata keys) so catalog entries can BYOK or pin specific regions without auto-discovery.
 - OpenRouter models now follow the same manual onboarding flow as other providers (config/UI/API entries only); the catalog discovery endpoint and related config knobs were removed to keep operators in full control of which models are exposed.

@@ -132,6 +132,7 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - **Benefits**: Popular European option with competitive pricing and strong multilingual support.
 
 ### Groq
+- **Status**: ✅ Completed — Native Groq adapter (chat + SSE) with region-aware metadata is now available in the catalog, config samples, and admin UI.
 - **Implementation**: Implement the Groq HTTP API with SSE streaming optimizations to showcase low-latency routing; expose hardware region selection metadata.
 - **Benefits**: Ultra-fast inference for assistants; highlights the gateway’s ability to span heterogeneous providers.
 

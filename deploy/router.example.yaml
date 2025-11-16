@@ -82,7 +82,10 @@ providers:
     api_key: ""
     referer: "https://your-app.example.com"
     app_name: "Open Model Gateway"
-    models_cache_ttl: 10m
+  groq:
+    base_url: "https://api.groq.com/openai/v1"
+    api_key: ""
+    region: ""
 
 files:
   storage: "local"           # local or s3
@@ -237,6 +240,36 @@ model_catalog:
       openrouter_referer: "https://your-app.example.com"
       openrouter_app_name: "Open Model Gateway"
       description: "Example OpenRouter alias using providers.openrouter defaults."
+
+  - alias: "groq-llama3-70b"
+    provider: "groq"
+    provider_model: "llama-3.3-70b-versatile"
+    model_type: "llm"
+    context_window: 131072
+    max_output_tokens: 32768
+    modalities: ["text"]
+    supports_tools: true
+    price_input: 0.59
+    price_output: 0.79
+    currency: "USD"
+    deployment: "llama-3.3-70b-versatile"
+    metadata:
+      groq_region: "us-east-1"
+
+  - alias: "groq-mixtral-8x7b"
+    provider: "groq"
+    provider_model: "mixtral-8x7b"
+    model_type: "llm"
+    context_window: 32768
+    max_output_tokens: 8192
+    modalities: ["text"]
+    supports_tools: false
+    price_input: 0.27
+    price_output: 0.27
+    currency: "USD"
+    deployment: "mixtral-8x7b"
+    metadata:
+      groq_region: "us-east-1"
 
   - alias: "claude-3-sonnet"
     provider: "bedrock"

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+# Changelog
+
+All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
+
+## [Unreleased]
+### Added
+- Added a native Groq provider adapter (sync + streaming chat, health checks) with config overrides (`providers.groq.*`, `provider_overrides.groq`, and new `groq_*` metadata keys) so catalog entries can BYOK or pin specific regions without auto-discovery.
+- OpenRouter models now follow the same manual onboarding flow as other providers (config/UI/API entries only); the catalog discovery endpoint and related config knobs were removed to keep operators in full control of which models are exposed.
+- Surfaced Groq in the admin UI (provider picker, icons, metadata drawer) plus sample catalog entries/config blocks in `router.local.yaml`, `router.example.yaml`, and docs so operators can onboard Groq models with the same workflow as other providers.
+### Documentation
+- Added `docs/architecture/providers/groq.md`, updated the runtime config/provider docs, and expanded the admin catalog examples to cover Groq pricing/metadata conventions.
+
 ## [v0.1.9] - 2025-11-17
 ### Added
 - Added a first-class OpenRouter adapter (chat, streaming, embeddings, model listing) plus provider registry integration. Catalog entries now support `provider_overrides.openrouter` metadata, and global config offers `providers.openrouter.*` knobs (API key, referer/title headers, discovery TTL).

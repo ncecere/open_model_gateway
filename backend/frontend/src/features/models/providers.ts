@@ -5,6 +5,7 @@ import OpenAILogo from "@/assets/providers/openai_light.svg";
 import OpenAICompatibleLogo from "@/assets/providers/openai_compatable.svg";
 import VertexLogo from "@/assets/providers/vertexai.svg";
 import OpenRouterLogo from "@/assets/providers/openrouter_light.svg";
+import GroqLogo from "@/assets/providers/groq.svg";
 
 export type ProviderConfig = {
   showEndpoint: boolean;
@@ -93,6 +94,18 @@ export const PROVIDER_DETAILS: Record<string, ProviderDetail> = {
       showApiVersion: false,
       showDeployment: false,
       showRegion: false,
+    },
+  },
+  groq: {
+    value: "groq",
+    label: "Groq",
+    logo: GroqLogo,
+    config: {
+      showEndpoint: false,
+      showApiKey: true,
+      showApiVersion: false,
+      showDeployment: false,
+      showRegion: true,
     },
   },
   anthropic: {

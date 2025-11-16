@@ -245,6 +245,8 @@ function formatProviderLabel(provider: string) {
       return "OpenAI";
     case "openrouter":
       return "OpenRouter";
+    case "groq":
+      return "Groq";
     case "openai_compatible":
     case "openai-compatible":
       return "OpenAI-compatible";

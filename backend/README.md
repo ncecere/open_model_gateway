@@ -71,7 +71,7 @@ Global provider fallbacks live under the `providers.*` block inside `router.yaml
 - `providers.openrouter.api_key` – Bring-Your-Own OpenRouter key used for catalog imports and as a default when catalog entries omit `api_key`.
 - `providers.openrouter.base_url` – Defaults to `https://openrouter.ai/api/v1`, override if you run a dedicated shard.
 - `providers.openrouter.referer` / `app_name` – Attribution headers (`HTTP-Referer`, `X-Title`) applied to every OpenRouter request.
-- `providers.openrouter.models_cache_ttl` – Cache duration for OpenRouter model discovery responses (controls how long the gateway caches `/models` metadata).
+- OpenRouter models are added manually via config/UI/API; these settings simply provide shared credentials/headers.
 
 Per-model overrides sit under `provider_overrides.openrouter` or catalog metadata keys (`openrouter_api_key`, `openrouter_referer`, `openrouter_app_name`).
 

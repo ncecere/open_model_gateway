@@ -142,6 +142,36 @@ const OPENROUTER_METADATA: MetadataSection[] = [
   },
 ];
 
+const GROQ_METADATA: MetadataSection[] = [
+  {
+    id: "groq-settings",
+    title: "Groq routing hints",
+    description:
+      "Optional per-model overrides for Groq keys or preferred hardware regions.",
+    fields: [
+      {
+        key: "groq_api_key",
+        label: "API key override",
+        placeholder: "gsk_...",
+        description:
+          "Populate when this Groq model should use a BYOK credential instead of the catalog entry or global default.",
+      },
+      {
+        key: "groq_region",
+        label: "Preferred region",
+        placeholder: "us-east-1",
+        description:
+          "Recorded for observability and forwarded via X-Groq-Region so requests target a specific PoP.",
+      },
+      {
+        key: "base_url",
+        label: "Base URL override",
+        placeholder: "https://api.groq.com/openai/v1",
+      },
+    ],
+  },
+];
+
 const PROVIDER_METADATA_SECTIONS: Record<string, MetadataSection[]> = {
   openai: [
     {
@@ -167,6 +197,7 @@ const PROVIDER_METADATA_SECTIONS: Record<string, MetadataSection[]> = {
   openai_compatible: OPENAI_COMPATIBLE_METADATA,
   openrouter: OPENROUTER_METADATA,
   open_router: OPENROUTER_METADATA,
+  groq: GROQ_METADATA,
   bedrock: [
     {
       id: "bedrock-behavior",

@@ -255,6 +255,26 @@ Use this reference when adding models through the Admin UI (“Add model”) or 
 
 ---
 
+## Groq
+```yaml
+- alias: "groq-llama3-70b"
+  provider: "groq"
+  provider_model: "llama-3.3-70b-versatile"
+  model_type: "llm"
+  context_window: 131072
+  max_output_tokens: 32768
+  modalities: ["text"]
+  supports_tools: true
+  price_input: 0.59
+  price_output: 0.79
+  currency: "USD"
+  deployment: "llama-3.3-70b-versatile"
+  metadata:
+    groq_region: "us-east-1"
+```
+
+---
+
 ## Moderation + Audio Summary
 | Model Type | Suggested Provider | Example Alias |
 | --- | --- | --- |

@@ -74,6 +74,12 @@ export interface OpenRouterProviderConfig {
   app_name?: string;
 }
 
+export interface GroqProviderConfig {
+  api_key?: string;
+  base_url?: string;
+  region?: string;
+}
+
 export interface ProviderOverrides {
   azure?: AzureProviderConfig;
   vertex?: VertexProviderConfig;
@@ -82,6 +88,7 @@ export interface ProviderOverrides {
   openai_compatible?: OpenAICompatibleProviderConfig;
   anthropic?: AnthropicProviderConfig;
   openrouter?: OpenRouterProviderConfig;
+  groq?: GroqProviderConfig;
 }
 
 export interface AnthropicProviderConfig {
@@ -249,6 +256,9 @@ export async function upsertModel(payload: ModelCatalogUpsertRequest) {
   }
   if (provider_overrides?.openrouter) {
     body.openrouter = provider_overrides.openrouter;
+  }
+  if (provider_overrides?.groq) {
+    body.groq = provider_overrides.groq;
   }
 
   const { data } = await api.post<ModelCatalogDTO>("/model-catalog", body);

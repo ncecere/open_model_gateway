@@ -9,6 +9,7 @@ type ProviderOverrides struct {
 	OpenAICompatible *OpenAICompatibleProviderConfig `mapstructure:"openai_compatible" json:"openai_compatible,omitempty"`
 	Anthropic        *AnthropicProviderConfig        `mapstructure:"anthropic" json:"anthropic,omitempty"`
 	OpenRouter       *OpenRouterProviderConfig       `mapstructure:"openrouter" json:"openrouter,omitempty"`
+	Groq             *GroqProviderConfig             `mapstructure:"groq" json:"groq,omitempty"`
 }
 
 type AzureProviderConfig struct {
@@ -65,4 +66,10 @@ type OpenRouterProviderConfig struct {
 	BaseURL string `mapstructure:"base_url" json:"base_url"`
 	Referer string `mapstructure:"referer" json:"referer"`
 	AppName string `mapstructure:"app_name" json:"app_name"`
+}
+
+type GroqProviderConfig struct {
+	APIKey  string `mapstructure:"api_key" json:"api_key"`
+	BaseURL string `mapstructure:"base_url" json:"base_url"`
+	Region  string `mapstructure:"region" json:"region"`
 }

@@ -17,7 +17,6 @@ type providerHandler struct {
 func registerAdminProviderRoutes(router fiber.Router, container *app.Container) {
 	handler := &providerHandler{container: container, service: container.AdminProviders}
 	router.Get("/providers", handler.list)
-	router.Get("/providers/openrouter/catalog", handler.openRouterCatalog)
 }
 
 func (h *providerHandler) list(c *fiber.Ctx) error {
@@ -32,18 +31,4 @@ func (h *providerHandler) list(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(fiber.Map{"providers": defs})
-}
-
-func (h *providerHandler) openRouterCatalog(c *fiber.Ctx) error {
-	if err := requireAnyRole(c, h.container, db.MembershipRoleViewer); err != nil {
-		return err
-	}
-	if h.service == nil {
-		return httputil.WriteError(c, fiber.StatusInternalServerError, "provider service unavailable")
-	}
-	catalog, err := h.service.OpenRouterCatalog(c.Context())
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusBadGateway, err.Error())
-	}
-	return c.JSON(catalog)
 }

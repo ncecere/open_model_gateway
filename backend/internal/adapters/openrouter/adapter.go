@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -177,15 +176,6 @@ func (a *Adapter) Models(ctx context.Context) ([]models.Model, error) {
 		return nil, err
 	}
 	return convertModelList(resp), nil
-}
-
-// Catalog returns the full OpenRouter catalog, including pricing metadata.
-func (a *Adapter) Catalog(ctx context.Context) ([]CatalogModel, error) {
-	resp, err := a.fetchModelList(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return convertCatalogModels(resp), nil
 }
 
 // HealthCheck verifies the configured key by calling the /key endpoint.
@@ -362,60 +352,27 @@ func convertEmbeddingsResponse(resp embeddingResponse) models.EmbeddingsResponse
 }
 
 func convertModelList(resp modelListResponse) []models.Model {
-	catalog := convertCatalogModels(resp)
-	if len(catalog) == 0 {
-		return nil
-	}
-	out := make([]models.Model, 0, len(catalog))
-	for _, item := range catalog {
-		m := models.Model{
-			Alias:           item.ID,
-			Provider:        item.Provider,
-			ProviderModel:   item.ID,
-			ContextWindow:   item.ContextLength,
-			MaxOutputTokens: item.MaxCompletionTokens,
-			SupportsTools:   item.SupportsTools,
-		}
-		if item.Modality != "" {
-			m.Modalities = []string{item.Modality}
-		} else if len(item.InputModalities) > 0 {
-			m.Modalities = copyStrings(item.InputModalities)
-		}
-		out = append(out, m)
-	}
-	return out
-}
-
-func convertCatalogModels(resp modelListResponse) []CatalogModel {
 	if len(resp.Data) == 0 {
 		return nil
 	}
-	out := make([]CatalogModel, 0, len(resp.Data))
+	out := make([]models.Model, 0, len(resp.Data))
 	for _, item := range resp.Data {
-		model := CatalogModel{
-			ID:                  item.ID,
-			Name:                item.Name,
-			Description:         item.Description,
-			Provider:            "openrouter",
-			Modality:            item.Architecture.Modality,
-			ContextLength:       item.ContextLength,
-			MaxCompletionTokens: item.TopProvider.MaxCompletionTokens,
-			InputModalities:     copyStrings(item.Architecture.InputModalities),
-			OutputModalities:    copyStrings(item.Architecture.OutputModalities),
-			SupportedParameters: copyStrings(item.SupportedParameters),
-			SupportsTools:       hasTools(item.SupportedParameters),
-			Pricing: CatalogPricing{
-				Prompt:     parsePrice(item.Pricing.Prompt),
-				Completion: parsePrice(item.Pricing.Completion),
-				Request:    parsePrice(item.Pricing.Request),
-				Image:      parsePrice(item.Pricing.Image),
-				WebSearch:  parsePrice(item.Pricing.WebSearch),
-			},
+		m := models.Model{
+			Alias:           item.ID,
+			Provider:        "openrouter",
+			ProviderModel:   item.ID,
+			ContextWindow:   item.ContextLength,
+			MaxOutputTokens: item.TopProvider.MaxCompletionTokens,
+			SupportsTools:   hasTools(item.SupportedParameters),
 		}
-		if len(model.InputModalities) == 0 && model.Modality != "" {
-			model.InputModalities = []string{model.Modality}
+		modalities := item.Architecture.InputModalities
+		if len(modalities) == 0 && item.Architecture.Modality != "" {
+			modalities = []string{item.Architecture.Modality}
 		}
-		out = append(out, model)
+		if len(modalities) > 0 {
+			m.Modalities = copyStrings(modalities)
+		}
+		out = append(out, m)
 	}
 	return out
 }
@@ -436,17 +393,6 @@ func hasTools(params []string) bool {
 		}
 	}
 	return false
-}
-
-func parsePrice(value string) float64 {
-	if strings.TrimSpace(value) == "" {
-		return 0
-	}
-	v, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	if err != nil {
-		return 0
-	}
-	return v
 }
 
 func convertUsage(u usagePayload) models.Usage {
@@ -607,29 +553,4 @@ type modelPricing struct {
 	Request    string `json:"request"`
 	Image      string `json:"image"`
 	WebSearch  string `json:"web_search"`
-}
-
-// CatalogModel describes a single OpenRouter catalog entry enriched with pricing metadata.
-type CatalogModel struct {
-	ID                  string         `json:"id"`
-	Name                string         `json:"name"`
-	Description         string         `json:"description"`
-	Provider            string         `json:"provider"`
-	Modality            string         `json:"modality"`
-	ContextLength       int32          `json:"context_length"`
-	MaxCompletionTokens int32          `json:"max_completion_tokens"`
-	InputModalities     []string       `json:"input_modalities"`
-	OutputModalities    []string       `json:"output_modalities"`
-	SupportedParameters []string       `json:"supported_parameters"`
-	SupportsTools       bool           `json:"supports_tools"`
-	Pricing             CatalogPricing `json:"pricing"`
-}
-
-// CatalogPricing captures parsed prompt/completion/web-search rates in USD.
-type CatalogPricing struct {
-	Prompt     float64 `json:"prompt"`
-	Completion float64 `json:"completion"`
-	Request    float64 `json:"request"`
-	Image      float64 `json:"image"`
-	WebSearch  float64 `json:"web_search"`
 }

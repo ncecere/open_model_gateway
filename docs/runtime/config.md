@@ -97,11 +97,14 @@ Shared credential fallbacks for adapters:
 - `aws_access_key_id`, `aws_secret_access_key`, `aws_region`
 - `gcp_project_id`, `gcp_json_credentials`
 - `openai_compatible.base_url` + `api_key`
-- `openrouter.base_url`, `api_key`, `referer`, `app_name`, `models_cache_ttl`
+- `openrouter.base_url`, `api_key`, `referer`, `app_name`
+- `groq.base_url`, `api_key`, `region`
 
 These values seed provider factories; individual catalog entries can override them via `metadata` or provider-specific sub-blocks.
 
-The OpenRouter block defaults to `https://openrouter.ai/api/v1`, blank attribution headers, and a `10m` `models_cache_ttl`. That TTL controls how long the discovery service caches `/models` responses before refreshing the catalog for the admin UI.
+The OpenRouter block defaults to `https://openrouter.ai/api/v1` with blank attribution headers. Catalog entries continue to be curated manually through config/UI/API—there is no automated discovery, so the config simply provides shared credentials/headers.
+
+The Groq block simply sets default credentials for Groq's OpenAI-compatible endpoint (`https://api.groq.com/openai/v1` by default) and an optional `region` hint forwarded via `X-Groq-Region`. Catalog entries remain the source of truth for Groq models—there is no automatic discovery.
 
 ## Files (`files.*`)
 

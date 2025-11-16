@@ -65,16 +65,6 @@ func TestConvertModelList(t *testing.T) {
 	if err := fixtures.Load("openrouter_models.json", &payload); err != nil {
 		t.Fatalf("load fixture: %v", err)
 	}
-	catalog := convertCatalogModels(payload)
-	if len(catalog) != 1 {
-		t.Fatalf("expected catalog entry, got %d", len(catalog))
-	}
-	if !catalog[0].SupportsTools {
-		t.Fatalf("expected supported parameters to enable tool calling")
-	}
-	if catalog[0].Pricing.Prompt != 0 {
-		t.Fatalf("expected sample prompt pricing to parse to 0, got %f", catalog[0].Pricing.Prompt)
-	}
 	models := convertModelList(payload)
 	if len(models) != 1 {
 		t.Fatalf("expected one model entry, got %d", len(models))

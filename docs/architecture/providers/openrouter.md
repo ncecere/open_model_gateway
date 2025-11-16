@@ -30,18 +30,14 @@ Source material: OpenRouter public docs (overview, streaming, limits, errors, em
 
 ## Integration Considerations
 - Support BYOK: tenants configure their own OpenRouter key; we simply forward it plus the required headers. Our config should also allow ops-owned fallback keys for testing.
-- Discovery caching: store `/models` response (plus timestamp) so admin UI can display long-tail catalog entries. Response is large; plan to limit stored fields → id/name/friendly_name/provider/pricing/context/capabilities.
-- Health checks: `/models` is publicly accessible but we should prefer an authenticated call (ensures key validity). Non-200 should mark route unhealthy.
+- Health checks: `/key` is authenticated and validates the supplied API key. Non-200 should mark the route unhealthy.
 - Retries: respect upstream guidance—OpenRouter multiplexes to providers, so repeated retries on 429/503 should include jitter and optionally adjust provider preferences (e.g., allow fallback). Errors after stream start already include finish_reason `error`; we must propagate to clients intact.
 
 These notes feed the adapter + builder implementation plus docs updates tracked in `tasks.md`.
 
 ## Configuration Block
 - Base keys live under `providers.openrouter`: `api_key`, `base_url`, `referer`, `app_name`.
-- `models_cache_ttl` (default `10m`) controls how long `/models` discovery responses stay warm before admins trigger another fetch from OpenRouter.
-- Catalog entries can provide per-model overrides via `provider_overrides.openrouter` or `metadata` (`openrouter_api_key`, `openrouter_referer`, `openrouter_app_name`) once the builder is in place.
-- The gateway caches `/models` responses using the configured TTL so administrators (or future tooling) can inspect pricing/context metadata without hammering the upstream API.
+- Catalog entries provide per-model overrides via `provider_overrides.openrouter` or metadata (`openrouter_api_key`, `openrouter_referer`, `openrouter_app_name`). OpenRouter models are added manually just like Azure/OpenAI entries—there is no automated discovery step.
 
 ## Current Limitations
 - Reasoning traces returned by some OpenRouter models (`message.reasoning`, `reasoning_details`) are not yet exposed through the gateway. See `reasoning_providers.md` for the implementation plan.
-- The cached catalog endpoint is available for automation and future UI work, but the admin UI currently expects operators to add OpenRouter entries manually (via config or the existing “Add model” dialog).

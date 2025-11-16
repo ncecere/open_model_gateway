@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.7] - 2025-11-17
 ### Added
 - Completed the OpenAI-compatible Images surface: `/v1/images/edits` and `/v1/images/variations` now share the same handler guarantees as generations (multipart validation, idempotency caching, per-operation pricing overrides, budget/rate-limit enforcement) and expose structured errors when providers lack support.
 - Batch worker now executes `/v1/images/edits` and `/v1/images/variations` jobs by resolving referenced Files uploads, so NDJSON submissions can reuse stored assets for image editing/variation workflows.
@@ -72,7 +72,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 - Initial release of the Open Model Gateway router, including the Go backend, React admin UI, provider routing, tenant/key management, budgets, usage tracking, and supporting docs.
 
-[Unreleased]: https://github.com/ncecere/open_model_gateway/compare/v0.1.6...HEAD
+[v0.1.7]: https://github.com/ncecere/open_model_gateway/compare/v0.1.6...v0.1.7
 [v0.1.6]: https://github.com/ncecere/open_model_gateway/compare/v0.1.5...v0.1.6
 [v0.1.5]: https://github.com/ncecere/open_model_gateway/compare/v0.1.4...v0.1.5
 [v0.1.4]: https://github.com/ncecere/open_model_gateway/compare/v0.1.3...v0.1.4

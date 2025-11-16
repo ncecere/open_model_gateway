@@ -137,17 +137,23 @@ type ReportingConfig struct {
 }
 
 type ProviderConfig struct {
-	OpenAIKey           string `mapstructure:"openai_key"`
-	AnthropicKey        string `mapstructure:"anthropic_key"`
-	AzureOpenAIKey      string `mapstructure:"azure_openai_key"`
-	AzureOpenAIEndpoint string `mapstructure:"azure_openai_endpoint"`
-	AzureOpenAIVersion  string `mapstructure:"azure_openai_version"`
-	AWSAccessKeyID      string `mapstructure:"aws_access_key_id"`
-	AWSSecretAccessKey  string `mapstructure:"aws_secret_access_key"`
-	AWSRegion           string `mapstructure:"aws_region"`
-	GCPProjectID        string `mapstructure:"gcp_project_id"`
-	GCPJSONCredentials  string `mapstructure:"gcp_json_credentials"`
-	HuggingFaceToken    string `mapstructure:"hugging_face_token"`
+	OpenAIKey           string                     `mapstructure:"openai_key"`
+	AnthropicKey        string                     `mapstructure:"anthropic_key"`
+	AzureOpenAIKey      string                     `mapstructure:"azure_openai_key"`
+	AzureOpenAIEndpoint string                     `mapstructure:"azure_openai_endpoint"`
+	AzureOpenAIVersion  string                     `mapstructure:"azure_openai_version"`
+	AWSAccessKeyID      string                     `mapstructure:"aws_access_key_id"`
+	AWSSecretAccessKey  string                     `mapstructure:"aws_secret_access_key"`
+	AWSRegion           string                     `mapstructure:"aws_region"`
+	GCPProjectID        string                     `mapstructure:"gcp_project_id"`
+	GCPJSONCredentials  string                     `mapstructure:"gcp_json_credentials"`
+	HuggingFaceToken    string                     `mapstructure:"hugging_face_token"`
+	OpenRouter          OpenRouterProviderDefaults `mapstructure:"openrouter"`
+}
+
+type OpenRouterProviderDefaults struct {
+	OpenRouterProviderConfig `mapstructure:",squash"`
+	ModelsCacheTTL           time.Duration `mapstructure:"models_cache_ttl"`
 }
 
 type FilesConfig struct {
@@ -433,6 +439,12 @@ func (c *Config) Validate() error {
 	if c.Redis.PoolSize < 0 {
 		return fmt.Errorf("redis.pool_size must be >= 0")
 	}
+	if c.Providers.OpenRouter.ModelsCacheTTL <= 0 {
+		c.Providers.OpenRouter.ModelsCacheTTL = 5 * time.Minute
+	}
+	if strings.TrimSpace(c.Providers.OpenRouter.BaseURL) == "" {
+		c.Providers.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+	}
 
 	if err := c.Files.validate(); err != nil {
 		return err
@@ -646,6 +658,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("admin.oidc.scopes", []string{"openid", "email", "profile"})
 	v.SetDefault("admin.oidc.http_timeout", "5s")
 	v.SetDefault("providers.azure_openai_version", "2024-07-01-preview")
+	v.SetDefault("providers.openrouter.base_url", "https://openrouter.ai/api/v1")
+	v.SetDefault("providers.openrouter.models_cache_ttl", "10m")
 }
 
 func (b *BootstrapConfig) validate() error {

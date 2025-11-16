@@ -243,6 +243,8 @@ function formatProviderLabel(provider: string) {
       return "Azure OpenAI";
     case "openai":
       return "OpenAI";
+    case "openrouter":
+      return "OpenRouter";
     case "openai_compatible":
     case "openai-compatible":
       return "OpenAI-compatible";

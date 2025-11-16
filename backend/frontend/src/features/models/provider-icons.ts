@@ -6,6 +6,8 @@ import AzureIcon from "@/assets/providers/azure.svg";
 import OpenAIIconLight from "@/assets/providers/openai_light.svg";
 import OpenAIIconDark from "@/assets/providers/openai_dark.svg";
 import OpenAICompatIcon from "@/assets/providers/openai_compatable.svg";
+import OpenRouterIconLight from "@/assets/providers/openrouter_light.svg";
+import OpenRouterIconDark from "@/assets/providers/openrouter_dark.svg";
 
 const PROVIDER_ICON_SETS: Record<string, { light: string; dark: string }> = {
   anthropic: {
@@ -32,12 +34,19 @@ const PROVIDER_ICON_SETS: Record<string, { light: string; dark: string }> = {
     light: OpenAICompatIcon,
     dark: OpenAICompatIcon,
   },
+  openrouter: {
+    light: OpenRouterIconLight,
+    dark: OpenRouterIconDark,
+  },
 };
 
 function normalizeProviderKey(provider: string) {
   const trimmed = provider?.toLowerCase() ?? "";
   if (trimmed === "openai_compatible") {
     return "openai-compatible";
+  }
+  if (trimmed === "open_router" || trimmed === "open-router") {
+    return "openrouter";
   }
   return trimmed;
 }

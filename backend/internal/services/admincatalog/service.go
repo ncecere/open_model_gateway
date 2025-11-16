@@ -140,6 +140,15 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 				payload.APIKey = strings.TrimSpace(cfg.APIKey)
 			}
 		}
+	case "openrouter":
+		if cfg := payload.ProviderOverrides.OpenRouter; cfg != nil {
+			if payload.Endpoint == "" {
+				payload.Endpoint = strings.TrimSpace(cfg.BaseURL)
+			}
+			if payload.APIKey == "" {
+				payload.APIKey = strings.TrimSpace(cfg.APIKey)
+			}
+		}
 	case "bedrock":
 		if cfg := payload.ProviderOverrides.Bedrock; cfg != nil && payload.Region == "" {
 			payload.Region = strings.TrimSpace(cfg.Region)

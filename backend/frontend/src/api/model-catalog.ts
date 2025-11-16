@@ -67,6 +67,13 @@ export interface OpenAICompatibleProviderConfig {
   base_url?: string;
 }
 
+export interface OpenRouterProviderConfig {
+  api_key?: string;
+  base_url?: string;
+  referer?: string;
+  app_name?: string;
+}
+
 export interface ProviderOverrides {
   azure?: AzureProviderConfig;
   vertex?: VertexProviderConfig;
@@ -74,6 +81,7 @@ export interface ProviderOverrides {
   openai?: OpenAIProviderConfig;
   openai_compatible?: OpenAICompatibleProviderConfig;
   anthropic?: AnthropicProviderConfig;
+  openrouter?: OpenRouterProviderConfig;
 }
 
 export interface AnthropicProviderConfig {
@@ -138,6 +146,9 @@ export function normalizeProviderSlug(value: string): string {
   const slug = value?.trim().toLowerCase() ?? "";
   if (slug === "openai_compatible") {
     return "openai-compatible";
+  }
+  if (slug === "open_router" || slug === "open-router") {
+    return "openrouter";
   }
   return slug;
 }
@@ -235,6 +246,9 @@ export async function upsertModel(payload: ModelCatalogUpsertRequest) {
   }
   if (provider_overrides?.anthropic) {
     body.anthropic = provider_overrides.anthropic;
+  }
+  if (provider_overrides?.openrouter) {
+    body.openrouter = provider_overrides.openrouter;
   }
 
   const { data } = await api.post<ModelCatalogDTO>("/model-catalog", body);

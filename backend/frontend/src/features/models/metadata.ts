@@ -109,6 +109,39 @@ const OPENAI_COMPATIBLE_METADATA: MetadataSection[] = [
   },
 ];
 
+const OPENROUTER_METADATA: MetadataSection[] = [
+  {
+    id: "openrouter-headers",
+    title: "OpenRouter policy headers",
+    description:
+      "BYOK installs should set the per-model API key plus attribution headers required by OpenRouter.",
+    fields: [
+      {
+        key: "openrouter_api_key",
+        label: "API key override",
+        placeholder: "sk-or-...",
+        description:
+          "Optional override when this model should use a different key than the catalog entry.",
+      },
+      {
+        key: "openrouter_referer",
+        label: "HTTP Referer",
+        placeholder: "https://app.example.com",
+      },
+      {
+        key: "openrouter_app_name",
+        label: "App name (X-Title)",
+        placeholder: "My Gateway App",
+      },
+      {
+        key: "base_url",
+        label: "Base URL override",
+        placeholder: "https://openrouter.ai/api/v1",
+      },
+    ],
+  },
+];
+
 const PROVIDER_METADATA_SECTIONS: Record<string, MetadataSection[]> = {
   openai: [
     {
@@ -132,6 +165,8 @@ const PROVIDER_METADATA_SECTIONS: Record<string, MetadataSection[]> = {
   ],
   "openai-compatible": OPENAI_COMPATIBLE_METADATA,
   openai_compatible: OPENAI_COMPATIBLE_METADATA,
+  openrouter: OPENROUTER_METADATA,
+  open_router: OPENROUTER_METADATA,
   bedrock: [
     {
       id: "bedrock-behavior",

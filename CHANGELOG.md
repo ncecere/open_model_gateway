@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [Unreleased]
+### Added
+- Added a first-class OpenRouter adapter (chat, streaming, embeddings, model listing) plus provider registry integration. Catalog entries now support `provider_overrides.openrouter` metadata, and global config offers `providers.openrouter.*` knobs (API key, referer/title headers, discovery TTL).
+- New admin discovery endpoint (`GET /admin/providers/openrouter/catalog`) fetches the OpenRouter model catalog on a configurable interval, caching pricing/context metadata so operators can import long-tail models without manual research. The frontend ships a matching React Query hook/API client for upcoming UI work.
+
 ## [v0.1.8] - 2025-11-17
 ### Added
 - Shipped full `/v1/audio/transcriptions` + `/v1/audio/translations` parity: handlers validate multipart payloads (response formats, timestamp granularities, streaming), new provider capability enforcement ensures only routes with audio support are selected, adapters (OpenAI/Azure/OpenAI-compatible) forward the new parameters, and usage logging/rate limits cover both sync + SSE flows. Admin UI gains dedicated STT/TTS settings panels, “Audio · STT/TTS” chips in the catalog, and sample configs/docs were updated to highlight the new audio model types.

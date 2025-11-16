@@ -65,6 +65,16 @@ Database-specific knobs:
 
 Redis tuning:`REDIS_DB`, `REDIS_POOL_SIZE` (pool sizing overrides when not relying on defaults).
 
+### Provider Credentials
+Global provider fallbacks live under the `providers.*` block inside `router.yaml`. Alongside the existing OpenAI/Azure/Bedrock knobs, the OpenRouter integration now honors:
+
+- `providers.openrouter.api_key` – Bring-Your-Own OpenRouter key used for catalog imports and as a default when catalog entries omit `api_key`.
+- `providers.openrouter.base_url` – Defaults to `https://openrouter.ai/api/v1`, override if you run a dedicated shard.
+- `providers.openrouter.referer` / `app_name` – Attribution headers (`HTTP-Referer`, `X-Title`) applied to every OpenRouter request.
+- `providers.openrouter.models_cache_ttl` – Cache duration for discovery responses surfaced via `GET /admin/providers/openrouter/catalog`.
+
+Per-model overrides sit under `provider_overrides.openrouter` or catalog metadata keys (`openrouter_api_key`, `openrouter_referer`, `openrouter_app_name`).
+
 ### Admin Auth Settings
 
 The admin surface supports both local credentials and OIDC sign-in.

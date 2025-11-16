@@ -8,6 +8,7 @@ type ProviderOverrides struct {
 	OpenAI           *OpenAIProviderConfig           `mapstructure:"openai" json:"openai,omitempty"`
 	OpenAICompatible *OpenAICompatibleProviderConfig `mapstructure:"openai_compatible" json:"openai_compatible,omitempty"`
 	Anthropic        *AnthropicProviderConfig        `mapstructure:"anthropic" json:"anthropic,omitempty"`
+	OpenRouter       *OpenRouterProviderConfig       `mapstructure:"openrouter" json:"openrouter,omitempty"`
 }
 
 type AzureProviderConfig struct {
@@ -57,4 +58,11 @@ type AnthropicProviderConfig struct {
 	APIKey  string `mapstructure:"api_key" json:"api_key"`
 	BaseURL string `mapstructure:"base_url" json:"base_url"`
 	Version string `mapstructure:"version" json:"version"`
+}
+
+type OpenRouterProviderConfig struct {
+	APIKey  string `mapstructure:"api_key" json:"api_key"`
+	BaseURL string `mapstructure:"base_url" json:"base_url"`
+	Referer string `mapstructure:"referer" json:"referer"`
+	AppName string `mapstructure:"app_name" json:"app_name"`
 }

@@ -116,7 +116,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	defaultModels := catalog.NewDefaultModelService(queries)
 	usageSvc := usageService.NewService(queries, reportingLoc)
 	tenantSvc := tenantservice.NewService(cfg, queries, reportingLoc)
-	providerSvc := adminprovidersvc.NewService()
+	providerSvc := adminprovidersvc.NewService(cfg)
 
 	if err := LoadRateLimitDefaults(ctx, queries, cfg); err != nil {
 		return nil, fmt.Errorf("load rate limit defaults: %w", err)

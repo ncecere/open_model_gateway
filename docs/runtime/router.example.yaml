@@ -77,6 +77,12 @@ providers:
   openai_compatible:
     base_url: ""
     api_key: ""
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: ""
+    referer: "https://your-app.example.com"
+    app_name: "Open Model Gateway"
+    models_cache_ttl: 10m
 
 files:
   storage: "local"           # local or s3
@@ -227,6 +233,23 @@ model_catalog:
     metadata:
       base_url: "https://partners.example.com/v1"
       openai_organization: ""
+
+  - alias: "openrouter-qwen72b"
+    provider: "openrouter"
+    provider_model: "qwen/qwen2.5-72b-instruct"
+    model_type: "llm"
+    context_window: 32768
+    max_output_tokens: 4096
+    modalities: ["text"]
+    supports_tools: true
+    price_input: 0.0004
+    price_output: 0.0008
+    currency: "USD"
+    deployment: "qwen2.5-72b-instruct"
+    metadata:
+      openrouter_referer: "https://your-app.example.com"
+      openrouter_app_name: "Open Model Gateway"
+      description: "Imported from OpenRouter catalog; update pricing to match your contract."
 
   # Example of quality-tiered aliases that share a provider model but carry different default quality + pricing
   - alias: "qwen-image-standard"

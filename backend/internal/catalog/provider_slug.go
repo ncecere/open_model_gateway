@@ -4,6 +4,8 @@ import "strings"
 
 var providerAliases = map[string]string{
 	"openai_compatible": "openai-compatible",
+	"open-router":       "openrouter",
+	"open_router":       "openrouter",
 }
 
 // NormalizeProviderSlug canonicalizes provider identifiers so backend + UI share the same names.

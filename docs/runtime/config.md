@@ -97,8 +97,11 @@ Shared credential fallbacks for adapters:
 - `aws_access_key_id`, `aws_secret_access_key`, `aws_region`
 - `gcp_project_id`, `gcp_json_credentials`
 - `openai_compatible.base_url` + `api_key`
+- `openrouter.base_url`, `api_key`, `referer`, `app_name`, `models_cache_ttl`
 
 These values seed provider factories; individual catalog entries can override them via `metadata` or provider-specific sub-blocks.
+
+The OpenRouter block defaults to `https://openrouter.ai/api/v1`, blank attribution headers, and a `10m` `models_cache_ttl`. That TTL controls how long the discovery service caches `/models` responses before refreshing the catalog for the admin UI.
 
 ## Files (`files.*`)
 

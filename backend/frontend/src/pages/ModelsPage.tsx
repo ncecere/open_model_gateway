@@ -135,6 +135,7 @@ export function ModelsPage() {
     upsertMutation.mutate(payload);
   };
 
+
   const filteredModels = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return models.filter((model) => {

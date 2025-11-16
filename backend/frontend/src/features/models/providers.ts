@@ -4,6 +4,7 @@ import BedrockLogo from "@/assets/providers/bedrock.svg";
 import OpenAILogo from "@/assets/providers/openai_light.svg";
 import OpenAICompatibleLogo from "@/assets/providers/openai_compatable.svg";
 import VertexLogo from "@/assets/providers/vertexai.svg";
+import OpenRouterLogo from "@/assets/providers/openrouter_light.svg";
 
 export type ProviderConfig = {
   showEndpoint: boolean;
@@ -76,6 +77,18 @@ export const PROVIDER_DETAILS: Record<string, ProviderDetail> = {
     logo: OpenAICompatibleLogo,
     config: {
       showEndpoint: true,
+      showApiKey: true,
+      showApiVersion: false,
+      showDeployment: false,
+      showRegion: false,
+    },
+  },
+  openrouter: {
+    value: "openrouter",
+    label: "OpenRouter",
+    logo: OpenRouterLogo,
+    config: {
+      showEndpoint: false,
       showApiKey: true,
       showApiVersion: false,
       showDeployment: false,

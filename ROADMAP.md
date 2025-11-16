@@ -136,8 +136,8 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - **Benefits**: Ultra-fast inference for assistants; highlights the gateway’s ability to span heterogeneous providers.
 
 ### OpenRouter
-- **Implementation**: Build a generic adapter that accepts tenant-provided OpenRouter API keys and forwards to OpenRouter’s meta-routing layer. Expose the entire model catalog through our admin UI via their discovery endpoint.
-- **Benefits**: Offers long-tail models (Qwen, DeepSeek, etc.) without custom adapters for each variant.
+- **Status**: ✅ Completed — Adapter, config overrides, and catalog examples are live. Operators onboard OpenRouter models via the existing catalog workflow.
+- **Benefits**: Offers long-tail models (Qwen, DeepSeek, etc.) without custom adapters for each variant. Future work: reasoning passthrough (see `reasoning_providers.md`).
 
 ### Cerebras
 - **Implementation**: Integrate the Cerebras Inference API (chat/compute) with support for custom fine-tuned weights. Include health checks for on-prem cluster deployments.

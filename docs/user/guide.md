@@ -186,6 +186,10 @@ curl http://localhost:8090/v1/images/variations \
   | jq -r '.data[0].b64_json' | base64 --decode > variation.png
 ```
 
+> **Notes**
+> - Image and mask uploads for edits/variations accept either `image`/`mask` or `image[]`/`mask[]` field names. Each file must be an `image/*` MIME type and ≤ 4 MB.
+> - When running `/v1/batches` against `/v1/images/edits` or `/v1/images/variations`, upload assets via `/v1/files` first and reference their IDs inside the JSON body (e.g., `{ "image": "file-uuid", "mask": "file-uuid" }` or `{ "image[]": ["file-1","file-2"] }`). The batch worker resolves the files per-tenant before invoking your provider routes.
+
 OpenAI + OpenAI-compatible adapters, Vertex Imagen/Nano Banana, and Bedrock Stable Diffusion aliases (where `bedrock_image_task_type` targets a diffusion model) implement edits and variations. Azure image routes and Bedrock Titan entries still return `image_operation_unsupported`, so fall back to a supported alias when necessary.
 
 ### Batch Example

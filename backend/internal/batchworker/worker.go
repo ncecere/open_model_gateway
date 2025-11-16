@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,6 +39,19 @@ type Worker struct {
 	logger       *slog.Logger
 	pollInterval time.Duration
 }
+
+type imageOperationType string
+
+const (
+	imageOperationGeneration imageOperationType = "generation"
+	imageOperationEdit       imageOperationType = "edit"
+	imageOperationVariation  imageOperationType = "variation"
+)
+
+const (
+	maxBatchImageBytes = 4 * 1024 * 1024
+	maxBatchEditImages = 16
+)
 
 // New returns a worker instance bound to the provided container + executor.
 func New(container *app.Container, exec *executor.Executor) *Worker {
@@ -329,6 +345,10 @@ func (w *Worker) executeItem(ctx context.Context, batch batchsvc.Batch, rc *requ
 		return w.runModerationItem(ctx, rc, traceID, item)
 	case "/v1/images/generations":
 		return w.runImageItem(ctx, rc, traceID, item)
+	case "/v1/images/edits":
+		return w.runImageEditItem(ctx, rc, traceID, item)
+	case "/v1/images/variations":
+		return w.runImageVariationItem(ctx, rc, traceID, item)
 	default:
 		errPayload := encodeErrorPayload("unsupported_endpoint", fmt.Sprintf("endpoint %s not supported yet", batch.Endpoint))
 		return itemOutcome{
@@ -909,6 +929,208 @@ func (w *Worker) runImageItem(ctx context.Context, rc *requestctx.Context, trace
 		}
 	}
 
+	return w.runBatchImageOperation(ctx, rc, traceID, alias, imageOperationGeneration, func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
+		modelReq := models.ImageRequest{
+			Model:          route.ResolveDeployment(),
+			Prompt:         body.Prompt,
+			Size:           body.Size,
+			ResponseFormat: body.ResponseFormat,
+			Quality:        body.Quality,
+			N:              n,
+			User:           body.User,
+			Background:     body.Background,
+			Style:          body.Style,
+		}
+		return route.Image.Generate(callCtx, modelReq)
+	})
+}
+
+func (w *Worker) runImageEditItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
+	input, errPayload := decodeBatchRequest(item, "/v1/images/edits")
+	if errPayload != nil {
+		return itemOutcome{statusCode: fiber.StatusBadRequest, requestID: traceID, errPayload: errPayload}
+	}
+
+	var body openAIImageEditBatchRequest
+	if err := json.Unmarshal(input.Body, &body); err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", fmt.Sprintf("invalid image edit body: %v", err)),
+		}
+	}
+
+	alias := strings.TrimSpace(body.Model)
+	prompt := strings.TrimSpace(body.Prompt)
+	if alias == "" {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "model is required"),
+		}
+	}
+	if prompt == "" {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "prompt is required"),
+		}
+	}
+
+	imageRefs, err := parseBatchFileRefs(body.Image, body.Images)
+	if err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", err.Error()),
+		}
+	}
+	if len(imageRefs) == 0 {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "at least one image reference is required"),
+		}
+	}
+
+	images, errPayload := w.loadBatchImageInputs(ctx, rc, imageRefs, maxBatchEditImages)
+	if errPayload != nil {
+		return itemOutcome{statusCode: fiber.StatusBadRequest, requestID: traceID, errPayload: errPayload}
+	}
+
+	maskRefs, err := parseBatchFileRefs(body.Mask, body.Masks)
+	if err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", err.Error()),
+		}
+	}
+	var maskInput *models.ImageInput
+	if len(maskRefs) > 0 {
+		maskImages, maskErr := w.loadBatchImageInputs(ctx, rc, maskRefs, 1)
+		if maskErr != nil {
+			return itemOutcome{statusCode: fiber.StatusBadRequest, requestID: traceID, errPayload: maskErr}
+		}
+		mask := maskImages[0]
+		maskInput = &mask
+	}
+
+	n := body.N
+	if n <= 0 {
+		n = 1
+	}
+	if n > 10 {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "n must be between 1 and 10"),
+		}
+	}
+
+	return w.runBatchImageOperation(ctx, rc, traceID, alias, imageOperationEdit, func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
+		req := models.ImageEditRequest{
+			Model:          route.ResolveDeployment(),
+			Prompt:         prompt,
+			Images:         cloneImageInputs(images),
+			Size:           body.Size,
+			ResponseFormat: body.ResponseFormat,
+			Quality:        body.Quality,
+			Background:     body.Background,
+			Style:          body.Style,
+			N:              n,
+			User:           body.User,
+		}
+		if maskInput != nil {
+			maskCopy := *maskInput
+			req.Mask = &maskCopy
+		}
+		return route.Image.Edit(callCtx, req)
+	})
+}
+
+func (w *Worker) runImageVariationItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
+	input, errPayload := decodeBatchRequest(item, "/v1/images/variations")
+	if errPayload != nil {
+		return itemOutcome{statusCode: fiber.StatusBadRequest, requestID: traceID, errPayload: errPayload}
+	}
+
+	var body openAIImageVariationBatchRequest
+	if err := json.Unmarshal(input.Body, &body); err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", fmt.Sprintf("invalid image variation body: %v", err)),
+		}
+	}
+
+	alias := strings.TrimSpace(body.Model)
+	if alias == "" {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "model is required"),
+		}
+	}
+
+	imageRefs, err := parseBatchFileRefs(body.Image, body.Images)
+	if err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", err.Error()),
+		}
+	}
+	if len(imageRefs) == 0 {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "image reference is required"),
+		}
+	}
+	if len(imageRefs) > 1 {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "only one image reference is supported for variations"),
+		}
+	}
+
+	images, loadErr := w.loadBatchImageInputs(ctx, rc, imageRefs, 1)
+	if loadErr != nil {
+		return itemOutcome{statusCode: fiber.StatusBadRequest, requestID: traceID, errPayload: loadErr}
+	}
+	baseImage := images[0]
+
+	n := body.N
+	if n <= 0 {
+		n = 1
+	}
+	if n > 10 {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "n must be between 1 and 10"),
+		}
+	}
+
+	return w.runBatchImageOperation(ctx, rc, traceID, alias, imageOperationVariation, func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
+		req := models.ImageVariationRequest{
+			Model:          route.ResolveDeployment(),
+			Image:          baseImage,
+			Size:           body.Size,
+			ResponseFormat: body.ResponseFormat,
+			Quality:        body.Quality,
+			Background:     body.Background,
+			Style:          body.Style,
+			N:              n,
+			User:           body.User,
+		}
+		return route.Image.Variation(callCtx, req)
+	})
+}
+
+func (w *Worker) runBatchImageOperation(ctx context.Context, rc *requestctx.Context, traceID, alias string, operation imageOperationType, builder func(context.Context, providers.Route) (models.ImageResponse, error)) itemOutcome {
 	if !w.container.IsModelAllowed(rc.TenantID, alias) {
 		return itemOutcome{
 			statusCode: fiber.StatusForbidden,
@@ -980,27 +1202,18 @@ func (w *Worker) runImageItem(ctx context.Context, rc *requestctx.Context, trace
 			continue
 		}
 		lastRoute = route
-
-		modelReq := models.ImageRequest{
-			Model:          route.ResolveDeployment(),
-			Prompt:         body.Prompt,
-			Size:           body.Size,
-			ResponseFormat: body.ResponseFormat,
-			Quality:        body.Quality,
-			N:              n,
-			User:           body.User,
-			Background:     body.Background,
-			Style:          body.Style,
-		}
-
 		start := time.Now()
-		resp, err := route.Image.Generate(callCtx, modelReq)
+		resp, err := builder(callCtx, route)
 		if err != nil {
+			if errors.Is(err, models.ErrImageOperationUnsupported) {
+				continue
+			}
 			w.container.Engine.ReportFailure(alias, route)
 			lastErr = err
 			lastLatency = time.Since(start)
 			continue
 		}
+		w.container.Engine.ReportSuccess(alias, route)
 
 		if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
 			if err := w.container.RateLimiter.TokenAllowance(callCtx, keyKey, tokens, keyCfg); err != nil {
@@ -1034,15 +1247,16 @@ func (w *Worker) runImageItem(ctx context.Context, rc *requestctx.Context, trace
 		}
 
 		record := usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  route.Provider,
-			Usage:     resp.Usage,
-			Latency:   time.Since(start),
-			Status:    fiber.StatusOK,
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   true,
+			Context:           rc,
+			Alias:             alias,
+			Provider:          route.Provider,
+			Usage:             resp.Usage,
+			Latency:           time.Since(start),
+			Status:            fiber.StatusOK,
+			TraceID:           traceID,
+			Timestamp:         time.Now().UTC(),
+			Success:           true,
+			OverrideCostCents: parseImageOverrideCost(route.Metadata, operation),
 		}
 		if _, err := w.container.UsageLogger.Record(callCtx, record); err != nil {
 			return itemOutcome{
@@ -1052,7 +1266,8 @@ func (w *Worker) runImageItem(ctx context.Context, rc *requestctx.Context, trace
 			}
 		}
 
-		data, err := json.Marshal(resp)
+		payload := convertImageResponse(resp)
+		data, err := json.Marshal(payload)
 		if err != nil {
 			return itemOutcome{
 				statusCode: fiber.StatusInternalServerError,
@@ -1143,6 +1358,35 @@ type openAIImageRequest struct {
 	User           string `json:"user,omitempty"`
 	Background     string `json:"background,omitempty"`
 	Style          string `json:"style,omitempty"`
+}
+
+type openAIImageEditBatchRequest struct {
+	Model          string          `json:"model"`
+	Prompt         string          `json:"prompt"`
+	Size           string          `json:"size,omitempty"`
+	ResponseFormat string          `json:"response_format,omitempty"`
+	Quality        string          `json:"quality,omitempty"`
+	Background     string          `json:"background,omitempty"`
+	Style          string          `json:"style,omitempty"`
+	N              int             `json:"n,omitempty"`
+	User           string          `json:"user,omitempty"`
+	Image          json.RawMessage `json:"image"`
+	Images         json.RawMessage `json:"image[]"`
+	Mask           json.RawMessage `json:"mask"`
+	Masks          json.RawMessage `json:"mask[]"`
+}
+
+type openAIImageVariationBatchRequest struct {
+	Model          string          `json:"model"`
+	Size           string          `json:"size,omitempty"`
+	ResponseFormat string          `json:"response_format,omitempty"`
+	Quality        string          `json:"quality,omitempty"`
+	Background     string          `json:"background,omitempty"`
+	Style          string          `json:"style,omitempty"`
+	N              int             `json:"n,omitempty"`
+	User           string          `json:"user,omitempty"`
+	Image          json.RawMessage `json:"image"`
+	Images         json.RawMessage `json:"image[]"`
 }
 
 type itemOutcome struct {
@@ -1417,6 +1661,122 @@ func convertImageResponse(resp models.ImageResponse) openAIImageResponse {
 		Created: created,
 		Data:    data,
 	}
+}
+
+func (w *Worker) loadBatchImageInputs(ctx context.Context, rc *requestctx.Context, refs []string, limit int) ([]models.ImageInput, []byte) {
+	if limit > 0 && len(refs) > limit {
+		return nil, encodeErrorPayload("invalid_request_error", fmt.Sprintf("a maximum of %d files are supported", limit))
+	}
+	if len(refs) == 0 {
+		return nil, encodeErrorPayload("invalid_request_error", "file reference is required")
+	}
+	if w.container.Files == nil {
+		return nil, encodeErrorPayload("invalid_request_error", "file storage is not configured")
+	}
+	if rc == nil {
+		return nil, encodeErrorPayload("invalid_request_error", "request context missing")
+	}
+
+	results := make([]models.ImageInput, 0, len(refs))
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			return nil, encodeErrorPayload("invalid_request_error", "empty file reference provided")
+		}
+		fileID, err := uuid.Parse(ref)
+		if err != nil {
+			return nil, encodeErrorPayload("invalid_request_error", fmt.Sprintf("invalid file id %q", ref))
+		}
+		reader, record, err := w.container.Files.Open(ctx, rc.TenantID, fileID)
+		if err != nil {
+			return nil, encodeErrorPayload("invalid_request_error", fmt.Sprintf("unable to load file %q", ref))
+		}
+		data, readErr := io.ReadAll(reader)
+		reader.Close()
+		if readErr != nil {
+			return nil, encodeErrorPayload("invalid_request_error", fmt.Sprintf("failed to read file %q", ref))
+		}
+		if int64(len(data)) > maxBatchImageBytes {
+			return nil, encodeErrorPayload("invalid_request_error", fmt.Sprintf("file %q exceeds %d MB limit", ref, maxBatchImageBytes/1024/1024))
+		}
+		contentType := strings.TrimSpace(record.ContentType)
+		if contentType == "" {
+			contentType = http.DetectContentType(data)
+		}
+		if contentType == "" || !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+			return nil, encodeErrorPayload("invalid_request_error", fmt.Sprintf("file %q must be an image/* content type", ref))
+		}
+		results = append(results, models.ImageInput{
+			Data:        data,
+			Filename:    record.Filename,
+			ContentType: contentType,
+		})
+	}
+	return results, nil
+}
+
+func parseBatchFileRefs(single json.RawMessage, multi json.RawMessage) ([]string, error) {
+	refs := make([]string, 0)
+	if len(single) > 0 && !isNullJSON(single) {
+		var ref string
+		if err := json.Unmarshal(single, &ref); err != nil {
+			return nil, fmt.Errorf("file references must be strings or arrays of strings")
+		}
+		refs = append(refs, ref)
+	}
+	if len(multi) > 0 && !isNullJSON(multi) {
+		var arr []string
+		if err := json.Unmarshal(multi, &arr); err != nil {
+			return nil, fmt.Errorf("file references must be strings or arrays of strings")
+		}
+		refs = append(refs, arr...)
+	}
+	clean := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref != "" {
+			clean = append(clean, ref)
+		}
+	}
+	return clean, nil
+}
+
+func isNullJSON(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return len(raw) == 0 || trimmed == "" || strings.EqualFold(trimmed, "null")
+}
+
+func cloneImageInputs(inputs []models.ImageInput) []models.ImageInput {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]models.ImageInput, len(inputs))
+	copy(out, inputs)
+	return out
+}
+
+func parseImageOverrideCost(metadata map[string]string, op imageOperationType) *int64 {
+	if metadata == nil {
+		return nil
+	}
+	var keys []string
+	switch op {
+	case imageOperationEdit:
+		keys = []string{"price_image_edit_cents"}
+	case imageOperationVariation:
+		keys = []string{"price_image_variation_cents"}
+	default:
+		keys = []string{"price_image_cents"}
+	}
+	keys = append(keys, "price_image_cents")
+	for _, key := range keys {
+		if price := strings.TrimSpace(metadata[key]); price != "" {
+			if cents, err := strconv.ParseInt(price, 10, 64); err == nil {
+				return &cents
+			}
+		}
+	}
+	return nil
 }
 
 func parseEmbeddingInput(raw json.RawMessage) ([]string, error) {

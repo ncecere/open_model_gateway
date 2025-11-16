@@ -58,6 +58,10 @@ External dependencies:
 
 When a provider does not support an operation the router returns a structured error so clients can fall back automatically.
 
+`/v1/batches` now supports `/v1/images/edits` and `/v1/images/variations` items. Upload the base images/masks through `/v1/files` first, then reference their IDs inside each NDJSON request body (`"image": "file_id"` or `"image[]": ["file_id", ...]`). The batch worker resolves files per-tenant, enforces the same 4 MB limit, and reuses the shared idempotent handler path.
+
+Set pricing overrides per catalog entry with `price_image_cents`, `price_image_edit_cents`, and `price_image_variation_cents` metadata keys when you need to bill differently for edits/variations. These values feed the usage logger whenever a provider response omits token usage, keeping budget enforcement accurate.
+
 ### Audio Capability Matrix
 
 | Provider | `/v1/audio/transcriptions` / `/translations` | `/v1/audio/speech` | Notes |

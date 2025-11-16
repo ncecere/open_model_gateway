@@ -191,7 +191,9 @@ See `docs/architecture/providers/*.md` for per-provider metadata tables.
 | Anthropic | `anthropic_base_url`, `anthropic_version`, `api_key` | Override the Claude API base URL/version or inject a per-alias API key (falls back to `providers.anthropic_key`). |
 | Audio aliases | `audio_voice`, `audio_default_voice`, `audio_format` | Provide default TTS voice/format for `/v1/audio/speech` if clients omit them. |
 | OpenAI-compatible | `base_url`, `api_key`, `openai_organization` | Required when the alias points at a third-party gateway. |
-| Cost overrides | `price_image_cents` | Optional per-alias image pricing override (used by usage logger). |
+| Cost overrides | `price_image_cents`, `price_image_edit_cents`, `price_image_variation_cents` | Optional per-alias image pricing overrides (used by the usage logger when providers omit usage numbers). |
+
+> Tip: if a provider bills differently for “standard” vs “HD” quality, define separate aliases for each tier and set the corresponding `price_image*_cents` overrides (see `docs/runtime/router.example.yaml` for the `qwen-image-standard` / `qwen-image-hd` example). Any extra metadata (e.g., `default_quality`) is passed to the adapter so you can inject the right quality flag whenever clients omit it.
 
 ## Bootstrap (`bootstrap.*`)
 

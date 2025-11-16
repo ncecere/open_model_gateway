@@ -152,13 +152,15 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - `POST /v1/chat/completions` (sync + SSE; tool calling limited to JSON schema outputs)
 - `POST /v1/embeddings`
 - `POST /v1/images/generations`
+- `POST /v1/images/edits`
+- `POST /v1/images/variations`
 - `POST /v1/audio/speech`
 - `GET/POST /v1/files` (including content streaming + delete)
+- `POST /v1/batches`
+- `/v1/moderations` 
 
 **Missing / planned**
 - `POST /v1/audio/transcriptions`, `POST /v1/audio/translations`
-- `POST /v1/images/edits`, `POST /v1/images/variations`
-- `POST /v1/batches`
 - `POST /v1/responses`, Assistants/Threads/Runs APIs (future stretch goal)
 
 ### Batches API
@@ -179,5 +181,5 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - **Benefits**: Supports speech-to-text use cases and keeps parity with OpenAI SDK helpers.
 
 ### Images
-- **Implementation**: Generations already work across Azure OpenAI, OpenAI native, Bedrock Titan/SD, and Vertex Imagen; expand to `/v1/images/edits` and `/v1/images/variations` with multipart inputs (image + mask files) and output formats (base64 URLs). Align response JSON with OpenAI’s schema.
-- **Benefits**: Enables creative workflows and removes the last gaps in the image surface.
+- **Status**: ✅ Completed — `/v1/images/edits` and `/v1/images/variations` now match OpenAI’s contract alongside generations. The shared handler validates multipart payloads (including `image[]`/`mask[]` aliases), enforces 4 MB per-upload caps, propagates idempotency keys, and records per-operation pricing so budgets stay accurate. Provider adapters advertise edits/variations support explicitly (OpenAI/OpenAI-compatible, Vertex Imagen, Bedrock diffusion), while unsupported routes return structured errors for automatic failover.
+- **Benefits**: Enables creative workflows end-to-end, keeps SDKs unmodified, and lets admins set per-operation pricing plus batch workflows for edits/variations.

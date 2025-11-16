@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +31,19 @@ type openAIHandler struct {
 	container *app.Container
 	executor  *executor.Executor
 }
+
+type imageOperationType string
+
+const (
+	imageOperationGeneration imageOperationType = "generation"
+	imageOperationEdit       imageOperationType = "edit"
+	imageOperationVariation  imageOperationType = "variation"
+)
+
+const (
+	maxImageUploadBytes = 4 * 1024 * 1024
+	maxImageInputs      = 16
+)
 
 func (h *openAIHandler) listModels(c *fiber.Ctx) error {
 	ctx := c.UserContext()
@@ -71,6 +86,7 @@ func (h *openAIHandler) listModels(c *fiber.Ctx) error {
 type imageOperationConfig struct {
 	Alias          string
 	IdempotencyKey string
+	Operation      imageOperationType
 	Builder        func(route providers.Route) (models.ImageResponse, error)
 }
 
@@ -86,6 +102,11 @@ func (h *openAIHandler) runImageOperation(c *fiber.Ctx, cfg imageOperationConfig
 	}
 	if !h.container.IsModelAllowed(rc.TenantID, alias) {
 		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
+	}
+
+	operation := cfg.Operation
+	if operation == "" {
+		operation = imageOperationGeneration
 	}
 
 	routes := h.container.Engine.SelectRoutes(alias)
@@ -179,7 +200,7 @@ func (h *openAIHandler) runImageOperation(c *fiber.Ctx, cfg imageOperationConfig
 			Timestamp:         time.Now().UTC(),
 			Success:           true,
 			IdempotencyKey:    idempotencyKey,
-			OverrideCostCents: parseImageOverrideCost(route.Metadata),
+			OverrideCostCents: parseImageOverrideCost(route.Metadata, operation),
 		}
 		budgetStatus, err := h.container.UsageLogger.Record(ctx, record)
 		if err != nil {
@@ -939,6 +960,7 @@ func (h *openAIHandler) imageGenerations(c *fiber.Ctx) error {
 	return h.runImageOperation(c, imageOperationConfig{
 		Alias:          req.Model,
 		IdempotencyKey: idempotencyKey,
+		Operation:      imageOperationGeneration,
 		Builder: func(route providers.Route) (models.ImageResponse, error) {
 			modelReq := models.ImageRequest{
 				Model:          route.ResolveDeployment(),
@@ -969,11 +991,11 @@ func (h *openAIHandler) imageEdits(c *fiber.Ctx) error {
 	if prompt == "" {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "prompt is required")
 	}
-	imageHeaders := form.File["image"]
+	imageHeaders := gatherFormFiles(form, "image", "image[]")
 	if len(imageHeaders) == 0 {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "at least one image is required")
 	}
-	if len(imageHeaders) > 16 {
+	if len(imageHeaders) > maxImageInputs {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "a maximum of 16 images are supported")
 	}
 	images := make([]models.ImageInput, 0, len(imageHeaders))
@@ -985,8 +1007,12 @@ func (h *openAIHandler) imageEdits(c *fiber.Ctx) error {
 		images = append(images, input)
 	}
 	var maskInput *models.ImageInput
-	if masks := form.File["mask"]; len(masks) > 0 {
-		mask, err := loadImageInput(masks[0])
+	maskHeaders := gatherFormFiles(form, "mask", "mask[]")
+	if len(maskHeaders) > 0 {
+		if len(maskHeaders) > 1 {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "only one mask file is supported")
+		}
+		mask, err := loadImageInput(maskHeaders[0])
 		if err != nil {
 			return httputil.WriteError(c, fiber.StatusBadRequest, "failed to read mask upload")
 		}
@@ -1010,8 +1036,11 @@ func (h *openAIHandler) imageEdits(c *fiber.Ctx) error {
 		User:           strings.TrimSpace(c.FormValue("user")),
 	}
 	ctx := c.UserContext()
+	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 	return h.runImageOperation(c, imageOperationConfig{
-		Alias: model,
+		Alias:          model,
+		IdempotencyKey: idempotencyKey,
+		Operation:      imageOperationEdit,
 		Builder: func(route providers.Route) (models.ImageResponse, error) {
 			req := baseReq
 			req.Model = route.ResolveDeployment()
@@ -1034,9 +1063,12 @@ func (h *openAIHandler) imageVariations(c *fiber.Ctx) error {
 	if model == "" {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "model is required")
 	}
-	imageHeaders := form.File["image"]
+	imageHeaders := gatherFormFiles(form, "image", "image[]")
 	if len(imageHeaders) == 0 {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "image file is required")
+	}
+	if len(imageHeaders) > 1 {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "only one image file is supported for variations")
 	}
 	baseImage, err := loadImageInput(imageHeaders[0])
 	if err != nil {
@@ -1058,8 +1090,11 @@ func (h *openAIHandler) imageVariations(c *fiber.Ctx) error {
 		User:           strings.TrimSpace(c.FormValue("user")),
 	}
 	ctx := c.UserContext()
+	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 	return h.runImageOperation(c, imageOperationConfig{
-		Alias: model,
+		Alias:          model,
+		IdempotencyKey: idempotencyKey,
+		Operation:      imageOperationVariation,
 		Builder: func(route providers.Route) (models.ImageResponse, error) {
 			req := baseReq
 			req.Model = route.ResolveDeployment()
@@ -1108,10 +1143,20 @@ func loadImageInput(fh *multipart.FileHeader) (models.ImageInput, error) {
 	if err != nil {
 		return models.ImageInput{}, err
 	}
+	if int64(len(data)) > maxImageUploadBytes {
+		return models.ImageInput{}, fmt.Errorf("image uploads must be <= %d MB", maxImageUploadBytes/1024/1024)
+	}
+	contentType := strings.TrimSpace(fh.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = http.DetectContentType(data)
+	}
+	if contentType == "" || !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return models.ImageInput{}, errors.New("image uploads must use an image/* content type")
+	}
 	return models.ImageInput{
 		Data:        data,
 		Filename:    fh.Filename,
-		ContentType: fh.Header.Get("Content-Type"),
+		ContentType: contentType,
 	}, nil
 }
 
@@ -1124,13 +1169,29 @@ func cloneImageInputs(inputs []models.ImageInput) []models.ImageInput {
 	return out
 }
 
-func parseImageOverrideCost(metadata map[string]string) *int64 {
+func parseImageOverrideCost(metadata map[string]string, op imageOperationType) *int64 {
+	return parseImageCost(metadata, op)
+}
+
+func parseImageCost(metadata map[string]string, op imageOperationType) *int64 {
 	if metadata == nil {
 		return nil
 	}
-	if price := metadata["price_image_cents"]; price != "" {
-		if cents, err := strconv.ParseInt(price, 10, 64); err == nil {
-			return &cents
+	var keys []string
+	switch op {
+	case imageOperationEdit:
+		keys = []string{"price_image_edit_cents"}
+	case imageOperationVariation:
+		keys = []string{"price_image_variation_cents"}
+	default:
+		keys = []string{"price_image_cents"}
+	}
+	keys = append(keys, "price_image_cents")
+	for _, key := range keys {
+		if price := strings.TrimSpace(metadata[key]); price != "" {
+			if cents, err := strconv.ParseInt(price, 10, 64); err == nil {
+				return &cents
+			}
 		}
 	}
 	return nil
@@ -1141,6 +1202,19 @@ func errMessage(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func gatherFormFiles(form *multipart.Form, names ...string) []*multipart.FileHeader {
+	if form == nil {
+		return nil
+	}
+	var headers []*multipart.FileHeader
+	for _, name := range names {
+		if files := form.File[name]; len(files) > 0 {
+			headers = append(headers, files...)
+		}
+	}
+	return headers
 }
 
 func parseEmbeddingInput(raw json.RawMessage) ([]string, error) {

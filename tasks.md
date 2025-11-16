@@ -1,29 +1,18 @@
-# Moderations API Implementation Plan
+# Images API Completion Plan
 
-## Goals
-- Deliver `/v1/moderations` parity with the current OpenAI REST spec across sync requests and batch jobs.
-- Wire native OpenAI/Azure adapters plus catalog/bootstrap defaults so tenants can target moderation aliases immediately.
-- Update docs/tests/changelog to reflect the new capability (policy/guardrail hooks tracked separately).
+## Plan
+
+1. **Spec & Handler Parity** – Update the `/v1/images/*` handlers (`backend/internal/httpserver/public/openai_routes.go`) so JSON and multipart flows accept OpenAI’s field aliases (`image[]`, `mask[]`), enforce size/count/mime limits, share validation helpers, and emit the same `invalid_request_error` payloads. Keep `runImageOperation` as the shared execution path with budget/idempotency handling so edits/variations inherit generations’ protections.
+2. **Adapter Coverage** – Audit every provider registered with the `ImagesProvider` interface. Ensure OpenAI/OpenAI-compatible/Vertex/Bedrock adapters implement edits & variations with the latest metadata knobs (mask mode, guidance, variation prompts) while Azure & Titan explicitly return `ErrImageOperationUnsupported`. Document the knobs + limitations in `docs/runtime/config.md` and config samples.
+3. **Routing, Pricing & Idempotency** – Extend `runImageOperation` to respect per-operation pricing metadata (`price_image_edit_cents`, `price_image_variation_cents`), derive usage when providers omit token counts, and persist successful responses in the idempotency cache so retries for edits/variations behave like generations. Normalize OpenAI-style error codes surfaced to clients.
+4. **Batch & Admin Surfaces** – Teach the batch worker (`backend/internal/batchworker/worker.go`) how to execute `/v1/images/edits` and `/v1/images/variations` items (JSON schema validation, file reference resolution, result/error writing) and surface provider capability flags in the admin portal so operators know which aliases allow each operation.
+5. **Tests & Docs** – Add handler/adaptor/batch tests covering happy paths and edge cases, then update `ROADMAP.md`, `CHANGELOG.md`, and user/admin/runtime docs to mark the endpoints complete, describe provider matrices, and show updated curl/config examples.
 
 ## Tasks
-1. **Spec & Docs**
-   - Capture request/response schema (input validation, `results[].categories`, `category_scores`, `usage`) in `docs/runtime/moderations.md`.
-   - Note supported providers, tenant enablement expectations, and batch compatibility; link from README/ROADMAP.
-2. **Core Types & Routing**
-   - Add `models/moderation.go` with typed structs + helper to parse string/array inputs.
-   - Extend provider interfaces/route struct with `Moderations` support and allow catalog entries to mark moderation aliases/pricing.
-   - Seed sample config (bootstrap/default models) with `omni-moderation-latest` so tenants can opt in.
-3. **Adapter Plumbing**
-   - Implement `Moderate` on `adapters/openai` and `adapters/azureopenai` using the official SDK, converting into the shared model types and populating usage.
-   - Ensure provider definitions advertise the new capability so the factory registers routes correctly.
-4. **HTTP Endpoint**
-   - Register `POST /v1/moderations` in `public/router.go`.
-   - Implement handler: parse OpenAI-compatible payload, enforce budgets/rate limits/model access, execute against moderation-capable routes, record usage, return OpenAI-formatted JSON, and cache via idempotency key when provided.
-5. **Batch Worker Integration**
-   - Allow `/v1/moderations` jobs inside the batch worker, reusing the same validation/execution logic and success/error logging.
-   - Update `docs/runtime/batches.md` to reflect the added support.
-6. **Validation & Docs**
-   - Add unit tests for input parsing, adapter conversion, and handler happy/edge paths (budget/rate/error cases).
-   - Update `CHANGELOG.md`, `ROADMAP.md`, and README surface matrix to call out the new endpoint.
 
-> NOTE: Guardrail/policy engine work remains out of scope; a separate task list will track those requirements.
+- Update multipart handlers in `backend/internal/httpserver/public/openai_routes.go` to accept OpenAI field aliases, enforce limits, and reuse shared validation/error helpers.
+- Add per-operation pricing metadata parsing in `runImageOperation` so usage logging/budgets differentiate generations vs edits vs variations.
+- Ensure every image-capable adapter implements or explicitly rejects edits/variations, wiring metadata knobs and documenting limitations in `docs/runtime/config.md`.
+- Extend `backend/internal/batchworker/worker.go` to support `/v1/images/edits` and `/v1/images/variations`, including NDJSON schema validation and file reference handling.
+- Create unit/integration tests for the updated handlers, adapters, and batch worker flows.
+- Refresh `ROADMAP.md`, `CHANGELOG.md`, and the admin/user/runtime docs to reflect the completed Images API parity and configuration guidance.

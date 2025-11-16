@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
 ## [Unreleased]
+### Added
+- Completed the OpenAI-compatible Images surface: `/v1/images/edits` and `/v1/images/variations` now share the same handler guarantees as generations (multipart validation, idempotency caching, per-operation pricing overrides, budget/rate-limit enforcement) and expose structured errors when providers lack support.
+- Batch worker now executes `/v1/images/edits` and `/v1/images/variations` jobs by resolving referenced Files uploads, so NDJSON submissions can reuse stored assets for image editing/variation workflows.
+### Documentation
+- Updated the roadmap, runtime config, and user/admin guides to describe the finished Images API, new pricing metadata keys (`price_image_*_cents`), multipart limits, and the batch workflow for edits/variations.
 
 ## [v0.1.6] - 2025-11-16
 ### Added

@@ -212,6 +212,43 @@ model_catalog:
       base_url: "https://partners.example.com/v1"
       openai_organization: ""
 
+  # Example of quality-tiered aliases that share a provider model but carry different default quality + pricing
+  - alias: "qwen-image-standard"
+    provider: "openai-compatible"
+    provider_model: "qwen-image"
+    model_type: "image"
+    modalities: ["image"]
+    supports_tools: false
+    price_input: 0
+    price_output: 0
+    currency: "USD"
+    endpoint: "https://api.qwen.aliyun.com/v1"
+    api_key: "${QWEN_IMAGE_API_KEY}"
+    metadata:
+      base_url: "https://api.qwen.aliyun.com/v1"
+      default_quality: "standard"        # optional hint that your adapter can read when quality is omitted
+      price_image_cents: "35"            # per-generation override when providers omit usage
+      price_image_edit_cents: "55"
+      price_image_variation_cents: "45"
+
+  - alias: "qwen-image-hd"
+    provider: "openai-compatible"
+    provider_model: "qwen-image"
+    model_type: "image"
+    modalities: ["image"]
+    supports_tools: false
+    price_input: 0
+    price_output: 0
+    currency: "USD"
+    endpoint: "https://api.qwen.aliyun.com/v1"
+    api_key: "${QWEN_IMAGE_API_KEY}"
+    metadata:
+      base_url: "https://api.qwen.aliyun.com/v1"
+      default_quality: "hd"
+      price_image_cents: "75"
+      price_image_edit_cents: "110"
+      price_image_variation_cents: "95"
+
   - alias: "claude-3-sonnet"
     provider: "bedrock"
     provider_model: "anthropic.claude-3-sonnet-20240229-v1:0"

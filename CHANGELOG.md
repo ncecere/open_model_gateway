@@ -2,14 +2,18 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.8] - 2025-11-17
+### Added
+- Shipped full `/v1/audio/transcriptions` + `/v1/audio/translations` parity: handlers validate multipart payloads (response formats, timestamp granularities, streaming), new provider capability enforcement ensures only routes with audio support are selected, adapters (OpenAI/Azure/OpenAI-compatible) forward the new parameters, and usage logging/rate limits cover both sync + SSE flows. Admin UI gains dedicated STT/TTS settings panels, “Audio · STT/TTS” chips in the catalog, and sample configs/docs were updated to highlight the new audio model types.
+### Documentation
+- Added `docs/api/audio.md`, roadmap/runtime config updates, and sample catalog entries that describe the finalized audio endpoints, metadata keys, and tenant-facing behavior (including the new streaming guardrails).
+
 ## [v0.1.7] - 2025-11-17
 ### Added
 - Completed the OpenAI-compatible Images surface: `/v1/images/edits` and `/v1/images/variations` now share the same handler guarantees as generations (multipart validation, idempotency caching, per-operation pricing overrides, budget/rate-limit enforcement) and expose structured errors when providers lack support.
 - Batch worker now executes `/v1/images/edits` and `/v1/images/variations` jobs by resolving referenced Files uploads, so NDJSON submissions can reuse stored assets for image editing/variation workflows.
-- Shipped full `/v1/audio/transcriptions` + `/v1/audio/translations` parity: handlers validate multipart payloads (response formats, timestamp granularities, streaming), new provider capability enforcement ensures only routes with audio support are selected, adapters (OpenAI/Azure/OpenAI-compatible) forward the new parameters, and usage logging/rate limits cover both sync + SSE flows. Admin UI gains dedicated STT/TTS settings panels, “Audio · STT/TTS” chips in the catalog, and sample configs/docs were updated to highlight the new audio model types.
 ### Documentation
 - Updated the roadmap, runtime config, and user/admin guides to describe the finished Images API, new pricing metadata keys (`price_image_*_cents`), multipart limits, and the batch workflow for edits/variations.
-- Added `docs/api/audio.md`, roadmap/runtime config updates, and sample catalog entries that describe the finalized audio endpoints, metadata keys, and tenant-facing behavior (including the new streaming guardrails).
 
 ## [v0.1.6] - 2025-11-16
 ### Added
@@ -74,6 +78,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 - Initial release of the Open Model Gateway router, including the Go backend, React admin UI, provider routing, tenant/key management, budgets, usage tracking, and supporting docs.
 
+[v0.1.8]: https://github.com/ncecere/open_model_gateway/compare/v0.1.7...v0.1.8
 [v0.1.7]: https://github.com/ncecere/open_model_gateway/compare/v0.1.6...v0.1.7
 [v0.1.6]: https://github.com/ncecere/open_model_gateway/compare/v0.1.5...v0.1.6
 [v0.1.5]: https://github.com/ncecere/open_model_gateway/compare/v0.1.4...v0.1.5

@@ -3,17 +3,19 @@
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
 ## [Unreleased]
+
+## [v0.1.6] - 2025-11-16
 ### Added
 - Implemented the OpenAI-compatible `/v1/moderations` endpoint end-to-end: provider interfaces/adapters, HTTP handler with budgets/rate limits, batch worker integration, config samples, documentation, and admin/user defaults so tenants can route moderation traffic through the gateway without hitting upstream APIs directly.
 ### Documentation
 - Added `docs/runtime/moderations.md`, README/roadmap updates, and sample config entries that highlight how to onboard moderation aliases (native OpenAI, Azure deployments, or OpenAI-compatible stacks).
 
-## [v0.1.5] - 2025-02-20
+## [v0.1.5] - 2025-11-15
 ### Added
 - Files API now mirrors OpenAI’s contract end-to-end: new schema columns for `status`/`status_details`, cursor-based listing with `has_more`/`first_id`/`last_id`, `deleted` responses, configurable sweep intervals/batch sizes, updated admin/user documentation, and a routerd background sweeper that reaps expired blobs automatically.
 - Admin and user portals now surface the richer Files metadata (status badges, details, TTL hints) along with cursor-driven pagination, “Load more” behavior, and download actions powered by the new admin/user download endpoints.
 
-## [v0.1.4] - 2025-02-20
+## [v0.1.4] - 2025-11-15
 ### Added
 - Completed the OpenAI-compatible batches surface: `/v1/batches` now supports create/list/retrieve/cancel plus output/error downloads, admin tenant views show batch history, and files are persisted via the existing blob backends.
 - Introduced tenant-level RPM/TPM/parallel overrides with new schema (`tenant_rate_limits`), admin API endpoints (`GET/PUT/DELETE /admin/tenants/:id/rate-limits`), and UI controls so every API key inherits the stricter of global, tenant, and per-key caps automatically.
@@ -21,7 +23,7 @@ All notable changes to this project will be documented in this file. The format 
 - Admin portal sidebar reordered to highlight Models/Tenants ahead of API Keys, and the user portal navigation now mirrors the same grouping (Dashboard → Models → Tenants → API Keys → Usage → Files → Batches) for consistency.
 - Budget/rate-limit inputs in both portals now display the effective max values via placeholders, and the backend rejects any per-key budgets or rate overrides that exceed tenant/global ceilings.
 
-## [v0.1.3] - 2025-02-20
+## [v0.1.3] - 2025-11-14
 ### Added
 - Read-only model catalog page in the **user portal** with pricing, model type, throughput, latency, and router health status per alias.
 - `/admin/model-catalog/status` API so the admin UI can surface live status badges matching the user portal.
@@ -37,7 +39,7 @@ All notable changes to this project will be documented in this file. The format 
 - Provider slugs are normalized end-to-end (API/UI/YAML) so `openai-compatible` works consistently.
 - User portal UI now consumes the enriched `/user/models` response and shares the same badge colors/status semantics as the admin portal.
 
-## [v0.1.2] - 2025-02-20
+## [v0.1.2] - 2025-11-14
 ### Added
 - Detailed roadmap docs (provider telemetry/alerting, RBAC, self-service keys, guardrails, plugin tooling with MCP examples).
 - `docker-compose.yml` health checks and conditional dependencies so the router waits for Postgres/Redis.
@@ -52,7 +54,7 @@ All notable changes to this project will be documented in this file. The format 
 - Release workflow caches Go modules by pointing setup-go at `backend/go.mod`/`go.sum`.
 - Router container no longer fails to find its config when using docker compose.
 
-## [v0.1.1] - 2025-02-20
+## [v0.1.1] - 2025-11-14
 ### Added
 - Theme preference storage (`light`, `dark`, `system`) persisted per user, shared by admin and user portals with a unified theme provider.
 - Open Model Gateway logomark across admin/user sidebars, login pages, and favicon for consistent branding.
@@ -61,11 +63,12 @@ All notable changes to this project will be documented in this file. The format 
 ### Changed
 - Dashboard provider icons now honor light/dark variants, improving contrast in dark mode.
 
-## [v0.1.0] - 2025-02-20
+## [v0.1.0] - 2025-11-13
 ### Added
 - Initial release of the Open Model Gateway router, including the Go backend, React admin UI, provider routing, tenant/key management, budgets, usage tracking, and supporting docs.
 
-[Unreleased]: https://github.com/ncecere/open_model_gateway/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/ncecere/open_model_gateway/compare/v0.1.6...HEAD
+[v0.1.6]: https://github.com/ncecere/open_model_gateway/compare/v0.1.5...v0.1.6
 [v0.1.5]: https://github.com/ncecere/open_model_gateway/compare/v0.1.4...v0.1.5
 [v0.1.4]: https://github.com/ncecere/open_model_gateway/compare/v0.1.3...v0.1.4
 [v0.1.3]: https://github.com/ncecere/open_model_gateway/compare/v0.1.2...v0.1.3

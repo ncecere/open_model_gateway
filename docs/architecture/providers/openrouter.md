@@ -40,7 +40,7 @@ These notes feed the adapter + builder implementation plus docs updates tracked 
 - Base keys live under `providers.openrouter`: `api_key`, `base_url`, `referer`, `app_name`.
 - `models_cache_ttl` (default `10m`) controls how long `/models` discovery responses stay warm before admins trigger another fetch from OpenRouter.
 - Catalog entries can provide per-model overrides via `provider_overrides.openrouter` or `metadata` (`openrouter_api_key`, `openrouter_referer`, `openrouter_app_name`) once the builder is in place.
-- Admins can fetch the cached catalog via `GET /admin/providers/openrouter/catalog`; the response includes the refresh timestamp, expiry, and the parsed pricing/context metadata used to seed model entries.
+- The gateway caches `/models` responses using the configured TTL so administrators (or future tooling) can inspect pricing/context metadata without hammering the upstream API.
 
 ## Current Limitations
 - Reasoning traces returned by some OpenRouter models (`message.reasoning`, `reasoning_details`) are not yet exposed through the gateway. See `reasoning_providers.md` for the implementation plan.

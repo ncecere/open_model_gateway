@@ -34,6 +34,7 @@ External dependencies:
 
 - All available keys are documented in `docs/runtime/config.md` and illustrated in `docs/runtime/router.example.yaml` (server/database/redis/observability/files/audio/batches/retention/health/providers/bootstrap).
 - `model_catalog` now includes reference entries for Azure GPT-4o, OpenAI `gpt-image-1`, OpenAI-compatible gateways, Bedrock Titan + Stable Diffusion, and Vertex Imagen/Nano Banana models.
+- Need a deeper catalog walkthrough? See `docs/admin/model-catalog-examples.md` for per-provider, per-model-type snippets you can paste directly into `router.yaml` or mirror inside the UI.
 - Place secrets in ENV if you use a config repo. Example systemd unit fragment:
   ```
   Environment="ROUTER_CONFIG_FILE=/etc/open-gateway/router.yaml"

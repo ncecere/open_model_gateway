@@ -232,3 +232,62 @@ The seeder is idempotent; updates are applied whenever records change in the YAM
 | `ROUTER_BATCHES_MAX_REQUESTS` | `10000` |
 
 Any nested field can be overridden the same way—uppercase the path and join with underscores.
+
+## Example Configurations
+
+### Minimal Core Services
+```yaml
+server:
+  listen_addr: ":8090"
+  sync_timeout: 300s
+
+database:
+  url: ${ROUTER_DB_URL}
+  run_migrations: true
+
+redis:
+  url: ${ROUTER_REDIS_URL}
+  pool_size: 40
+```
+
+### Observability + Files
+```yaml
+observability:
+  enable_metrics: true
+  enable_otlp: true
+  otlp_endpoint: "https://otel.example.com:4317"
+
+files:
+  storage: "s3"
+  max_size_mb: 200
+  default_ttl: 168h
+  s3:
+    bucket: "omg-files-prod"
+    prefix: "uploads/"
+    region: "us-east-1"
+```
+
+### Provider Credentials
+```yaml
+providers:
+  openai_key: ${OPENAI_KEY}
+  azure_openai_endpoint: "https://my-azure.openai.azure.com"
+  azure_openai_key: ${AZURE_KEY}
+  azure_openai_version: "2024-07-01-preview"
+  aws_access_key_id: ${AWS_ACCESS_KEY_ID}
+  aws_secret_access_key: ${AWS_SECRET}
+  aws_region: "us-west-2"
+  gcp_project_id: "my-gcp-project"
+  gcp_json_credentials: ${GCP_CREDENTIALS_JSON}
+  openai_compatible:
+    base_url: "https://partner-gateway.example.com/v1"
+    api_key: ${PARTNER_KEY}
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: ${OPENROUTER_KEY}
+    referer: "https://your-app.example.com"
+    app_name: "Open Model Gateway"
+```
+
+### Model Catalog Samples
+See `docs/admin/model-catalog-examples.md` for per-provider snippets covering LLM, embedding, image, audio, and moderation aliases. Those examples can be pasted into the `model_catalog` array or mirrored in the Admin UI.

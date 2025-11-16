@@ -277,14 +277,108 @@ func (a *Adapter) Transcribe(ctx context.Context, req models.AudioTranscriptionR
 	if req.Temperature != nil {
 		params.Temperature = openai.Float(float64(*req.Temperature))
 	}
+	if len(req.TimestampGranularities) > 0 {
+		params.TimestampGranularities = make([]string, 0, len(req.TimestampGranularities))
+		for _, gran := range req.TimestampGranularities {
+			params.TimestampGranularities = append(params.TimestampGranularities, string(gran))
+		}
+	}
+	format := req.ResponseFormat
+	if format == "" {
+		format = models.AudioResponseFormatJSON
+	}
+	if format != "" {
+		params.ResponseFormat = openai.AudioResponseFormat(format)
+	}
+	if !format.IsJSONFormat() {
+		return a.invokeAudioRaw(ctx, "audio/transcriptions", params, format)
+	}
 	resp, err := a.client.Audio.Transcriptions.New(ctx, params)
 	if err != nil {
 		return models.AudioTranscriptionResponse{}, err
 	}
+	payload := []byte(resp.RawJSON())
 	return models.AudioTranscriptionResponse{
-		Text:  resp.Text,
-		Usage: convertAudioUsage(resp.Usage),
+		Format:      format,
+		ContentType: format.ContentType(),
+		Payload:     payload,
+		Text:        resp.Text,
+		Usage:       convertAudioUsage(resp.Usage),
 	}, nil
+}
+
+func (a *Adapter) TranscribeStream(ctx context.Context, req models.AudioTranscriptionRequest) (<-chan models.AudioTranscriptionStreamChunk, func() error, error) {
+	if req.Input.Reader == nil {
+		return nil, nil, errors.New("openai: audio input required")
+	}
+	params := openai.AudioTranscriptionNewParams{
+		File:  req.Input.Reader,
+		Model: openai.AudioModel(req.Model),
+	}
+	if lang := strings.TrimSpace(req.Language); lang != "" {
+		params.Language = openai.String(lang)
+	}
+	if prompt := strings.TrimSpace(req.Prompt); prompt != "" {
+		params.Prompt = openai.String(prompt)
+	}
+	if req.Temperature != nil {
+		params.Temperature = openai.Float(float64(*req.Temperature))
+	}
+	if len(req.TimestampGranularities) > 0 {
+		params.TimestampGranularities = make([]string, 0, len(req.TimestampGranularities))
+		for _, gran := range req.TimestampGranularities {
+			params.TimestampGranularities = append(params.TimestampGranularities, string(gran))
+		}
+	}
+	format := req.ResponseFormat
+	if format == "" {
+		format = models.AudioResponseFormatJSON
+	}
+	params.ResponseFormat = openai.AudioResponseFormat(format)
+
+	stream := a.client.Audio.Transcriptions.NewStreaming(ctx, params)
+	if err := stream.Err(); err != nil {
+		stream.Close()
+		return nil, nil, err
+	}
+
+	chunks := make(chan models.AudioTranscriptionStreamChunk)
+	cancel := func() error {
+		return stream.Close()
+	}
+
+	go func() {
+		defer close(chunks)
+		defer stream.Close()
+		for stream.Next() {
+			event := stream.Current()
+			payload := event.RawJSON()
+			chunk := models.AudioTranscriptionStreamChunk{
+				Payload: []byte(payload),
+			}
+			switch event.Type {
+			case "transcript.text.done":
+				done := event.AsTranscriptTextDone()
+				usage := convertStreamUsage(done.Usage)
+				chunk.Usage = &usage
+				chunk.Done = true
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case chunks <- chunk:
+			}
+		}
+		if err := stream.Err(); err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case chunks <- models.AudioTranscriptionStreamChunk{Err: err}:
+			}
+		}
+	}()
+
+	return chunks, cancel, nil
 }
 
 // Translate performs speech translation using the OpenAI Audio Translations API.
@@ -302,11 +396,32 @@ func (a *Adapter) Translate(ctx context.Context, req models.AudioTranscriptionRe
 	if req.Temperature != nil {
 		params.Temperature = openai.Float(float64(*req.Temperature))
 	}
+	format := req.ResponseFormat
+	if format == "" {
+		format = models.AudioResponseFormatJSON
+	}
+	switch format {
+	case models.AudioResponseFormatJSON, models.AudioResponseFormatVerboseJSON, models.AudioResponseFormatText, models.AudioResponseFormatSRT, models.AudioResponseFormatVTT:
+	default:
+		return models.AudioTranscriptionResponse{}, errors.New("openai: response format not supported for translations")
+	}
+	if format != "" {
+		params.ResponseFormat = openai.AudioTranslationNewParamsResponseFormat(format)
+	}
+	if !format.IsJSONFormat() {
+		return a.invokeAudioRaw(ctx, "audio/translations", params, format)
+	}
 	resp, err := a.client.Audio.Translations.New(ctx, params)
 	if err != nil {
 		return models.AudioTranscriptionResponse{}, err
 	}
-	return models.AudioTranscriptionResponse{Text: resp.Text}, nil
+	payload := []byte(resp.RawJSON())
+	return models.AudioTranscriptionResponse{
+		Format:      format,
+		ContentType: format.ContentType(),
+		Payload:     payload,
+		Text:        resp.Text,
+	}, nil
 }
 
 func (a *Adapter) Synthesize(ctx context.Context, req models.AudioSpeechRequest) (models.AudioSpeechResponse, error) {
@@ -353,6 +468,37 @@ func (a *Adapter) SynthesizeStream(ctx context.Context, req models.AudioSpeechRe
 	return nil, nil, errors.New("openai: streaming speech not implemented")
 }
 
+func (a *Adapter) invokeAudioRaw(ctx context.Context, path string, body any, format models.AudioResponseFormat) (models.AudioTranscriptionResponse, error) {
+	if format == "" {
+		format = models.AudioResponseFormatJSON
+	}
+	var rawResp *http.Response
+	var payload []byte
+	opts := []option.RequestOption{
+		option.WithHeader("Accept", "*/*"),
+		option.WithResponseInto(&rawResp),
+	}
+	if err := a.client.Execute(ctx, http.MethodPost, path, body, &payload, opts...); err != nil {
+		return models.AudioTranscriptionResponse{}, err
+	}
+	contentType := format.ContentType()
+	if rawResp != nil && rawResp.Header != nil {
+		if header := strings.TrimSpace(rawResp.Header.Get("Content-Type")); header != "" {
+			contentType = header
+		}
+	}
+	text := ""
+	if format == models.AudioResponseFormatText {
+		text = string(payload)
+	}
+	return models.AudioTranscriptionResponse{
+		Format:      format,
+		ContentType: contentType,
+		Payload:     payload,
+		Text:        text,
+	}, nil
+}
+
 func convertModelPage(page *pagination.Page[openai.Model]) []models.Model {
 	if page == nil {
 		return nil
@@ -374,6 +520,14 @@ func convertAudioUsage(usage openai.AudioTranscriptionNewResponseUnionUsage) mod
 	if usage.Type != "tokens" && usage.Type != "duration" && usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.TotalTokens == 0 {
 		return models.Usage{}
 	}
+	return models.Usage{
+		PromptTokens:     int32(usage.InputTokens),
+		CompletionTokens: int32(usage.OutputTokens),
+		TotalTokens:      int32(usage.TotalTokens),
+	}
+}
+
+func convertStreamUsage(usage openai.TranscriptionTextDoneEventUsage) models.Usage {
 	return models.Usage{
 		PromptTokens:     int32(usage.InputTokens),
 		CompletionTokens: int32(usage.OutputTokens),

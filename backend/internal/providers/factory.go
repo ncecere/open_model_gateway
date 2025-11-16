@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 )
@@ -44,7 +45,25 @@ func (f *Factory) Build(ctx context.Context) (map[string][]Route, error) {
 		if err != nil {
 			return nil, fmt.Errorf("alias %q: %w", entry.Alias, err)
 		}
+		if err := validateRouteCapabilities(entry, route); err != nil {
+			return nil, fmt.Errorf("alias %q: %w", entry.Alias, err)
+		}
 		routes[entry.Alias] = append(routes[entry.Alias], route)
 	}
 	return routes, nil
+}
+
+func validateRouteCapabilities(entry config.ModelCatalogEntry, route Route) error {
+	modelType := strings.ToLower(strings.TrimSpace(entry.ModelType))
+	switch modelType {
+	case "audio_transcription":
+		if route.AudioTranscribe == nil {
+			return fmt.Errorf("model type %q requires an audio transcription capability", modelType)
+		}
+	case "audio_speech":
+		if route.TextToSpeech == nil {
+			return fmt.Errorf("model type %q requires a text-to-speech capability", modelType)
+		}
+	}
+	return nil
 }

@@ -87,7 +87,7 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 	if provider == "" {
 		return db.ModelCatalog{}, ErrProviderRequired
 	}
-	modelType := strings.TrimSpace(payload.ModelType)
+	modelType := catalog.NormalizeModelType(payload.ModelType)
 	if modelType == "" {
 		modelType = "llm"
 	}

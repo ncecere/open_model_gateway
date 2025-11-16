@@ -47,7 +47,8 @@ export const MODEL_TYPE_OPTIONS = [
   { value: "llm", label: "LLM" },
   { value: "embedding", label: "Embedding" },
   { value: "image", label: "Image" },
-  { value: "audio", label: "Audio" },
+  { value: "audio_transcription", label: "Audio · Speech-to-Text" },
+  { value: "audio_speech", label: "Audio · Text-to-Speech" },
   { value: "video", label: "Video" },
   { value: "moderation", label: "Moderation" },
 ];

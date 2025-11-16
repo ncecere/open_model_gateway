@@ -30,3 +30,26 @@ func cloneMetadata(src map[string]string) map[string]string {
 	}
 	return dst
 }
+
+func setDefaultAudioMetadata(md map[string]string, enableStreaming bool, includeDiarized bool) {
+	if md == nil {
+		return
+	}
+	if _, ok := md["audio_formats"]; !ok {
+		formats := []string{"json", "text", "srt", "vtt", "verbose_json"}
+		if includeDiarized {
+			formats = append(formats, "diarized_json")
+		}
+		md["audio_formats"] = strings.Join(formats, ",")
+	}
+	if _, ok := md["audio_timestamp_granularities"]; !ok {
+		md["audio_timestamp_granularities"] = "word,segment"
+	}
+	if _, ok := md["audio_streaming"]; !ok {
+		if enableStreaming {
+			md["audio_streaming"] = "true"
+		} else {
+			md["audio_streaming"] = "false"
+		}
+	}
+}

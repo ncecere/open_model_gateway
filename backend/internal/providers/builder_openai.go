@@ -44,6 +44,7 @@ func buildOpenAIRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 	}
 
 	md := cloneMetadata(entry.Metadata)
+	setDefaultAudioMetadata(md, true, true)
 	if override != nil {
 		if strings.TrimSpace(override.Organization) != "" {
 			md["openai_organization"] = strings.TrimSpace(override.Organization)
@@ -71,21 +72,22 @@ func buildOpenAIRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 	}
 
 	route := Route{
-		Alias:           entry.Alias,
-		Provider:        entry.Provider,
-		Model:           entry.ProviderModel,
-		Weight:          weight,
-		Metadata:        md,
-		Chat:            adapter,
-		ChatStream:      adapter,
-		Embedding:       adapter,
-		Moderations:     adapter,
-		Image:           adapter,
-		AudioTranscribe: adapter,
-		AudioTranslate:  adapter,
-		TextToSpeech:    adapter,
-		Models:          adapter,
-		Health:          adapter.HealthCheck,
+		Alias:                 entry.Alias,
+		Provider:              entry.Provider,
+		Model:                 entry.ProviderModel,
+		Weight:                weight,
+		Metadata:              md,
+		Chat:                  adapter,
+		ChatStream:            adapter,
+		Embedding:             adapter,
+		Moderations:           adapter,
+		Image:                 adapter,
+		AudioTranscribe:       adapter,
+		AudioTranscribeStream: adapter,
+		AudioTranslate:        adapter,
+		TextToSpeech:          adapter,
+		Models:                adapter,
+		Health:                adapter.HealthCheck,
 	}
 	return route, nil
 }
@@ -133,6 +135,7 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 		weight = 100
 	}
 
+	setDefaultAudioMetadata(md, true, true)
 	route := Route{
 		Alias:    entry.Alias,
 		Provider: entry.Provider,
@@ -142,15 +145,16 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 			md["base_url"] = baseURL
 			return md
 		}(),
-		Chat:            adapter,
-		ChatStream:      adapter,
-		Embedding:       adapter,
-		Moderations:     adapter,
-		Image:           adapter,
-		AudioTranscribe: adapter,
-		AudioTranslate:  adapter,
-		TextToSpeech:    adapter,
-		Health:          adapter.HealthCheck,
+		Chat:                  adapter,
+		ChatStream:            adapter,
+		Embedding:             adapter,
+		Moderations:           adapter,
+		Image:                 adapter,
+		AudioTranscribe:       adapter,
+		AudioTranscribeStream: adapter,
+		AudioTranslate:        adapter,
+		TextToSpeech:          adapter,
+		Health:                adapter.HealthCheck,
 	}
 	return route, nil
 }

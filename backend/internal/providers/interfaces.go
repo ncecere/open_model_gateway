@@ -40,6 +40,10 @@ type AudioTranslator interface {
 	Translate(ctx context.Context, req models.AudioTranscriptionRequest) (models.AudioTranscriptionResponse, error)
 }
 
+type AudioTranscriptionStreaming interface {
+	TranscribeStream(ctx context.Context, req models.AudioTranscriptionRequest) (<-chan models.AudioTranscriptionStreamChunk, func() error, error)
+}
+
 type TextToSpeech interface {
 	Synthesize(ctx context.Context, req models.AudioSpeechRequest) (models.AudioSpeechResponse, error)
 }

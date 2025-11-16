@@ -125,9 +125,16 @@ export function ModelTable({
               </div>
             </TableCell>
             <TableCell className="text-sm">
-              <Badge variant="secondary">
-                {formatModelTypeLabel(model.model_type)}
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">
+                  {formatModelTypeLabel(model.model_type)}
+                </Badge>
+                {audioChipForType(model.model_type) && (
+                  <Badge variant="outline">
+                    {audioChipForType(model.model_type)}
+                  </Badge>
+                )}
+              </div>
             </TableCell>
             <TableCell>
               <Badge className={statusClassName(status)}>
@@ -183,4 +190,18 @@ function formatStatusLabel(status: string) {
     return "Unknown";
   }
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function audioChipForType(modelType?: string | null) {
+  if (!modelType) {
+    return null;
+  }
+  switch (modelType.toLowerCase()) {
+    case "audio_transcription":
+      return "Audio · STT";
+    case "audio_speech":
+      return "Audio · TTS";
+    default:
+      return null;
+  }
 }

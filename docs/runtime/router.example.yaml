@@ -170,7 +170,7 @@ model_catalog:
   - alias: "gpt-4o-mini-tts"
     provider: "openai"
     provider_model: "gpt-4o-mini-tts"
-    model_type: "audio"
+    model_type: "audio_speech"
     context_window: 0
     max_output_tokens: 0
     modalities: ["audio"]
@@ -181,6 +181,22 @@ model_catalog:
     metadata:
       audio_voice: "alloy"
       audio_format: "mp3"
+
+  - alias: "gpt-4o-mini-transcribe"
+    provider: "openai"
+    provider_model: "gpt-4o-mini-transcribe"
+    model_type: "audio_transcription"
+    context_window: 0
+    max_output_tokens: 0
+    modalities: ["audio"]
+    supports_tools: false
+    price_input: 0
+    price_output: 0
+    currency: "USD"
+    metadata:
+      audio_formats: "json,verbose_json,diarized_json,text,srt,vtt"
+      audio_timestamp_granularities: "word,segment"
+      audio_streaming: "true"
 
   - alias: "omni-moderation-latest"
     provider: "openai"

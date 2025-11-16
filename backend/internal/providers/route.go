@@ -8,22 +8,23 @@ import (
 
 // Route represents a single provider deployment that can serve a public alias.
 type Route struct {
-	Alias              string
-	Provider           string
-	Model              string
-	Weight             int
-	Metadata           map[string]string
-	Chat               ChatCompletions
-	ChatStream         ChatStreaming
-	Embedding          EmbeddingsProvider
-	Moderations        ModerationsProvider
-	Image              ImagesProvider
-	AudioTranscribe    AudioTranscriber
-	AudioTranslate     AudioTranslator
-	TextToSpeech       TextToSpeech
-	TextToSpeechStream TextToSpeechStreaming
-	Models             ModelLister
-	Health             func(ctx context.Context) error
+	Alias                 string
+	Provider              string
+	Model                 string
+	Weight                int
+	Metadata              map[string]string
+	Chat                  ChatCompletions
+	ChatStream            ChatStreaming
+	Embedding             EmbeddingsProvider
+	Moderations           ModerationsProvider
+	Image                 ImagesProvider
+	AudioTranscribe       AudioTranscriber
+	AudioTranslate        AudioTranslator
+	AudioTranscribeStream AudioTranscriptionStreaming
+	TextToSpeech          TextToSpeech
+	TextToSpeechStream    TextToSpeechStreaming
+	Models                ModelLister
+	Health                func(ctx context.Context) error
 }
 
 // ResolveDeployment extracts deployment identifier from route metadata.

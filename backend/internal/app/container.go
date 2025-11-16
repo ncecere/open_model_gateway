@@ -77,7 +77,7 @@ type Container struct {
 	TenantRateLimits   map[uuid.UUID]limits.LimitConfig
 	DefaultKeyLimit    limits.LimitConfig
 	DefaultTenantLimit limits.LimitConfig
-	UsageLogger        *usagepipeline.Logger
+	UsageLogger        UsageLogger
 	Idempotency        *cache.IdempotencyCache
 	HealthMon          *health.Monitor
 	Observability      *observability.Provider
@@ -501,7 +501,7 @@ func ensureCatalogPersisted(ctx context.Context, queries *db.Queries, entries []
 
 		provider := catalog.NormalizeProviderSlug(entry.Provider)
 
-		modelType := strings.TrimSpace(entry.ModelType)
+		modelType := catalog.NormalizeModelType(entry.ModelType)
 		if modelType == "" {
 			modelType = "llm"
 		}

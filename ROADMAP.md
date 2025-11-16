@@ -155,12 +155,13 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - `POST /v1/images/edits`
 - `POST /v1/images/variations`
 - `POST /v1/audio/speech`
+- `POST /v1/audio/transcriptions`
+- `POST /v1/audio/translations`
 - `GET/POST /v1/files` (including content streaming + delete)
 - `POST /v1/batches`
 - `/v1/moderations` 
 
 **Missing / planned**
-- `POST /v1/audio/transcriptions`, `POST /v1/audio/translations`
 - `POST /v1/responses`, Assistants/Threads/Runs APIs (future stretch goal)
 
 ### Batches API
@@ -177,8 +178,8 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - **Benefits**: Completes the trust & safety story so tenants don’t have to dual-home requests and unlocks the forthcoming guardrail/policy engine work.
 
 ### Audio
-- **Implementation**: Beyond existing text-to-speech, add `/v1/audio/transcriptions` and `/v1/audio/translations` with Whisper-compatible request bodies, file uploads, and SSE partials. Plan for the new Responses audio outputs (inline PCM) once providers expose them.
-- **Benefits**: Supports speech-to-text use cases and keeps parity with OpenAI SDK helpers.
+- **Status**: ✅ Completed — `/v1/audio/transcriptions` and `/v1/audio/translations` now mirror OpenAI’s contract (multipart parsing, response formats, timestamp granularities, SSE streaming) with provider capability validation and budget/rate-limit integration. Admins can curate audio metadata from the new STT/TTS panels in the model editor, and the catalog lists surface “Audio · STT/TTS” chips for quick scanning.
+- **Benefits**: Supports speech-to-text use cases and keeps parity with OpenAI SDK helpers. Future work (tracked separately) will focus on inline PCM outputs/responses expansions as upstream providers expose them.
 
 ### Images
 - **Status**: ✅ Completed — `/v1/images/edits` and `/v1/images/variations` now match OpenAI’s contract alongside generations. The shared handler validates multipart payloads (including `image[]`/`mask[]` aliases), enforces 4 MB per-upload caps, propagates idempotency keys, and records per-operation pricing so budgets stay accurate. Provider adapters advertise edits/variations support explicitly (OpenAI/OpenAI-compatible, Vertex Imagen, Bedrock diffusion), while unsupported routes return structured errors for automatic failover.

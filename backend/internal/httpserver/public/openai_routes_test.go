@@ -2,11 +2,16 @@ package public
 
 import (
 	"bytes"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gofiber/fiber/v2"
+
+	"github.com/ncecere/open_model_gateway/backend/internal/models"
 )
 
 func TestParseImageCostPrefersOperationSpecificKey(t *testing.T) {
@@ -56,6 +61,77 @@ func TestLoadImageInputRequiresImageContentType(t *testing.T) {
 	}
 }
 
+func TestWriteAudioTranscriptionResponseJSONFallback(t *testing.T) {
+	resp := models.AudioTranscriptionResponse{
+		Format: models.AudioResponseFormatJSON,
+		Text:   "sample text",
+	}
+	httpResp := performAudioTranscriptionResponse(t, resp)
+	defer httpResp.Body.Close()
+	if ct := httpResp.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("expected json content-type, got %s", ct)
+	}
+	body, _ := io.ReadAll(httpResp.Body)
+	if got := strings.TrimSpace(string(body)); got != `{"text":"sample text"}` {
+		t.Fatalf("unexpected body %s", got)
+	}
+}
+
+func TestWriteAudioTranscriptionResponseTextPayload(t *testing.T) {
+	resp := models.AudioTranscriptionResponse{
+		Format:      models.AudioResponseFormatText,
+		ContentType: "text/plain; charset=utf-8",
+		Payload:     []byte("hi there"),
+	}
+	httpResp := performAudioTranscriptionResponse(t, resp)
+	defer httpResp.Body.Close()
+	if ct := httpResp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("expected text content-type, got %s", ct)
+	}
+	body, _ := io.ReadAll(httpResp.Body)
+	if string(body) != "hi there" {
+		t.Fatalf("unexpected body %s", string(body))
+	}
+}
+
+func TestRouteSupportsAudioFormat(t *testing.T) {
+	meta := map[string]string{"audio_formats": "json, text, vtt"}
+	if !routeSupportsAudioFormat(meta, models.AudioResponseFormatJSON) {
+		t.Fatalf("expected json format to be supported")
+	}
+	if routeSupportsAudioFormat(meta, models.AudioResponseFormatVerboseJSON) {
+		t.Fatalf("expected verbose_json to be rejected")
+	}
+	if !routeSupportsAudioFormat(nil, models.AudioResponseFormatVerboseJSON) {
+		t.Fatalf("expected missing metadata to allow format by default")
+	}
+}
+
+func TestRouteSupportsGranularities(t *testing.T) {
+	meta := map[string]string{"audio_timestamp_granularities": "word"}
+	if !routeSupportsGranularities(meta, []models.AudioTimestampGranularity{models.AudioTimestampGranularityWord}) {
+		t.Fatalf("expected word granularity to be supported")
+	}
+	if routeSupportsGranularities(meta, []models.AudioTimestampGranularity{models.AudioTimestampGranularitySegment}) {
+		t.Fatalf("expected segment granularity to be rejected")
+	}
+	if !routeSupportsGranularities(nil, []models.AudioTimestampGranularity{models.AudioTimestampGranularitySegment}) {
+		t.Fatalf("expected default granularity acceptance when metadata missing")
+	}
+}
+
+func TestRouteSupportsAudioStream(t *testing.T) {
+	if routeSupportsAudioStream(map[string]string{"audio_streaming": "true"}) == false {
+		t.Fatalf("expected true metadata to allow streaming")
+	}
+	if routeSupportsAudioStream(map[string]string{"audio_streaming": "false"}) {
+		t.Fatalf("expected false metadata to disable streaming")
+	}
+	if routeSupportsAudioStream(nil) {
+		t.Fatalf("expected nil metadata to disable streaming")
+	}
+}
+
 func buildTestFileHeader(t *testing.T, field, filename, contentType string, data []byte) *multipart.FileHeader {
 	t.Helper()
 	var body bytes.Buffer
@@ -96,4 +172,18 @@ func pngBytes() []byte {
 		0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44,
 		0xAE, 0x42, 0x60, 0x82,
 	}
+}
+
+func performAudioTranscriptionResponse(t *testing.T, resp models.AudioTranscriptionResponse) *http.Response {
+	t.Helper()
+	app := fiber.New()
+	app.Get("/", func(c *fiber.Ctx) error {
+		return writeAudioTranscriptionResponse(c, resp)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	httpResp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app test: %v", err)
+	}
+	return httpResp
 }

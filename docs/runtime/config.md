@@ -120,11 +120,16 @@ Expired records are swept periodically; both S3 objects and metadata rows are re
 
 ## Audio (`audio.*`)
 
-Currently only enforces upload size for transcription/translation endpoints.
+Configures `/v1/audio/transcriptions` and `/v1/audio/translations`. The gateway now mirrors the OpenAI contract (see `docs/api/audio.md`) supporting `response_format` (`json`, `verbose_json`, `text`, `srt`, `vtt`, `diarized_json`), per-request timestamp granularities, and both `file`/`audio` multipart fields. Requests larger than the configured limit are rejected with `413`.
 
-| Key | Default |
-| --- | --- |
-| `max_upload_mb` | `50` |
+| Key | Default | Notes |
+| --- | --- | --- |
+| `max_upload_mb` | `50` | Maximum accepted audio payload size per request. |
+| `metadata.audio_formats` | `json,text,srt,vtt,verbose_json,diarized_json` (auto-populated for OpenAI routes) | Comma-separated response formats the handler will allow. Configure via the admin UI’s Audio section when editing a model. |
+| `metadata.audio_timestamp_granularities` | `word,segment` | Comma-separated list of timestamps the route supports. Required for clients that request `timestamp_granularities[]`. |
+| `metadata.audio_streaming` | `true` for OpenAI, `false` elsewhere | Enables `/v1/audio/transcriptions?stream=true`. Only OpenAI adapters implement streaming today. |
+
+The admin UI now exposes these metadata settings whenever the model type is `audio_transcription`. Each toggle writes the same `audio_*` metadata keys shown above, so you no longer need to edit the raw key/value table for common audio overrides.
 
 ## Batches (`batches.*`)
 
@@ -169,7 +174,7 @@ Each entry registers a public alias:
 | `alias` | Public name (`gpt-4o`, `gemini-flash`). |
 | `provider` | `openai`, `azure`, `bedrock`, `vertex`, `openai-compatible`, etc. (`openai_compatible` is accepted but normalized) |
 | `provider_model` | Provider-specific identifier. |
-| `model_type` | Optional workload classification (`llm`, `embedding`, `image`, `audio`, `video`, etc.). Defaults to `llm` if omitted. |
+| `model_type` | Optional workload classification. Supported values include `llm`, `embedding`, `image`, `audio_transcription`, `audio_speech`, `video`, `moderation`, etc. Defaults to `llm` if omitted. Use `audio_transcription` for ASR/translation workloads and `audio_speech` for text-to-speech deployments so capability validation and routing hints stay accurate. |
 | `context_window` / `max_output_tokens` | Token metadata. |
 | `modalities` | e.g., `["text","image"]`. |
 | `supports_tools` | Enables tool/function calling. |

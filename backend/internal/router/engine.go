@@ -45,15 +45,20 @@ func NewEngine() *Engine {
 	}
 }
 
+// SetRoutes replaces the routing table (test helper).
+func (e *Engine) SetRoutes(routes map[string][]providers.Route) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.routes = routes
+	e.state = make(map[string]*routeState)
+}
 func (e *Engine) Reload(ctx context.Context, factory *providers.Factory) error {
 	routes, err := factory.Build(ctx)
 	if err != nil {
 		return err
 	}
-
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
 	newState := make(map[string]*routeState, len(routes))
 	for alias, rts := range routes {
 		for _, route := range rts {
@@ -65,16 +70,13 @@ func (e *Engine) Reload(ctx context.Context, factory *providers.Factory) error {
 			}
 		}
 	}
-
 	e.routes = routes
 	e.state = newState
 	return nil
 }
-
 func (e *Engine) SelectRoutes(alias string) []providers.Route {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-
 	healthy := make([]providers.Route, 0)
 	now := time.Now()
 	for _, route := range e.routes[alias] {
@@ -83,25 +85,20 @@ func (e *Engine) SelectRoutes(alias string) []providers.Route {
 			healthy = append(healthy, route)
 		}
 	}
-
 	if len(healthy) <= 1 {
 		return healthy
 	}
-
 	idx := weightedSelect(healthy)
 	if idx != 0 {
 		selected := healthy[idx]
 		healthy[idx] = healthy[0]
 		healthy[0] = selected
 	}
-
 	return healthy
 }
-
 func (e *Engine) ReportSuccess(alias string, route providers.Route) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
 	st := e.state[routeKey(alias, route)]
 	if st == nil {
 		st = &routeState{}
@@ -110,23 +107,19 @@ func (e *Engine) ReportSuccess(alias string, route providers.Route) {
 	st.consecutiveFailures = 0
 	st.openUntil = time.Time{}
 }
-
 func (e *Engine) ReportFailure(alias string, route providers.Route) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
 	st := e.state[routeKey(alias, route)]
 	if st == nil {
 		st = &routeState{}
 		e.state[routeKey(alias, route)] = st
 	}
-
 	st.consecutiveFailures++
 	if st.consecutiveFailures >= failureThreshold {
 		st.openUntil = time.Now().Add(openDuration)
 	}
 }
-
 func weightedSelect(routes []providers.Route) int {
 	total := 0
 	for _, r := range routes {
@@ -151,7 +144,6 @@ func weightedSelect(routes []providers.Route) int {
 	}
 	return 0
 }
-
 func routeKey(alias string, route providers.Route) string {
 	deployment := route.Metadata["deployment"]
 	if deployment == "" {
@@ -164,7 +156,6 @@ func routeKey(alias string, route providers.Route) string {
 func (e *Engine) ListAliases() map[string][]providers.Route {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-
 	copyMap := make(map[string][]providers.Route, len(e.routes))
 	for alias, routes := range e.routes {
 		out := make([]providers.Route, len(routes))
@@ -178,7 +169,6 @@ func (e *Engine) ListAliases() map[string][]providers.Route {
 func (e *Engine) HealthStatus() map[string]RouteHealth {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-
 	result := make(map[string]RouteHealth, len(e.routes))
 	now := time.Now()
 	for alias, routes := range e.routes {
@@ -197,24 +187,26 @@ func (e *Engine) HealthStatus() map[string]RouteHealth {
 	}
 	return result
 }
-
 func MergeEntries(cfgEntries []config.ModelCatalogEntry, dbEntries []db.ModelCatalog) ([]config.ModelCatalogEntry, error) {
 	merged := make(map[string]config.ModelCatalogEntry)
 	for _, entry := range cfgEntries {
 		entry.Provider = catalog.NormalizeProviderSlug(entry.Provider)
+		entry.ModelType = catalog.NormalizeModelType(entry.ModelType)
 		if strings.TrimSpace(entry.ModelType) == "" {
+			entry.ModelType = "llm"
+		}
+		if entry.ModelType == "" {
 			entry.ModelType = "llm"
 		}
 		merged[entry.Alias] = entry
 	}
-
 	for _, row := range dbEntries {
 		enabled := row.Enabled
 		entry := config.ModelCatalogEntry{
 			Alias:           row.Alias,
 			Provider:        catalog.NormalizeProviderSlug(row.Provider),
 			ProviderModel:   row.ProviderModel,
-			ModelType:       row.ModelType,
+			ModelType:       catalog.NormalizeModelType(row.ModelType),
 			ContextWindow:   row.ContextWindow,
 			MaxOutputTokens: row.MaxOutputTokens,
 			SupportsTools:   row.SupportsTools,
@@ -230,7 +222,6 @@ func MergeEntries(cfgEntries []config.ModelCatalogEntry, dbEntries []db.ModelCat
 			Weight:          int(row.Weight),
 			Metadata:        map[string]string{},
 		}
-
 		if len(row.ModalitiesJson) > 0 {
 			if err := json.Unmarshal(row.ModalitiesJson, &entry.Modalities); err != nil {
 				return nil, err
@@ -246,17 +237,17 @@ func MergeEntries(cfgEntries []config.ModelCatalogEntry, dbEntries []db.ModelCat
 				return nil, err
 			}
 		}
-
+		if strings.TrimSpace(entry.ModelType) == "" {
+			entry.ModelType = "llm"
+		}
 		merged[entry.Alias] = entry
 	}
-
 	out := make([]config.ModelCatalogEntry, 0, len(merged))
 	for _, v := range merged {
 		out = append(out, v)
 	}
 	return out, nil
 }
-
 func BuildFactory(cfg *config.Config, entries []config.ModelCatalogEntry) (*providers.Factory, error) {
 	if cfg == nil {
 		return nil, errors.New("config required")

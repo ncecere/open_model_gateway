@@ -85,6 +85,7 @@ func buildAzureRoute(ctx context.Context, cfg *config.Config, entry config.Model
 	if region != "" {
 		metadata["region"] = region
 	}
+	setDefaultAudioMetadata(metadata, false, false)
 
 	return Route{
 		Alias:           entry.Alias,

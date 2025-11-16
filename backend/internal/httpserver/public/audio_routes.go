@@ -1,11 +1,13 @@
 package public
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -36,6 +38,11 @@ func (h *openAIHandler) handleAudioTranscription(c *fiber.Ctx, task models.Audio
 		return httputil.WriteError(c, fiber.StatusBadRequest, "model is required")
 	}
 	fileHeaders := form.File["file"]
+	field := "file"
+	if len(fileHeaders) == 0 {
+		fileHeaders = form.File["audio"]
+		field = "audio"
+	}
 	if len(fileHeaders) == 0 {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "file is required")
 	}
@@ -49,9 +56,56 @@ func (h *openAIHandler) handleAudioTranscription(c *fiber.Ctx, task models.Audio
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "failed to read file")
 	}
+	maxUpload := int64(h.container.Config.Audio.MaxUploadMB) * 1024 * 1024
+	if maxUpload > 0 && int64(len(data)) > maxUpload {
+		return httputil.WriteError(c, fiber.StatusRequestEntityTooLarge, "audio file exceeds maximum allowed size")
+	}
 
 	prompt := c.FormValue("prompt")
 	language := c.FormValue("language")
+	user := strings.TrimSpace(c.FormValue("user"))
+	rawFormat := c.FormValue("response_format")
+	format, ok := models.ParseAudioResponseFormat(rawFormat)
+	if !ok {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "unsupported response_format")
+	}
+	if task == models.AudioTranscriptionTaskTranslate && format == models.AudioResponseFormatDiarized {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "diarized_json is not supported for translations")
+	}
+	stream := false
+	if val := strings.TrimSpace(c.FormValue("stream")); val != "" {
+		stream = strings.EqualFold(val, "true") || val == "1"
+	}
+	if stream {
+		if task != models.AudioTranscriptionTaskTranscribe {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "streaming is only supported for transcriptions")
+		}
+		if format != models.AudioResponseFormatDiarized {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "streaming requires response_format=diarized_json")
+		}
+	}
+	rawGran := form.Value["timestamp_granularities[]"]
+	if len(rawGran) == 0 {
+		rawGran = form.Value["timestamp_granularities"]
+	}
+	granularities := make([]models.AudioTimestampGranularity, 0, len(rawGran))
+	if len(rawGran) > 0 {
+		seen := make(map[models.AudioTimestampGranularity]struct{}, len(rawGran))
+		for _, val := range rawGran {
+			gran, ok := models.ParseAudioGranularity(val)
+			if !ok {
+				return httputil.WriteError(c, fiber.StatusBadRequest, "invalid timestamp_granularities value")
+			}
+			if _, exists := seen[gran]; exists {
+				continue
+			}
+			seen[gran] = struct{}{}
+			granularities = append(granularities, gran)
+		}
+		if format != models.AudioResponseFormatVerboseJSON {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "timestamp_granularities require response_format=verbose_json")
+		}
+	}
 	var temperature *float32
 	if val := strings.TrimSpace(c.FormValue("temperature")); val != "" {
 		if parsed, err := strconv.ParseFloat(val, 32); err == nil {
@@ -60,7 +114,7 @@ func (h *openAIHandler) handleAudioTranscription(c *fiber.Ctx, task models.Audio
 		}
 	}
 
-	return h.invokeAudioTranscription(c, audioInvocation{
+	invocation := audioInvocation{
 		Model:    modelID,
 		Task:     task,
 		Payload:  data,
@@ -68,8 +122,17 @@ func (h *openAIHandler) handleAudioTranscription(c *fiber.Ctx, task models.Audio
 		Mime:     fh.Header.Get("Content-Type"),
 		Prompt:   prompt,
 		Language: language,
+		User:     user,
+		Format:   format,
+		Granular: granularities,
+		Field:    field,
+		Stream:   stream,
 		Temp:     temperature,
-	})
+	}
+	if stream {
+		return h.invokeAudioTranscriptionStream(c, invocation)
+	}
+	return h.invokeAudioTranscription(c, invocation)
 }
 
 type audioInvocation struct {
@@ -80,7 +143,12 @@ type audioInvocation struct {
 	Mime     string
 	Prompt   string
 	Language string
+	User     string
+	Format   models.AudioResponseFormat
+	Granular []models.AudioTimestampGranularity
+	Field    string
 	Temp     *float32
+	Stream   bool
 }
 
 func (h *openAIHandler) invokeAudioTranscription(c *fiber.Ctx, inv audioInvocation) error {
@@ -122,12 +190,22 @@ func (h *openAIHandler) invokeAudioTranscription(c *fiber.Ctx, inv audioInvocati
 	var lastErr error
 	var lastRoute providers.Route
 	var lastLatency time.Duration
+	var formatRejected bool
+	var granularityRejected bool
 
 	for _, route := range routes {
 		var (
 			resp models.AudioTranscriptionResponse
 			err  error
 		)
+		if !routeSupportsAudioFormat(route.Metadata, inv.Format) {
+			formatRejected = true
+			continue
+		}
+		if len(inv.Granular) > 0 && !routeSupportsGranularities(route.Metadata, inv.Granular) {
+			granularityRejected = true
+			continue
+		}
 		lastRoute = route
 		req := models.AudioTranscriptionRequest{
 			Model: route.ResolveDeployment(),
@@ -137,10 +215,15 @@ func (h *openAIHandler) invokeAudioTranscription(c *fiber.Ctx, inv audioInvocati
 				Filename:    inv.Filename,
 				ContentType: inv.Mime,
 				Bytes:       int64(len(inv.Payload)),
+				FormField:   inv.Field,
 			},
-			Prompt:      inv.Prompt,
-			Temperature: inv.Temp,
-			Language:    inv.Language,
+			Prompt:                 inv.Prompt,
+			Temperature:            inv.Temp,
+			Language:               inv.Language,
+			ResponseFormat:         inv.Format,
+			TimestampGranularities: inv.Granular,
+			User:                   inv.User,
+			Stream:                 inv.Stream,
 		}
 		start := time.Now()
 		if inv.Task == models.AudioTranscriptionTaskTranslate && route.AudioTranslate != nil {
@@ -186,11 +269,18 @@ func (h *openAIHandler) invokeAudioTranscription(c *fiber.Ctx, inv audioInvocati
 		if status, err := h.container.UsageLogger.Record(ctx, record); err == nil {
 			setBudgetHeaders(c, status)
 		}
-		return c.JSON(fiber.Map{"text": resp.Text})
+		return writeAudioTranscriptionResponse(c, resp)
 	}
 
 	if lastErr == nil {
-		return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support audio tasks")
+		switch {
+		case formatRejected:
+			return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support requested response_format")
+		case granularityRejected:
+			return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support requested timestamp granularity")
+		default:
+			return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support audio tasks")
+		}
 	}
 	if lastRoute.Provider != "" {
 		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
@@ -206,6 +296,272 @@ func (h *openAIHandler) invokeAudioTranscription(c *fiber.Ctx, inv audioInvocati
 		})
 	}
 	return httputil.WriteError(c, fiber.StatusBadGateway, lastErr.Error())
+}
+
+func (h *openAIHandler) invokeAudioTranscriptionStream(c *fiber.Ctx, inv audioInvocation) error {
+	ctx := c.UserContext()
+	rc, ok := requestctx.FromContext(ctx)
+	if !ok || rc == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "request context missing")
+	}
+	if !h.container.IsModelAllowed(rc.TenantID, inv.Model) {
+		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
+	}
+	routes := h.container.Engine.SelectRoutes(inv.Model)
+	if len(routes) == 0 {
+		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
+	}
+
+	traceID := traceIDFromContext(c)
+	alias := inv.Model
+
+	budget, err := h.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
+	}
+	if budget.Exceeded {
+		setBudgetHeaders(c, budget)
+		return httputil.WriteError(c, fiber.StatusForbidden, "tenant budget exceeded")
+	}
+	setBudgetHeaders(c, budget)
+
+	keyKey, keyCfg, tenantKey, tenantCfg, release, err := h.container.AcquireRateLimits(ctx, alias)
+	if err != nil {
+		if errors.Is(err, limits.ErrLimitExceeded) {
+			return httputil.WriteError(c, fiber.StatusTooManyRequests, "rate limit exceeded")
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	var once sync.Once
+	releaseOnce := func() { once.Do(release) }
+
+	var lastErr error
+	var lastRoute providers.Route
+	var lastLatency time.Duration
+	var formatRejected bool
+	var granularityRejected bool
+	var streamingRejected bool
+
+	for _, route := range routes {
+		if route.AudioTranscribeStream == nil {
+			streamingRejected = true
+			continue
+		}
+		if !routeSupportsAudioStream(route.Metadata) {
+			streamingRejected = true
+			continue
+		}
+		if !routeSupportsAudioFormat(route.Metadata, inv.Format) {
+			formatRejected = true
+			continue
+		}
+		if len(inv.Granular) > 0 && !routeSupportsGranularities(route.Metadata, inv.Granular) {
+			granularityRejected = true
+			continue
+		}
+
+		req := models.AudioTranscriptionRequest{
+			Model: route.ResolveDeployment(),
+			Task:  inv.Task,
+			Input: models.AudioInput{
+				Reader:      bytes.NewReader(inv.Payload),
+				Filename:    inv.Filename,
+				ContentType: inv.Mime,
+				Bytes:       int64(len(inv.Payload)),
+				FormField:   inv.Field,
+			},
+			Prompt:                 inv.Prompt,
+			Temperature:            inv.Temp,
+			Language:               inv.Language,
+			ResponseFormat:         inv.Format,
+			TimestampGranularities: inv.Granular,
+			User:                   inv.User,
+			Stream:                 true,
+		}
+
+		start := time.Now()
+		chunks, cancel, err := route.AudioTranscribeStream.TranscribeStream(ctx, req)
+		if err != nil {
+			lastErr = err
+			lastLatency = time.Since(start)
+			h.container.Engine.ReportFailure(alias, route)
+			continue
+		}
+		lastRoute = route
+
+		c.Set("Content-Type", "text/event-stream")
+		c.Set("Cache-Control", "no-cache")
+		c.Set("Connection", "keep-alive")
+		streamStart := time.Now()
+
+		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+			defer cancel()
+			defer releaseOnce()
+
+			recordStatus := fiber.StatusOK
+			recordSuccess := false
+			usageCaptured := false
+			var streamUsage models.Usage
+			var firstTokenLatency time.Duration
+			var firstTokenMeasured bool
+
+			recordUsage := func() {
+				if usageCaptured {
+					if tokens := int(streamUsage.TotalTokens); tokens > 0 {
+						if err := h.container.RateLimiter.TokenAllowance(ctx, keyKey, tokens, keyCfg); err != nil {
+							if errors.Is(err, limits.ErrLimitExceeded) {
+								recordStatus = fiber.StatusTooManyRequests
+							} else {
+								recordStatus = fiber.StatusInternalServerError
+							}
+							recordSuccess = false
+						}
+						if err := h.container.RateLimiter.TokenAllowance(ctx, tenantKey, tokens, tenantCfg); err != nil {
+							if errors.Is(err, limits.ErrLimitExceeded) {
+								recordStatus = fiber.StatusTooManyRequests
+							} else {
+								recordStatus = fiber.StatusInternalServerError
+							}
+							recordSuccess = false
+						}
+					}
+				}
+
+				latency := time.Since(streamStart)
+				if firstTokenMeasured && firstTokenLatency > 0 {
+					latency = firstTokenLatency
+				}
+				record := usagepipeline.Record{
+					Context:   rc,
+					Alias:     alias,
+					Provider:  route.Provider,
+					Usage:     streamUsage,
+					Latency:   latency,
+					Status:    recordStatus,
+					TraceID:   traceID,
+					Timestamp: time.Now().UTC(),
+					Success:   recordSuccess && recordStatus == fiber.StatusOK,
+				}
+				if status, err := h.container.UsageLogger.Record(ctx, record); err == nil {
+					setBudgetHeaders(c, status)
+				}
+			}
+
+			defer recordUsage()
+			defer func() {
+				if recordSuccess && recordStatus == fiber.StatusOK {
+					h.container.Engine.ReportSuccess(alias, route)
+				} else {
+					h.container.Engine.ReportFailure(alias, route)
+				}
+			}()
+
+			for chunk := range chunks {
+				if chunk.Err != nil {
+					recordStatus = fiber.StatusBadGateway
+					lastErr = chunk.Err
+					return
+				}
+				if len(chunk.Payload) == 0 {
+					if chunk.Usage != nil {
+						streamUsage = *chunk.Usage
+						usageCaptured = true
+					}
+					continue
+				}
+				if !firstTokenMeasured {
+					firstTokenLatency = time.Since(streamStart)
+					firstTokenMeasured = true
+				}
+				if _, err := w.WriteString("data: "); err != nil {
+					recordStatus = fiber.StatusInternalServerError
+					return
+				}
+				if _, err := w.Write(chunk.Payload); err != nil {
+					recordStatus = fiber.StatusInternalServerError
+					return
+				}
+				if _, err := w.WriteString("\n\n"); err != nil {
+					recordStatus = fiber.StatusInternalServerError
+					return
+				}
+				if err := w.Flush(); err != nil {
+					recordStatus = fiber.StatusInternalServerError
+					return
+				}
+				if chunk.Usage != nil {
+					streamUsage = *chunk.Usage
+					usageCaptured = true
+				}
+				recordSuccess = true
+			}
+
+			if recordStatus == fiber.StatusOK {
+				if _, err := w.WriteString("data: [DONE]\n\n"); err != nil {
+					recordStatus = fiber.StatusInternalServerError
+					return
+				}
+				if err := w.Flush(); err != nil {
+					recordStatus = fiber.StatusInternalServerError
+					return
+				}
+			}
+		})
+
+		return nil
+	}
+
+	releaseOnce()
+
+	if lastErr == nil {
+		switch {
+		case formatRejected:
+			return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support requested response_format")
+		case granularityRejected:
+			return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support requested timestamp granularity")
+		case streamingRejected:
+			return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support streaming transcriptions")
+		default:
+			return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support audio streaming")
+		}
+	}
+
+	if lastRoute.Provider != "" {
+		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
+			Context:   rc,
+			Alias:     alias,
+			Provider:  lastRoute.Provider,
+			Latency:   lastLatency,
+			Status:    fiber.StatusBadGateway,
+			ErrorCode: lastErr.Error(),
+			TraceID:   traceID,
+			Timestamp: time.Now().UTC(),
+			Success:   false,
+		})
+	}
+
+	return httputil.WriteError(c, fiber.StatusBadGateway, lastErr.Error())
+}
+func writeAudioTranscriptionResponse(c *fiber.Ctx, resp models.AudioTranscriptionResponse) error {
+	payload := resp.Payload
+	if len(payload) == 0 {
+		if resp.Format.IsJSONFormat() || resp.Format == "" {
+			return c.JSON(fiber.Map{"text": resp.Text})
+		}
+		if resp.Text == "" {
+			return c.JSON(fiber.Map{"text": ""})
+		}
+		payload = []byte(resp.Text)
+	}
+	contentType := strings.TrimSpace(resp.ContentType)
+	if contentType == "" && resp.Format != "" {
+		contentType = resp.Format.ContentType()
+	}
+	if contentType != "" {
+		c.Set(fiber.HeaderContentType, contentType)
+	}
+	c.Set(fiber.HeaderContentLength, strconv.Itoa(len(payload)))
+	return c.Send(payload)
 }
 
 func (h *openAIHandler) audioSpeech(c *fiber.Ctx) error {
@@ -427,4 +783,69 @@ func audioContentType(format string) string {
 	default:
 		return "audio/mpeg"
 	}
+}
+
+func routeSupportsAudioFormat(metadata map[string]string, format models.AudioResponseFormat) bool {
+	if format == "" || format == models.AudioResponseFormatJSON {
+		return true
+	}
+	values := parseCSVMetadata(metadata["audio_formats"])
+	if len(values) == 0 {
+		return true
+	}
+	for _, val := range values {
+		if strings.EqualFold(val, string(format)) {
+			return true
+		}
+	}
+	return false
+}
+
+func routeSupportsGranularities(metadata map[string]string, requested []models.AudioTimestampGranularity) bool {
+	if len(requested) == 0 {
+		return true
+	}
+	values := parseCSVMetadata(metadata["audio_timestamp_granularities"])
+	if len(values) == 0 {
+		return true
+	}
+	for _, gran := range requested {
+		match := false
+		for _, val := range values {
+			if strings.EqualFold(val, string(gran)) {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	return true
+}
+
+func routeSupportsAudioStream(metadata map[string]string) bool {
+	if metadata == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(metadata["audio_streaming"])) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseCSVMetadata(val string) []string {
+	if strings.TrimSpace(val) == "" {
+		return nil
+	}
+	fields := strings.Split(val, ",")
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if trimmed := strings.TrimSpace(field); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

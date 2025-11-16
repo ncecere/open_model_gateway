@@ -37,3 +37,6 @@
 - [x] Build cached model discovery service + admin endpoint and wire frontend catalog UI to import models.
 - [x] Align usage/budget accounting and tenant credential flows with OpenRouter responses.
 - [x] Expand docs (`docs/runtime/config.md`, `docs/architecture/providers/openrouter.md`, `backend/README.md`) and update `agents.md`/`CHANGELOG.md`.
+
+## Follow-ups
+- [ ] Implement reasoning passthrough across providers per `reasoning_providers.md` (schema changes, adapter updates, SSE support).

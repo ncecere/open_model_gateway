@@ -182,6 +182,19 @@ model_catalog:
       audio_voice: "alloy"
       audio_format: "mp3"
 
+  - alias: "omni-moderation-latest"
+    provider: "openai"
+    provider_model: "omni-moderation-latest"
+    model_type: "moderation"
+    context_window: 0
+    max_output_tokens: 0
+    modalities: ["text"]
+    supports_tools: false
+    price_input: 0.0001
+    price_output: 0
+    currency: "USD"
+    metadata: {}
+
   - alias: "partner-gpt-image"
     provider: "openai-compatible"
     provider_model: "gpt-image-1"

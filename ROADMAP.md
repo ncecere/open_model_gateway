@@ -158,7 +158,6 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 **Missing / planned**
 - `POST /v1/audio/transcriptions`, `POST /v1/audio/translations`
 - `POST /v1/images/edits`, `POST /v1/images/variations`
-- `POST /v1/moderations`
 - `POST /v1/batches`
 - `POST /v1/responses`, Assistants/Threads/Runs APIs (future stretch goal)
 
@@ -172,8 +171,8 @@ This roadmap highlights upcoming initiatives that build on the existing routing,
 - **Benefits**: Required for Assistants, fine-tuning, batches, and future Responses/tooling flows. Brings first-class parity so SDKs can drop-in against the gateway without code forks.
 
 ### Moderations
-- **Implementation**: Add `/v1/moderations` that routes to a configured provider (OpenAI, Azure, or third-party). Persist moderation logs for auditing and optionally allow tenant-specific policies.
-- **Benefits**: Completes the trust & safety story so tenants don’t have to dual-home requests.
+- **Status**: ✅ Completed — `/v1/moderations` now routes through OpenAI, Azure OpenAI, and OpenAI-compatible adapters, enforces budgets/rate limits, records usage, plugs into `/v1/batches`, and ships with sample catalog/default-model entries.
+- **Benefits**: Completes the trust & safety story so tenants don’t have to dual-home requests and unlocks the forthcoming guardrail/policy engine work.
 
 ### Audio
 - **Implementation**: Beyond existing text-to-speech, add `/v1/audio/transcriptions` and `/v1/audio/translations` with Whisper-compatible request bodies, file uploads, and SSE partials. Plan for the new Responses audio outputs (inline PCM) once providers expose them.

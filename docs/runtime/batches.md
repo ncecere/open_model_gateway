@@ -69,5 +69,6 @@ Ensure we persist every timestamp column described in the Azure Batch table (`cr
 3. **Validation feedback:** Populate the `errors` list when JSONL parsing fails (e.g., `invalid_json_line`, `empty_file`) so clients receive the same codes shown in Azure’s troubleshooting guide.<sup>[1](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/batch)</sup>
 4. **Pagination:** Switch list queries to cursor semantics so SDKs that rely on `after` don’t break.
 5. **Result schema:** When writing NDJSON we must include upstream IDs, HTTP codes, and provider request IDs so the downloaded files drop-in replace OpenAI’s artifacts.
+6. **Moderations:** `/v1/moderations` jobs reuse the same budget/rate-limit pipeline and emit OpenAI’s moderation schema in the output/error files so SDK consumers can inspect category scores without translation.
 
 Keeping this sheet updated as the spec evolves prevents backend/frontend drift and makes it clear which behavior is contractually required before coding.

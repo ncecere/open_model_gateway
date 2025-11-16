@@ -14,6 +14,7 @@ func Register(app *fiber.App, container *app.Container) {
 	group.Get("/models", handler.listModels)
 	group.Post("/chat/completions", handler.chatCompletions)
 	group.Post("/embeddings", handler.embeddings)
+	group.Post("/moderations", handler.moderations)
 	group.Post("/images/generations", handler.imageGenerations)
 	group.Post("/images/edits", handler.imageEdits)
 	group.Post("/images/variations", handler.imageVariations)

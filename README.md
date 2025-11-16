@@ -22,6 +22,7 @@ Open Model Gateway is a programmable inference router that exposes an OpenAI-com
   - `GET /v1/models`
   - `POST /v1/chat/completions` (including SSE streaming)
 - `POST /v1/embeddings`
+- `POST /v1/moderations`
 - `POST /v1/images/generations` (Azure/OpenAI/Vertex/Bedrock Titan images, base64 responses)
 - `POST /v1/audio/{transcriptions,translations,speech}` (Whisper + GPT-4o-mini-tts text-to-speech)
 - Provider routing & failover:

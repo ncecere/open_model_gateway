@@ -325,6 +325,8 @@ func (w *Worker) executeItem(ctx context.Context, batch batchsvc.Batch, rc *requ
 		return w.runChatItem(ctx, rc, traceID, item)
 	case "/v1/embeddings":
 		return w.runEmbeddingItem(ctx, rc, traceID, item)
+	case "/v1/moderations":
+		return w.runModerationItem(ctx, rc, traceID, item)
 	case "/v1/images/generations":
 		return w.runImageItem(ctx, rc, traceID, item)
 	default:
@@ -652,6 +654,211 @@ func (w *Worker) runEmbeddingItem(ctx context.Context, rc *requestctx.Context, t
 			Latency:   lastLatency,
 		})
 	}
+	return itemOutcome{
+		statusCode: fiber.StatusBadGateway,
+		requestID:  traceID,
+		errPayload: encodeErrorPayload("provider_error", errMessage(lastErr)),
+	}
+}
+
+func (w *Worker) runModerationItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
+	input, errPayload := decodeBatchRequest(item, "/v1/moderations")
+	if errPayload != nil {
+		return itemOutcome{statusCode: fiber.StatusBadRequest, requestID: traceID, errPayload: errPayload}
+	}
+
+	var body openAIModerationRequest
+	if err := json.Unmarshal(input.Body, &body); err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", fmt.Sprintf("invalid moderation body: %v", err)),
+		}
+	}
+	alias := strings.TrimSpace(body.Model)
+	if alias == "" {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "model is required"),
+		}
+	}
+	values, err := parseEmbeddingInput(body.Input)
+	if err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", err.Error()),
+		}
+	}
+
+	if !w.container.IsModelAllowed(rc.TenantID, alias) {
+		return itemOutcome{
+			statusCode: fiber.StatusForbidden,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("permission_error", "model not enabled for tenant"),
+		}
+	}
+
+	routes := w.container.Engine.SelectRoutes(alias)
+	if len(routes) == 0 {
+		return itemOutcome{
+			statusCode: fiber.StatusServiceUnavailable,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("service_unavailable", "no backend available for model"),
+		}
+	}
+
+	callCtx := requestctx.WithContext(ctx, rc)
+	status, err := w.container.UsageLogger.CheckBudget(callCtx, rc, time.Now().UTC())
+	if err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusInternalServerError,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("budget_error", err.Error()),
+		}
+	}
+	if status.Exceeded {
+		_, _ = w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
+			Context:   rc,
+			Alias:     alias,
+			Provider:  "budget",
+			Status:    fiber.StatusForbidden,
+			ErrorCode: "budget_exceeded",
+			TraceID:   traceID,
+			Timestamp: time.Now().UTC(),
+			Success:   false,
+		})
+		return itemOutcome{
+			statusCode: fiber.StatusForbidden,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("budget_exceeded", "tenant budget exceeded"),
+		}
+	}
+
+	keyKey, keyCfg, tenantKey, tenantCfg, release, err := w.container.AcquireRateLimits(callCtx, alias)
+	if err != nil {
+		if errors.Is(err, limits.ErrLimitExceeded) {
+			return itemOutcome{
+				statusCode: fiber.StatusTooManyRequests,
+				requestID:  traceID,
+				errPayload: encodeErrorPayload("rate_limit_error", "rate limit exceeded"),
+			}
+		}
+		return itemOutcome{
+			statusCode: fiber.StatusTooManyRequests,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
+		}
+	}
+	defer release()
+
+	var lastErr error
+	var lastRoute providers.Route
+	var lastLatency time.Duration
+
+	for _, route := range routes {
+		if route.Moderations == nil {
+			continue
+		}
+		lastRoute = route
+		modelReq := models.ModerationRequest{
+			Model: route.ResolveDeployment(),
+			Input: values,
+		}
+		start := time.Now()
+		resp, err := route.Moderations.Moderate(callCtx, modelReq)
+		if err != nil {
+			w.container.Engine.ReportFailure(alias, route)
+			lastErr = err
+			lastLatency = time.Since(start)
+			continue
+		}
+
+		tokens := int(resp.Usage.TotalTokens)
+		if tokens > 0 {
+			if err := w.container.RateLimiter.TokenAllowance(callCtx, keyKey, tokens, keyCfg); err != nil {
+				if errors.Is(err, limits.ErrLimitExceeded) {
+					return itemOutcome{
+						statusCode: fiber.StatusTooManyRequests,
+						requestID:  traceID,
+						errPayload: encodeErrorPayload("rate_limit_error", "token limit exceeded"),
+					}
+				}
+				return itemOutcome{
+					statusCode: fiber.StatusTooManyRequests,
+					requestID:  traceID,
+					errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
+				}
+			}
+			if err := w.container.RateLimiter.TokenAllowance(callCtx, tenantKey, tokens, tenantCfg); err != nil {
+				if errors.Is(err, limits.ErrLimitExceeded) {
+					return itemOutcome{
+						statusCode: fiber.StatusTooManyRequests,
+						requestID:  traceID,
+						errPayload: encodeErrorPayload("rate_limit_error", "token limit exceeded"),
+					}
+				}
+				return itemOutcome{
+					statusCode: fiber.StatusTooManyRequests,
+					requestID:  traceID,
+					errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
+				}
+			}
+		}
+
+		w.container.Engine.ReportSuccess(alias, route)
+		if _, err := w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
+			Context:   rc,
+			Alias:     alias,
+			Provider:  route.Provider,
+			Usage:     resp.Usage,
+			Latency:   time.Since(start),
+			Status:    fiber.StatusOK,
+			TraceID:   traceID,
+			Timestamp: time.Now().UTC(),
+			Success:   true,
+		}); err != nil {
+			return itemOutcome{
+				statusCode: fiber.StatusInternalServerError,
+				requestID:  traceID,
+				errPayload: encodeErrorPayload("usage_error", err.Error()),
+			}
+		}
+
+		payload := convertModerationResponse(resp, alias)
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return itemOutcome{
+				statusCode: fiber.StatusInternalServerError,
+				requestID:  traceID,
+				errPayload: encodeErrorPayload("serialization_error", err.Error()),
+			}
+		}
+		return itemOutcome{
+			statusCode: fiber.StatusOK,
+			requestID:  traceID,
+			response:   data,
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = errors.New("no backend available")
+	}
+	if lastRoute.Provider != "" {
+		_, _ = w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
+			Context:   rc,
+			Alias:     alias,
+			Provider:  lastRoute.Provider,
+			Latency:   lastLatency,
+			Status:    fiber.StatusBadGateway,
+			ErrorCode: errMessage(lastErr),
+			TraceID:   traceID,
+			Timestamp: time.Now().UTC(),
+			Success:   false,
+		})
+	}
+
 	return itemOutcome{
 		statusCode: fiber.StatusBadGateway,
 		requestID:  traceID,
@@ -1176,6 +1383,23 @@ func convertEmbeddingResponse(resp models.EmbeddingsResponse, alias string) open
 	}
 }
 
+func convertModerationResponse(resp models.ModerationResponse, alias string) openAIModerationResponse {
+	results := make([]openAIModerationResult, 0, len(resp.Results))
+	for _, item := range resp.Results {
+		results = append(results, openAIModerationResult{
+			Categories:                item.Categories,
+			CategoryAppliedInputTypes: item.CategoryAppliedInputTypes,
+			CategoryScores:            item.CategoryScores,
+			Flagged:                   item.Flagged,
+		})
+	}
+	return openAIModerationResponse{
+		ID:      resp.ID,
+		Model:   alias,
+		Results: results,
+	}
+}
+
 func convertImageResponse(resp models.ImageResponse) openAIImageResponse {
 	data := make([]openAIImageData, 0, len(resp.Data))
 	for _, item := range resp.Data {
@@ -1279,6 +1503,24 @@ type openAIEmbeddingResponse struct {
 	Model  string            `json:"model"`
 	Data   []openAIEmbedding `json:"data"`
 	Usage  openAIUsage       `json:"usage"`
+}
+
+type openAIModerationRequest struct {
+	Model string          `json:"model"`
+	Input json.RawMessage `json:"input"`
+}
+
+type openAIModerationResponse struct {
+	ID      string                   `json:"id"`
+	Model   string                   `json:"model"`
+	Results []openAIModerationResult `json:"results"`
+}
+
+type openAIModerationResult struct {
+	Categories                models.ModerationCategories                `json:"categories"`
+	CategoryAppliedInputTypes models.ModerationCategoryAppliedInputTypes `json:"category_applied_input_types"`
+	CategoryScores            models.ModerationCategoryScores            `json:"category_scores"`
+	Flagged                   bool                                       `json:"flagged"`
 }
 
 type openAIImageData struct {

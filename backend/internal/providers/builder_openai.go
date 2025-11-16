@@ -15,14 +15,14 @@ func init() {
 		Description: "OpenAI native API (chat, streaming, embeddings, images, audio)",
 		Capabilities: []string{
 			"chat", "chat_stream", "embeddings", "images", "models",
-			"audio_transcription", "audio_translation", "audio_speech",
+			"audio_transcription", "audio_translation", "audio_speech", "moderations",
 		},
 		Builder: buildOpenAIRoute,
 	})
 	RegisterDefinition(Definition{
 		Name:         "openai-compatible",
 		Description:  "OpenAI API-compatible endpoint (custom base URL)",
-		Capabilities: []string{"chat", "chat_stream", "embeddings", "images", "audio_transcription", "audio_translation", "audio_speech"},
+		Capabilities: []string{"chat", "chat_stream", "embeddings", "images", "audio_transcription", "audio_translation", "audio_speech", "moderations"},
 		Builder:      buildOpenAICompatibleRoute,
 	})
 }
@@ -79,6 +79,7 @@ func buildOpenAIRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 		Chat:            adapter,
 		ChatStream:      adapter,
 		Embedding:       adapter,
+		Moderations:     adapter,
 		Image:           adapter,
 		AudioTranscribe: adapter,
 		AudioTranslate:  adapter,
@@ -144,6 +145,7 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 		Chat:            adapter,
 		ChatStream:      adapter,
 		Embedding:       adapter,
+		Moderations:     adapter,
 		Image:           adapter,
 		AudioTranscribe: adapter,
 		AudioTranslate:  adapter,

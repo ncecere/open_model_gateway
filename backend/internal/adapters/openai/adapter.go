@@ -103,6 +103,26 @@ func (a *Adapter) Embed(ctx context.Context, req models.EmbeddingsRequest) (mode
 	return convertEmbeddingsResponse(*resp), nil
 }
 
+// Moderate executes a moderation request using the Moderations API.
+func (a *Adapter) Moderate(ctx context.Context, req models.ModerationRequest) (models.ModerationResponse, error) {
+	if len(req.Input) == 0 {
+		return models.ModerationResponse{}, errors.New("openai: moderation input required")
+	}
+	params := openai.ModerationNewParams{
+		Model: openai.ModerationModel(req.Model),
+	}
+	if len(req.Input) == 1 {
+		params.Input.OfString = param.NewOpt(req.Input[0])
+	} else {
+		params.Input.OfStringArray = append(params.Input.OfStringArray, req.Input...)
+	}
+	resp, err := a.client.Moderations.New(ctx, params)
+	if err != nil {
+		return models.ModerationResponse{}, err
+	}
+	return convertModerationResponse(*resp), nil
+}
+
 // Generate produces images with the Images API.
 func (a *Adapter) Generate(ctx context.Context, req models.ImageRequest) (models.ImageResponse, error) {
 	prompt := strings.TrimSpace(req.Prompt)
@@ -513,4 +533,76 @@ func convertEmbeddingsResponse(resp openai.CreateEmbeddingResponse) models.Embed
 		TotalTokens:  int32(resp.Usage.TotalTokens),
 	}
 	return models.EmbeddingsResponse{Model: resp.Model, Embeddings: embeddings, Usage: usage}
+}
+
+func convertModerationResponse(resp openai.ModerationNewResponse) models.ModerationResponse {
+	results := make([]models.ModerationResult, 0, len(resp.Results))
+	for _, item := range resp.Results {
+		results = append(results, models.ModerationResult{
+			Categories:                convertModerationCategories(item.Categories),
+			CategoryAppliedInputTypes: convertModerationAppliedInputTypes(item.CategoryAppliedInputTypes),
+			CategoryScores:            convertModerationScores(item.CategoryScores),
+			Flagged:                   item.Flagged,
+		})
+	}
+	return models.ModerationResponse{
+		ID:      resp.ID,
+		Model:   resp.Model,
+		Results: results,
+		Usage:   models.Usage{},
+	}
+}
+
+func convertModerationCategories(src openai.ModerationCategories) models.ModerationCategories {
+	return models.ModerationCategories{
+		Harassment:            src.Harassment,
+		HarassmentThreatening: src.HarassmentThreatening,
+		Hate:                  src.Hate,
+		HateThreatening:       src.HateThreatening,
+		Illicit:               src.Illicit,
+		IllicitViolent:        src.IllicitViolent,
+		SelfHarm:              src.SelfHarm,
+		SelfHarmInstructions:  src.SelfHarmInstructions,
+		SelfHarmIntent:        src.SelfHarmIntent,
+		Sexual:                src.Sexual,
+		SexualMinors:          src.SexualMinors,
+		Violence:              src.Violence,
+		ViolenceGraphic:       src.ViolenceGraphic,
+	}
+}
+
+func convertModerationScores(src openai.ModerationCategoryScores) models.ModerationCategoryScores {
+	return models.ModerationCategoryScores{
+		Harassment:            src.Harassment,
+		HarassmentThreatening: src.HarassmentThreatening,
+		Hate:                  src.Hate,
+		HateThreatening:       src.HateThreatening,
+		Illicit:               src.Illicit,
+		IllicitViolent:        src.IllicitViolent,
+		SelfHarm:              src.SelfHarm,
+		SelfHarmInstructions:  src.SelfHarmInstructions,
+		SelfHarmIntent:        src.SelfHarmIntent,
+		Sexual:                src.Sexual,
+		SexualMinors:          src.SexualMinors,
+		Violence:              src.Violence,
+		ViolenceGraphic:       src.ViolenceGraphic,
+	}
+}
+
+func convertModerationAppliedInputTypes(src openai.ModerationCategoryAppliedInputTypes) models.ModerationCategoryAppliedInputTypes {
+	return models.ModerationCategoryAppliedInputTypes{
+		Harassment:            append([]string(nil), src.Harassment...),
+		HarassmentThreatening: append([]string(nil), src.HarassmentThreatening...),
+		Hate:                  append([]string(nil), src.Hate...),
+		HateThreatening:       append([]string(nil), src.HateThreatening...),
+		Illicit:               append([]string(nil), src.Illicit...),
+		IllicitViolent:        append([]string(nil), src.IllicitViolent...),
+		SelfHarm:              append([]string(nil), src.SelfHarm...),
+		SelfHarmInstructions:  append([]string(nil), src.SelfHarmInstructions...),
+		SelfHarmIntent:        append([]string(nil), src.SelfHarmIntent...),
+		Sexual:                append([]string(nil), src.Sexual...),
+		SexualMinors:          append([]string(nil), src.SexualMinors...),
+		Violence:              append([]string(nil), src.Violence...),
+		ViolenceGraphic:       append([]string(nil), src.ViolenceGraphic...),
+	}
 }

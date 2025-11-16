@@ -14,7 +14,7 @@ func init() {
 		Description: "Azure OpenAI (chat, embeddings, images, audio)",
 		Capabilities: []string{
 			"chat", "chat_stream", "embeddings", "images",
-			"audio_transcription", "audio_translation",
+			"audio_transcription", "audio_translation", "moderations",
 		},
 		Builder: buildAzureRoute,
 	})
@@ -95,6 +95,7 @@ func buildAzureRoute(ctx context.Context, cfg *config.Config, entry config.Model
 		Chat:            adapter,
 		ChatStream:      adapter,
 		Embedding:       adapter,
+		Moderations:     adapter,
 		Image:           adapter,
 		AudioTranscribe: adapter,
 		AudioTranslate:  adapter,

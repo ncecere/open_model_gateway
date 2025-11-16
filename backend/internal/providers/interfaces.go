@@ -22,6 +22,10 @@ type EmbeddingsProvider interface {
 	Embed(ctx context.Context, req models.EmbeddingsRequest) (models.EmbeddingsResponse, error)
 }
 
+type ModerationsProvider interface {
+	Moderate(ctx context.Context, req models.ModerationRequest) (models.ModerationResponse, error)
+}
+
 type ImagesProvider interface {
 	Generate(ctx context.Context, req models.ImageRequest) (models.ImageResponse, error)
 	Edit(ctx context.Context, req models.ImageEditRequest) (models.ImageResponse, error)

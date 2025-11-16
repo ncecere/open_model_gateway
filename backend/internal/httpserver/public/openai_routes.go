@@ -578,6 +578,11 @@ type openAIEmbeddingRequest struct {
 	Input json.RawMessage `json:"input"`
 }
 
+type openAIModerationRequest struct {
+	Model string          `json:"model"`
+	Input json.RawMessage `json:"input"`
+}
+
 type openAIEmbedding struct {
 	Index     int       `json:"index"`
 	Embedding []float32 `json:"embedding"`
@@ -589,6 +594,19 @@ type openAIEmbeddingResponse struct {
 	Model  string            `json:"model"`
 	Data   []openAIEmbedding `json:"data"`
 	Usage  openAIUsage       `json:"usage"`
+}
+
+type openAIModerationResponse struct {
+	ID      string                   `json:"id"`
+	Model   string                   `json:"model"`
+	Results []openAIModerationResult `json:"results"`
+}
+
+type openAIModerationResult struct {
+	Categories                models.ModerationCategories                `json:"categories"`
+	CategoryAppliedInputTypes models.ModerationCategoryAppliedInputTypes `json:"category_applied_input_types"`
+	CategoryScores            models.ModerationCategoryScores            `json:"category_scores"`
+	Flagged                   bool                                       `json:"flagged"`
 }
 
 type openAIImageRequest struct {
@@ -612,6 +630,146 @@ type openAIImageData struct {
 type openAIImageResponse struct {
 	Created int64             `json:"created"`
 	Data    []openAIImageData `json:"data"`
+}
+
+func (h *openAIHandler) moderations(c *fiber.Ctx) error {
+	var req openAIModerationRequest
+	if err := c.BodyParser(&req); err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid request body")
+	}
+	alias := strings.TrimSpace(req.Model)
+	if alias == "" {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "model is required")
+	}
+	inputs, err := parseEmbeddingInput(req.Input)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "input must be string or array of strings")
+	}
+	if len(inputs) == 0 {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "input is required")
+	}
+
+	ctx := c.UserContext()
+	rc, ok := requestctx.FromContext(ctx)
+	if !ok || rc == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "request context missing")
+	}
+	if !h.container.IsModelAllowed(rc.TenantID, alias) {
+		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
+	}
+
+	routes := h.container.Engine.SelectRoutes(alias)
+	if len(routes) == 0 {
+		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
+	}
+
+	traceID := traceIDFromContext(c)
+	initialBudget, err := h.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
+	}
+	if initialBudget.Exceeded {
+		setBudgetHeaders(c, initialBudget)
+		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
+			Context:   rc,
+			Alias:     alias,
+			Provider:  "budget",
+			Status:    fiber.StatusForbidden,
+			ErrorCode: "budget_exceeded",
+			TraceID:   traceID,
+			Timestamp: time.Now().UTC(),
+			Success:   false,
+		})
+		return httputil.WriteError(c, fiber.StatusForbidden, "tenant budget exceeded")
+	}
+	setBudgetHeaders(c, initialBudget)
+
+	keyKey, keyCfg, tenantKey, tenantCfg, release, err := h.container.AcquireRateLimits(ctx, alias)
+	if err != nil {
+		if errors.Is(err, limits.ErrLimitExceeded) {
+			return httputil.WriteError(c, fiber.StatusTooManyRequests, "rate limit exceeded")
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	defer release()
+
+	var lastErr error
+	var lastRoute providers.Route
+	var lastLatency time.Duration
+	for _, route := range routes {
+		if route.Moderations == nil {
+			continue
+		}
+		lastRoute = route
+		modelReq := models.ModerationRequest{
+			Model: route.ResolveDeployment(),
+			Input: inputs,
+		}
+		start := time.Now()
+		resp, err := route.Moderations.Moderate(ctx, modelReq)
+		if err != nil {
+			h.container.Engine.ReportFailure(alias, route)
+			lastErr = err
+			lastLatency = time.Since(start)
+			continue
+		}
+		h.container.Engine.ReportSuccess(alias, route)
+
+		tokens := int(resp.Usage.TotalTokens)
+		if tokens > 0 {
+			if err := h.container.RateLimiter.TokenAllowance(context.Background(), keyKey, tokens, keyCfg); err != nil {
+				if errors.Is(err, limits.ErrLimitExceeded) {
+					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
+				}
+				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+			}
+			if err := h.container.RateLimiter.TokenAllowance(context.Background(), tenantKey, tokens, tenantCfg); err != nil {
+				if errors.Is(err, limits.ErrLimitExceeded) {
+					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
+				}
+				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+			}
+		}
+
+		record := usagepipeline.Record{
+			Context:   rc,
+			Alias:     alias,
+			Provider:  route.Provider,
+			Usage:     resp.Usage,
+			Latency:   time.Since(start),
+			Status:    fiber.StatusOK,
+			TraceID:   traceID,
+			Timestamp: time.Now().UTC(),
+			Success:   true,
+		}
+		if status, err := h.container.UsageLogger.Record(ctx, record); err == nil {
+			setBudgetHeaders(c, status)
+		} else {
+			return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to persist usage")
+		}
+
+		response := convertModerationHTTPResponse(resp, alias)
+		return c.JSON(response)
+	}
+
+	if lastErr == nil {
+		lastErr = errors.New("no backend available")
+	}
+	if lastRoute.Provider != "" {
+		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
+			Context:   rc,
+			Alias:     alias,
+			Provider:  lastRoute.Provider,
+			Latency:   lastLatency,
+			Status:    fiber.StatusBadGateway,
+			ErrorCode: errMessage(lastErr),
+			TraceID:   traceID,
+			Timestamp: time.Now().UTC(),
+			Success:   false,
+		})
+	}
+
+	return httputil.WriteError(c, fiber.StatusBadGateway, errMessage(lastErr))
 }
 
 func (h *openAIHandler) embeddings(c *fiber.Ctx) error {
@@ -1115,6 +1273,23 @@ func convertStreamChunk(chunk models.ChatChunk, alias string) openAIStreamChunk 
 		Created: chunk.Created.Unix(),
 		Model:   alias,
 		Choices: choices,
+	}
+}
+
+func convertModerationHTTPResponse(resp models.ModerationResponse, alias string) openAIModerationResponse {
+	results := make([]openAIModerationResult, 0, len(resp.Results))
+	for _, item := range resp.Results {
+		results = append(results, openAIModerationResult{
+			Categories:                item.Categories,
+			CategoryAppliedInputTypes: item.CategoryAppliedInputTypes,
+			CategoryScores:            item.CategoryScores,
+			Flagged:                   item.Flagged,
+		})
+	}
+	return openAIModerationResponse{
+		ID:      resp.ID,
+		Model:   alias,
+		Results: results,
 	}
 }
 

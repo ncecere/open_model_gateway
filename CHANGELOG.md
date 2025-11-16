@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [Unreleased]
+### Added
+- Implemented the OpenAI-compatible `/v1/moderations` endpoint end-to-end: provider interfaces/adapters, HTTP handler with budgets/rate limits, batch worker integration, config samples, documentation, and admin/user defaults so tenants can route moderation traffic through the gateway without hitting upstream APIs directly.
+### Documentation
+- Added `docs/runtime/moderations.md`, README/roadmap updates, and sample config entries that highlight how to onboard moderation aliases (native OpenAI, Azure deployments, or OpenAI-compatible stacks).
+
 ## [v0.1.5] - 2025-02-20
 ### Added
 - Files API now mirrors OpenAI’s contract end-to-end: new schema columns for `status`/`status_details`, cursor-based listing with `has_more`/`first_id`/`last_id`, `deleted` responses, configurable sweep intervals/batch sizes, updated admin/user documentation, and a routerd background sweeper that reaps expired blobs automatically.
@@ -59,7 +65,10 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 - Initial release of the Open Model Gateway router, including the Go backend, React admin UI, provider routing, tenant/key management, budgets, usage tracking, and supporting docs.
 
-[Unreleased]: https://github.com/ncecere/open_model_gateway/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/ncecere/open_model_gateway/compare/v0.1.5...HEAD
+[v0.1.5]: https://github.com/ncecere/open_model_gateway/compare/v0.1.4...v0.1.5
+[v0.1.4]: https://github.com/ncecere/open_model_gateway/compare/v0.1.3...v0.1.4
+[v0.1.3]: https://github.com/ncecere/open_model_gateway/compare/v0.1.2...v0.1.3
 [v0.1.2]: https://github.com/ncecere/open_model_gateway/compare/v0.1.1...v0.1.2
 [v0.1.1]: https://github.com/ncecere/open_model_gateway/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/ncecere/open_model_gateway/releases/tag/v0.1.0

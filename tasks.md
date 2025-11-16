@@ -1,16 +1,29 @@
-# Files API Parity
+# Moderations API Implementation Plan
 
-## Plan
-- Align with the latest OpenAI Files spec (`/v1/files` CRUD + `/v1/files/:id/content` and `/v1/uploads`) so tenants can upload/list/download/delete files using the same request/response shapes.
-- Extend storage metadata so every file tracks purpose, status, status_details, deleted flags, TTL, checksum, and a cursor-friendly ID for pagination.
-- Upgrade the HTTP handlers to support cursor pagination, filtering, soft deletes, and chunked upload sessions while continuing to stream large uploads/downloads through the existing blob layer.
-- Add a background sweeper that enforces TTL (removes expired objects and marks them deleted) so lists stay accurate.
-- Document the workflow (config, CLI examples) and add automated tests covering upload → list → download → delete flows plus error cases (max size, invalid purpose, expired file access).
+## Goals
+- Deliver `/v1/moderations` parity with the current OpenAI REST spec across sync requests and batch jobs.
+- Wire native OpenAI/Azure adapters plus catalog/bootstrap defaults so tenants can target moderation aliases immediately.
+- Update docs/tests/changelog to reflect the new capability (policy/guardrail hooks tracked separately).
 
-## Checklist
-- [x] Spec review: summarize the OpenAI Files contract (endpoints, fields like `status`, allowed `purpose` values, pagination via `limit/after`, and `deleted` behavior) and share it with the team.
-- [x] Schema/storage: update the `files` table (status/status_details/deleted), ensure the blob layer exposes metadata needed for OpenAI responses, and add any missing indexes for cursor pagination or purpose filtering.
-- [x] HTTP handlers: implement OpenAI-compatible responses for `GET/POST /v1/files`, `GET /v1/files/:id`, `GET /v1/files/:id/content`, `DELETE /v1/files/:id`, and add initial support for `/v1/uploads` (or return a structured 501 until chunking lands). Include cursor pagination and `purpose` filtering.
-- [x] TTL sweeper + service logic: add a scheduled job that deletes/marks expired files, set `status=deleted` on removal, and ensure the service methods enforce the new validation rules (purpose allowlist, TTL, max size).
-- [x] Tests: add unit tests for the files service + blob storage adapters, plus HTTP handler tests covering upload/list/download/delete, pagination, and error handling.
-- [x] Docs + changelog: update runtime docs, admin/user guides, and `CHANGELOG.md` to describe the new Files API compatibility and how to configure/use it (include curl examples).
+## Tasks
+1. **Spec & Docs**
+   - Capture request/response schema (input validation, `results[].categories`, `category_scores`, `usage`) in `docs/runtime/moderations.md`.
+   - Note supported providers, tenant enablement expectations, and batch compatibility; link from README/ROADMAP.
+2. **Core Types & Routing**
+   - Add `models/moderation.go` with typed structs + helper to parse string/array inputs.
+   - Extend provider interfaces/route struct with `Moderations` support and allow catalog entries to mark moderation aliases/pricing.
+   - Seed sample config (bootstrap/default models) with `omni-moderation-latest` so tenants can opt in.
+3. **Adapter Plumbing**
+   - Implement `Moderate` on `adapters/openai` and `adapters/azureopenai` using the official SDK, converting into the shared model types and populating usage.
+   - Ensure provider definitions advertise the new capability so the factory registers routes correctly.
+4. **HTTP Endpoint**
+   - Register `POST /v1/moderations` in `public/router.go`.
+   - Implement handler: parse OpenAI-compatible payload, enforce budgets/rate limits/model access, execute against moderation-capable routes, record usage, return OpenAI-formatted JSON, and cache via idempotency key when provided.
+5. **Batch Worker Integration**
+   - Allow `/v1/moderations` jobs inside the batch worker, reusing the same validation/execution logic and success/error logging.
+   - Update `docs/runtime/batches.md` to reflect the added support.
+6. **Validation & Docs**
+   - Add unit tests for input parsing, adapter conversion, and handler happy/edge paths (budget/rate/error cases).
+   - Update `CHANGELOG.md`, `ROADMAP.md`, and README surface matrix to call out the new endpoint.
+
+> NOTE: Guardrail/policy engine work remains out of scope; a separate task list will track those requirements.

@@ -190,6 +190,7 @@ model_catalog:
     metadata:
       audio_voice: "alloy"
       audio_format: "mp3"
+      price_tts_million_chars_cents: "1500" # $15.00 per 1M characters
 
   - alias: "gpt-4o-mini-transcribe"
     provider: "openai"
@@ -206,6 +207,7 @@ model_catalog:
       audio_formats: "json,verbose_json,diarized_json,text,srt,vtt"
       audio_timestamp_granularities: "word,segment"
       audio_streaming: "true"
+      price_audio_minute_cents: "60" # $0.60 per minute of input audio
 
   - alias: "partner-gpt-image"
     provider: "openai-compatible"

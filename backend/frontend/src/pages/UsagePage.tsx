@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { ChevronDown, Download } from "lucide-react";
 
 import {
@@ -10,9 +10,6 @@ import {
   useUsageOverview,
   useUserDailyUsage,
 } from "@/api/hooks/useUsage";
-import { listTenants } from "@/api/tenants";
-import { listUsers } from "@/api/users";
-import { listModelCatalog, type ModelCatalogEntry } from "@/api/model-catalog";
 import type {
   ModelDailyTenantUsage,
   ModelDailyUsageDay,
@@ -47,10 +44,12 @@ import {
   type UsageComparisonMetric,
 } from "@/components/charts/UsageComparisonChart";
 import { SummaryCard } from "@/ui/kit/Cards";
+import { ChartCard } from "@/ui/kit/ChartCard";
 import { QueryAlert } from "@/features/usage";
 import { formatUsageDate } from "@/lib/dates";
 import { formatTokensShort } from "@/lib/numbers";
 import { cn } from "@/lib/utils";
+import { useDirectoryData } from "@/providers/DirectoryProvider";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -75,23 +74,12 @@ const METRIC_OPTIONS: { value: UsageComparisonMetric; label: string }[] = [
 ];
 
 export function UsagePage() {
-  const tenantsQuery = useQuery({
-    queryKey: ["tenants", "usage"],
-    queryFn: () => listTenants({ limit: 500 }),
-  });
-  const tenants = tenantsQuery.data?.tenants ?? [];
-
-  const usersQuery = useQuery({
-    queryKey: ["users", "usage"],
-    queryFn: () => listUsers({ limit: 500 }),
-  });
-  const users = usersQuery.data?.users ?? [];
-
-  const modelsQuery = useQuery({
-    queryKey: ["model-catalog"],
-    queryFn: listModelCatalog,
-  });
-  const models: ModelCatalogEntry[] = modelsQuery.data ?? [];
+  const {
+    tenants,
+    users,
+    models,
+    tenantsLoading,
+  } = useDirectoryData();
 
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>();
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
@@ -422,7 +410,7 @@ export function UsagePage() {
               title="Tenants covered"
               value={tenants.length}
               description="Across the selected window"
-              loading={tenantsQuery.isLoading}
+              loading={tenantsLoading}
             />
           </section>
 
@@ -762,54 +750,52 @@ function TopUsageCard({
   const resolvedId = selectedId ?? series?.id ?? items[0]?.id ?? "";
   const hasComparison = (comparisonSeries?.length ?? 0) > 0;
 
+  const toolbar = (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <Select value={metric} onValueChange={(value) => onMetricChange(value as UsageComparisonMetric)}>
+        <SelectTrigger>
+          <SelectValue placeholder="Metric" />
+        </SelectTrigger>
+        <SelectContent>
+          {METRIC_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
   return (
-    <Card>
-      <CardHeader className="space-y-4">
-        <div className="space-y-1">
-          <CardTitle>{title}</CardTitle>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Select value={metric} onValueChange={(value) => onMetricChange(value as UsageComparisonMetric)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Metric" />
-            </SelectTrigger>
-            <SelectContent>
-              {METRIC_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <QueryAlert
-          error={breakdown.isError ? (breakdown.error as Error) : null}
-          onRetry={breakdown.refetch}
-        />
-        {breakdown.isLoading ? (
-          <Skeleton className="h-64 w-full" />
-        ) : (
-          <>
-            {comparisonIsLoading ? (
-              <Skeleton className="h-64 w-full" />
-            ) : hasComparison ? (
-              <UsageComparisonChart
-                series={comparisonSeries!}
-                metric={metric}
-                timezone={timezone}
-                activeSeriesId={resolvedId}
-              />
-            ) : (
-              <UsageBreakdownChart data={chartData} metric={metric} timezone={timezone} />
-            )}
-            <TopUsageList items={items} metric={metric} resolvedId={resolvedId} onSelectId={onSelectId} />
-          </>
-        )}
-      </CardContent>
-    </Card>
+    <ChartCard
+      title={title}
+      description={description}
+      toolbar={toolbar}
+      isLoading={breakdown.isLoading}
+    >
+      <QueryAlert
+        error={breakdown.isError ? (breakdown.error as Error) : null}
+        onRetry={breakdown.refetch}
+      />
+      {!breakdown.isLoading && (
+        <>
+          {comparisonIsLoading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : hasComparison ? (
+            <UsageComparisonChart
+              series={comparisonSeries!}
+              metric={metric}
+              timezone={timezone}
+              activeSeriesId={resolvedId}
+            />
+          ) : (
+            <UsageBreakdownChart data={chartData} metric={metric} timezone={timezone} />
+          )}
+          <TopUsageList items={items} metric={metric} resolvedId={resolvedId} onSelectId={onSelectId} />
+        </>
+      )}
+    </ChartCard>
   );
 }
 

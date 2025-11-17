@@ -1,0 +1,231 @@
+{
+  "generated_at": "2025-11-17T00:00:00Z",
+  "source": "sample",
+  "config_path": "../deploy/router.local.yaml",
+  "entries": [
+    {
+      "Alias": "openai-chat",
+      "Provider": "openai",
+      "ProviderModel": "gpt-4.1-mini",
+      "ModelType": "llm",
+      "ContextWindow": 128000,
+      "MaxOutputTokens": 4096,
+      "Modalities": ["text"],
+      "SupportsTools": true,
+      "Enabled": null,
+      "Deployment": "gpt-4.1-mini",
+      "Endpoint": "",
+      "APIKey": "sample-openai-key",
+      "APIVersion": "",
+      "Region": "",
+      "Weight": 100,
+      "Metadata": {
+        "openai_organization": "sample-org"
+      },
+      "openai": {
+        "api_key": "sample-openai-key",
+        "openai_organization": "sample-org",
+        "base_url": ""
+      },
+      "PriceInput": 0.005,
+      "PriceOutput": 0.015,
+      "Currency": "USD"
+    },
+    {
+      "Alias": "azure-chat",
+      "Provider": "azure",
+      "ProviderModel": "gpt-4o-mini",
+      "ModelType": "llm",
+      "ContextWindow": 128000,
+      "MaxOutputTokens": 4096,
+      "Modalities": ["text"],
+      "SupportsTools": true,
+      "Enabled": null,
+      "Deployment": "gpt-4o-mini",
+      "Endpoint": "https://sample.openai.azure.com/",
+      "APIKey": "azure-sample-key",
+      "APIVersion": "2024-07-01-preview",
+      "Region": "eastus",
+      "Weight": 100,
+      "Metadata": {
+        "subscription": "sample-subscription"
+      },
+      "azure": {
+        "deployment": "gpt-4o-mini",
+        "endpoint": "https://sample.openai.azure.com/",
+        "api_key": "azure-sample-key",
+        "api_version": "2024-07-01-preview",
+        "region": "eastus"
+      },
+      "PriceInput": 0.004,
+      "PriceOutput": 0.012,
+      "Currency": "USD"
+    },
+    {
+      "Alias": "bedrock-claude",
+      "Provider": "bedrock",
+      "ProviderModel": "anthropic.claude-3-sonnet",
+      "ModelType": "llm",
+      "ContextWindow": 200000,
+      "MaxOutputTokens": 8000,
+      "Modalities": ["text"],
+      "SupportsTools": true,
+      "Enabled": null,
+      "Deployment": "",
+      "Endpoint": "",
+      "APIKey": "",
+      "APIVersion": "",
+      "Region": "us-west-2",
+      "Weight": 100,
+      "Metadata": {
+        "bedrock_chat_format": "anthropic_messages"
+      },
+      "bedrock": {
+        "region": "us-west-2",
+        "bedrock_chat_format": "anthropic_messages",
+        "bedrock_default_max_tokens": 4096
+      },
+      "PriceInput": 0.0035,
+      "PriceOutput": 0.011,
+      "Currency": "USD"
+    },
+    {
+      "Alias": "vertex-gemini",
+      "Provider": "vertex",
+      "ProviderModel": "gemini-1.5-pro",
+      "ModelType": "llm",
+      "ContextWindow": 1000000,
+      "MaxOutputTokens": 8192,
+      "Modalities": ["text", "image"],
+      "SupportsTools": true,
+      "Enabled": null,
+      "Deployment": "",
+      "Endpoint": "",
+      "APIKey": "",
+      "APIVersion": "",
+      "Region": "us-central1",
+      "Weight": 100,
+      "Metadata": null,
+      "vertex": {
+        "gcp_project_id": "sample-project",
+        "vertex_location": "us-central1",
+        "gcp_credentials_json": "{\\n  \\\"type\\\": \\\"service_account\\\",\\n  \\\"project_id\\\": \\\"sample-project\\\",\\n  \\\"private_key_id\\\": \\\"REDACTED\\\",\\n  \\\"private_key\\\": \\\"-----BEGIN PRIVATE KEY-----\\\\nREDACTED\\\\n-----END PRIVATE KEY-----\\\",\\n  \\\"client_email\\\": \\\"vertex@example.iam.gserviceaccount.com\\\",\\n  \\\"client_id\\\": \\\"111122223333444455556\\\",\\n  \\\"auth_uri\\\": \\\"https://accounts.google.com/o/oauth2/auth\\\",\\n  \\\"token_uri\\\": \\\"https://oauth2.googleapis.com/token\\\",\\n  \\\"auth_provider_x509_cert_url\\\": \\\"https://www.googleapis.com/oauth2/v1/certs\\\",\\n  \\\"client_x509_cert_url\\\": \\\"https://www.googleapis.com/robot/v1/metadata/x509/vertex%40example.iam.gserviceaccount.com\\\",\\n  \\\"universe_domain\\\": \\\"googleapis.com\\\"\\n}",
+        "gcp_credentials_format": "json"
+      },
+      "PriceInput": 0.0025,
+      "PriceOutput": 0.00125,
+      "Currency": "USD"
+    },
+    {
+      "Alias": "compat-llm",
+      "Provider": "openai-compatible",
+      "ProviderModel": "sample/compat-llm",
+      "ModelType": "llm",
+      "ContextWindow": 131072,
+      "MaxOutputTokens": 32768,
+      "Modalities": ["text"],
+      "SupportsTools": true,
+      "Enabled": null,
+      "Deployment": "sample/compat-llm",
+      "Endpoint": "https://compat.example.com/v1",
+      "APIKey": "compat-sample-key",
+      "APIVersion": "",
+      "Region": "",
+      "Weight": 100,
+      "Metadata": {
+        "base_url": "https://compat.example.com/v1"
+      },
+      "openai_compatible": {
+        "base_url": "https://compat.example.com/v1",
+        "api_key": "compat-sample-key",
+        "openai_organization": ""
+      },
+      "PriceInput": 0.03,
+      "PriceOutput": 0.15,
+      "Currency": "USD"
+    },
+    {
+      "Alias": "anthropic-claude",
+      "Provider": "anthropic",
+      "ProviderModel": "claude-3-sonnet",
+      "ModelType": "llm",
+      "ContextWindow": 200000,
+      "MaxOutputTokens": 8000,
+      "Modalities": ["text"],
+      "SupportsTools": true,
+      "Enabled": null,
+      "Deployment": "claude-3-sonnet",
+      "Endpoint": "",
+      "APIKey": "anthropic-sample-key",
+      "APIVersion": "",
+      "Region": "",
+      "Weight": 100,
+      "Metadata": null,
+      "anthropic": {
+        "api_key": "anthropic-sample-key",
+        "base_url": "",
+        "version": "2023-06-01"
+      },
+      "PriceInput": 0.006,
+      "PriceOutput": 0.018,
+      "Currency": "USD"
+    },
+    {
+      "Alias": "openrouter-chat",
+      "Provider": "openrouter",
+      "ProviderModel": "mistralai/mistral-large",
+      "ModelType": "llm",
+      "ContextWindow": 32768,
+      "MaxOutputTokens": 4096,
+      "Modalities": ["text"],
+      "SupportsTools": true,
+      "Enabled": null,
+      "Deployment": "mistralai/mistral-large",
+      "Endpoint": "https://openrouter.example.com/api/v1",
+      "APIKey": "openrouter-sample-key",
+      "APIVersion": "",
+      "Region": "",
+      "Weight": 100,
+      "Metadata": {
+        "openrouter_app_name": "Sample App"
+      },
+      "openrouter": {
+        "api_key": "openrouter-sample-key",
+        "base_url": "https://openrouter.example.com/api/v1",
+        "referer": "https://example.com",
+        "app_name": "Sample App"
+      },
+      "PriceInput": 0.002,
+      "PriceOutput": 0.006,
+      "Currency": "USD"
+    },
+    {
+      "Alias": "groq-chat",
+      "Provider": "groq",
+      "ProviderModel": "groq/llama-3-8b",
+      "ModelType": "llm",
+      "ContextWindow": 8000,
+      "MaxOutputTokens": 2048,
+      "Modalities": ["text"],
+      "SupportsTools": false,
+      "Enabled": null,
+      "Deployment": "groq/llama-3-8b",
+      "Endpoint": "https://api.groq.example.com/openai/v1",
+      "APIKey": "groq-sample-key",
+      "APIVersion": "",
+      "Region": "",
+      "Weight": 100,
+      "Metadata": {
+        "base_url": "https://api.groq.example.com/openai/v1"
+      },
+      "groq": {
+        "base_url": "https://api.groq.example.com/openai/v1",
+        "api_key": "groq-sample-key",
+        "region": ""
+      },
+      "PriceInput": 0.0015,
+      "PriceOutput": 0.003,
+      "Currency": "USD"
+    }
+  ]
+}

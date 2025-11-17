@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/azureopenai"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -15,6 +16,27 @@ func init() {
 		Capabilities: []string{
 			"chat", "chat_stream", "embeddings", "images",
 			"audio_transcription", "audio_translation", "moderations",
+		},
+		Descriptor: Descriptor{
+			Summary: "Azure-hosted OpenAI deployments using Azure-specific endpoints and API versions.",
+			Auth:    []string{"api_key"},
+			ConfigInputs: []Input{
+				{Name: "providers.azure_openai_endpoint", Description: "Default Azure OpenAI endpoint", Required: true, Source: "config.providers.azure_openai_endpoint"},
+				{Name: "providers.azure_openai_key", Description: "Default Azure API key", Required: true, Secret: true, Source: "config.providers.azure_openai_key"},
+				{Name: "providers.azure_openai_version", Description: "API version to use", Required: true, Source: "config.providers.azure_openai_version"},
+			},
+			EntryFields: []Input{
+				{Name: "deployment", Description: "Azure deployment name", Required: true, Source: "catalog.deployment"},
+				{Name: "endpoint", Description: "Override endpoint", Source: "catalog.endpoint"},
+				{Name: "api_key", Description: "Override API key", Secret: true, Source: "catalog.api_key"},
+				{Name: "api_version", Description: "Override API version", Source: "catalog.api_version"},
+				{Name: "region", Description: "Region metadata", Source: "catalog.region"},
+			},
+			RetryPolicy: RetryDescriptor{
+				Description:   "Executor retries transient Azure errors twice; Azure's 429/503 headers dictate longer backoff.",
+				DefaultPolicy: "exponential 250ms backoff, max 2 attempts",
+			},
+			HealthNotes: "Calls Azure deployments' /chat/completions with a noop payload for health.",
 		},
 		Builder: buildAzureRoute,
 	})
@@ -87,7 +109,7 @@ func buildAzureRoute(ctx context.Context, cfg *config.Config, entry config.Model
 	}
 	setDefaultAudioMetadata(metadata, false, false)
 
-	return Route{
+	route := Route{
 		Alias:           entry.Alias,
 		Provider:        entry.Provider,
 		Model:           entry.ProviderModel,
@@ -101,6 +123,9 @@ func buildAzureRoute(ctx context.Context, cfg *config.Config, entry config.Model
 		AudioTranscribe: adapter,
 		AudioTranslate:  adapter,
 		Models:          adapter,
-		Health:          adapter.HealthCheck,
-	}, nil
+		Health:          WrapHealth(adapter.HealthCheck),
+	}
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
+	return route, nil
 }

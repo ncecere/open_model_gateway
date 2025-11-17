@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	native "github.com/ncecere/open_model_gateway/backend/internal/adapters/openai"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -17,13 +18,45 @@ func init() {
 			"chat", "chat_stream", "embeddings", "images", "models",
 			"audio_transcription", "audio_translation", "audio_speech", "moderations",
 		},
+		Descriptor: Descriptor{
+			Summary: "Native OpenAI platform using the official REST API.",
+			Auth:    []string{"api_key"},
+			ConfigInputs: []Input{
+				{Name: "providers.openai_key", Description: "Default API key when catalog entries omit one", Required: true, Secret: true, Source: "config.providers.openai_key"},
+			},
+			EntryFields: []Input{
+				{Name: "api_key", Description: "Override the API key for this catalog entry", Secret: true, Source: "catalog.api_key"},
+				{Name: "endpoint", Description: "Override base URL (e.g. Azure/OpenAI-compatible host)", Source: "catalog.endpoint"},
+			},
+			RetryPolicy: RetryDescriptor{
+				Description:   "Executor retries 2x with 250ms backoff; provider-side 429/500 retry headers are honored when present.",
+				DefaultPolicy: "exponential 250ms backoff, max 2 attempts",
+			},
+			HealthNotes: "Invokes the SDK health check which calls the OpenAI models endpoint.",
+		},
 		Builder: buildOpenAIRoute,
 	})
 	RegisterDefinition(Definition{
 		Name:         "openai-compatible",
 		Description:  "OpenAI API-compatible endpoint (custom base URL)",
 		Capabilities: []string{"chat", "chat_stream", "embeddings", "images", "audio_transcription", "audio_translation", "audio_speech", "moderations"},
-		Builder:      buildOpenAICompatibleRoute,
+		Descriptor: Descriptor{
+			Summary: "Targets third-party gateways that speak the OpenAI API (base URL + API key).",
+			Auth:    []string{"api_key"},
+			ConfigInputs: []Input{
+				{Name: "providers.openai_key", Description: "Fallback API key", Secret: true, Source: "config.providers.openai_key"},
+			},
+			EntryFields: []Input{
+				{Name: "endpoint", Description: "Required base URL for the upstream gateway", Required: true, Source: "catalog.endpoint"},
+				{Name: "api_key", Description: "Override API key per upstream", Secret: true, Source: "catalog.api_key"},
+			},
+			RetryPolicy: RetryDescriptor{
+				Description:   "Executor retries 2x; upstream gateways may implement their own backoff.",
+				DefaultPolicy: "exponential 250ms backoff, max 2 attempts",
+			},
+			HealthNotes: "Performs a lightweight request against the upstream models endpoint.",
+		},
+		Builder: buildOpenAICompatibleRoute,
 	})
 }
 
@@ -87,8 +120,10 @@ func buildOpenAIRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 		AudioTranslate:        adapter,
 		TextToSpeech:          adapter,
 		Models:                adapter,
-		Health:                adapter.HealthCheck,
+		Health:                WrapHealth(adapter.HealthCheck),
 	}
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil
 }
 
@@ -154,7 +189,9 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 		AudioTranscribeStream: adapter,
 		AudioTranslate:        adapter,
 		TextToSpeech:          adapter,
-		Health:                adapter.HealthCheck,
+		Health:                WrapHealth(adapter.HealthCheck),
 	}
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil
 }

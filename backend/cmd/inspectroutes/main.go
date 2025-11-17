@@ -5,31 +5,34 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
-	"github.com/ncecere/open_model_gateway/backend/internal/database"
-	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/router"
+	"github.com/ncecere/open_model_gateway/backend/internal/runtime"
 )
 
 func main() {
-	cfg, err := config.Load(config.Options{ConfigFile: "../deploy/router.local.yaml"})
-	if err != nil {
-		log.Fatalf("load config: %v", err)
-	}
 	ctx := context.Background()
-	pool, err := database.Connect(ctx, cfg.Database)
+	rt, err := runtime.New(ctx, runtime.Options{
+		Config:         runtimeConfigOptions(),
+		SkipMigrations: true,
+	})
 	if err != nil {
-		log.Fatalf("connect: %v", err)
+		log.Fatalf("init runtime: %v", err)
 	}
-	defer pool.Close()
-	queries := db.New(pool)
-	rows, err := queries.ListModelCatalog(ctx)
+	defer rt.Shutdown(ctx)
+
+	container := rt.Container
+	if container == nil || container.Queries == nil {
+		log.Fatalf("runtime container missing queries")
+	}
+	rows, err := container.Queries.ListModelCatalog(ctx)
 	if err != nil {
 		log.Fatalf("list: %v", err)
 	}
-	entries, err := router.MergeEntries(cfg.ModelCatalog, rows)
+	entries, err := router.MergeEntries(rt.Config.ModelCatalog, rows)
 	if err != nil {
 		log.Fatalf("merge: %v", err)
 	}
@@ -57,4 +60,11 @@ func main() {
 			log.Printf("merged entry overrides: %+v metadata: %+v jsonValid=%v", entry.ProviderOverrides.Vertex, entry.Metadata, valid)
 		}
 	}
+}
+
+func runtimeConfigOptions() config.Options {
+	if cfgPath := os.Getenv("ROUTER_CONFIG_FILE"); strings.TrimSpace(cfgPath) != "" {
+		return config.Options{ConfigFile: cfgPath}
+	}
+	return config.Options{ConfigFile: "../deploy/router.local.yaml"}
 }

@@ -48,7 +48,7 @@ Pages under `src/pages/` (admin) and `src/apps/user/pages/` (user) now render th
 2. Build the UI in `features/<domain>/components/` so both admin and user portals can consume it.
 3. Keep the page file responsible only for orchestrating hooks/mutations and navigation.
 
-See `docs/developer/frontend-feature-modules.md` for a step-by-step guide and best practices for extending these modules or adding new ones.
+See `docs/developer/frontend-feature-modules.md` for a step-by-step guide and best practices for extending these modules or adding new ones, and `docs/frontend/ui-kit.md` for details on the shared UI kit + directory provider.
 
 ## Implemented Features
 

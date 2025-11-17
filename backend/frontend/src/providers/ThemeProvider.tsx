@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 
-import { useUserProfileQuery } from "@/apps/user/hooks/useUserData";
 import type { ThemePreference } from "@/types/theme";
 
 export type ThemeContextValue = {
@@ -22,10 +21,13 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 type ThemeProviderProps = {
   children: React.ReactNode;
   isAuthenticated: boolean;
+  profileQuery?: {
+    data?: { theme_preference?: ThemePreference } | null;
+    isFetching?: boolean;
+  };
 };
 
-export function ThemeProvider({ children, isAuthenticated }: ThemeProviderProps) {
-  const profileQuery = useUserProfileQuery({ enabled: isAuthenticated });
+export function ThemeProvider({ children, isAuthenticated, profileQuery }: ThemeProviderProps) {
   const [preference, setPreference] = useState<ThemePreference>("system");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(
     getSystemTheme(),
@@ -44,13 +46,13 @@ export function ThemeProvider({ children, isAuthenticated }: ThemeProviderProps)
   }, [preference, applyTheme]);
 
   useEffect(() => {
-    const serverPref = profileQuery.data?.theme_preference as
+    const serverPref = profileQuery?.data?.theme_preference as
       | ThemePreference
       | undefined;
     if (serverPref && serverPref !== preference) {
       setPreference(serverPref);
     }
-  }, [profileQuery.data?.theme_preference, preference]);
+  }, [profileQuery?.data?.theme_preference, preference]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -80,10 +82,16 @@ export function ThemeProvider({ children, isAuthenticated }: ThemeProviderProps)
     () => ({
       theme: preference,
       resolvedTheme,
-      isLoading: profileQuery.isFetching && isAuthenticated,
+      isLoading: Boolean(profileQuery?.isFetching && isAuthenticated),
       setThemePreference,
     }),
-    [preference, resolvedTheme, profileQuery.isFetching, isAuthenticated, setThemePreference],
+    [
+      preference,
+      resolvedTheme,
+      profileQuery?.isFetching,
+      isAuthenticated,
+      setThemePreference,
+    ],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

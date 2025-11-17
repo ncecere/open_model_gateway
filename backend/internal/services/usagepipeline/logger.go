@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,7 +33,27 @@ type Logger struct {
 	prices           map[string]priceInfo
 	remainderMu      sync.Mutex
 	tenantRemainders map[uuid.UUID]decimal.Decimal
+	events           chan usageEvent
+	cancel           context.CancelFunc
+	processorWG      sync.WaitGroup
+	shuttingDown     atomic.Bool
 }
+
+type usageEvent struct {
+	record     Record
+	timestamp  time.Time
+	costCents  int64
+	costMicros int64
+	status     BudgetStatus
+	attempts   int
+}
+
+const (
+	defaultQueueSize      = 1024
+	maxPersistAttempts    = 3
+	persistRetryBackoff   = 150 * time.Millisecond
+	defaultPersistTimeout = 5 * time.Second
+)
 
 type alertSnapshot struct {
 	Level AlertLevel
@@ -74,15 +95,27 @@ type BudgetStatus struct {
 }
 
 // NewLogger constructs a usage logger using the shared pool and queries.
-func NewLogger(pool *pgxpool.Pool, queries *db.Queries, cfg config.BudgetConfig, sink AlertSink, metrics *observability.Provider) *Logger {
-	return &Logger{
+func NewLogger(ctx context.Context, pool *pgxpool.Pool, queries *db.Queries, cfg config.BudgetConfig, sink AlertSink, metrics *observability.Provider) *Logger {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	l := &Logger{
 		recorder:         NewUsageRecorder(pool, queries),
-		budgets:          NewBudgetEvaluator(cfg, queries),
+		budgets:          NewBudgetEvaluator(cfg, queries, metrics),
 		alerts:           NewAlertDispatcher(queries, sink),
 		metrics:          metrics,
 		prices:           make(map[string]priceInfo),
 		tenantRemainders: make(map[uuid.UUID]decimal.Decimal),
+		events:           make(chan usageEvent, defaultQueueSize),
+		cancel:           cancel,
 	}
+	l.processorWG.Add(1)
+	go func() {
+		defer l.processorWG.Done()
+		l.run(runCtx)
+	}()
+	return l
 }
 
 // LoadCatalog seeds or refreshes the in-memory pricing cache.
@@ -133,21 +166,13 @@ func (l *Logger) Record(ctx context.Context, rec Record) (BudgetStatus, error) {
 		}
 	}
 
-	if err := l.recorder.Persist(ctx, rec, ts, costCents, costMicros); err != nil {
-		return BudgetStatus{}, err
-	}
-	if l.metrics != nil {
-		tenantLabel := rec.Context.TenantID.String()
-		l.metrics.RecordAPILatency(tenantLabel, rec.Alias, rec.Provider, rec.Status, rec.Latency)
-		if rec.Success {
-			l.metrics.RecordTokens(tenantLabel, rec.Alias, rec.Provider, int64(rec.Usage.PromptTokens), int64(rec.Usage.CompletionTokens))
-		}
-	}
-
 	schedule := l.budgets.Schedule(rec.Context)
 	total, err := l.budgets.SumUsage(ctx, rec.Context.TenantID, ts, schedule)
 	if err != nil {
 		return BudgetStatus{}, err
+	}
+	if rec.Success {
+		total += costCents
 	}
 
 	exceeded := total >= limit
@@ -160,10 +185,13 @@ func (l *Logger) Record(ctx context.Context, rec Record) (BudgetStatus, error) {
 		Exceeded:       exceeded,
 	}
 
-	if err := l.alerts.Dispatch(ctx, rec, status, ts); err != nil {
-		slog.Error("dispatch budget alert", slog.String("tenant_id", rec.Context.TenantID.String()), slog.String("error", err.Error()))
-	}
-
+	l.enqueueEvent(usageEvent{
+		record:     rec,
+		timestamp:  ts,
+		costCents:  costCents,
+		costMicros: costMicros,
+		status:     status,
+	})
 	return status, nil
 }
 
@@ -230,6 +258,102 @@ func (l *Logger) costFor(alias string, usage models.Usage) decimal.Decimal {
 		return decimal.Zero
 	}
 	return totalUSD
+}
+
+func (l *Logger) enqueueEvent(evt usageEvent) {
+	if l == nil {
+		return
+	}
+	if l.shuttingDown.Load() {
+		go l.persistEvent(context.Background(), evt)
+		return
+	}
+	select {
+	case l.events <- evt:
+	default:
+		// Backpressure: persist synchronously to avoid dropping records.
+		go l.persistEvent(context.Background(), evt)
+	}
+}
+
+func (l *Logger) run(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			l.drainQueue()
+			return
+		case evt := <-l.events:
+			l.persistEvent(context.Background(), evt)
+		}
+	}
+}
+
+func (l *Logger) drainQueue() {
+	for {
+		select {
+		case evt := <-l.events:
+			l.persistEvent(context.Background(), evt)
+		default:
+			return
+		}
+	}
+}
+
+func (l *Logger) persistEvent(ctx context.Context, evt usageEvent) {
+	if l == nil {
+		return
+	}
+	persistCtx, cancel := context.WithTimeout(ctx, defaultPersistTimeout)
+	defer cancel()
+	if err := l.recorder.Persist(persistCtx, evt.record, evt.timestamp, evt.costCents, evt.costMicros); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// attempt retry regardless
+		}
+		if evt.attempts < maxPersistAttempts && !l.shuttingDown.Load() {
+			evt.attempts++
+			time.AfterFunc(persistRetryBackoff*time.Duration(evt.attempts), func() {
+				l.enqueueEvent(evt)
+			})
+		} else {
+			slog.Error("persist usage record", slog.String("alias", evt.record.Alias), slog.String("provider", evt.record.Provider), slog.String("error", err.Error()))
+		}
+		return
+	}
+
+	if l.metrics != nil {
+		tenantLabel := evt.record.Context.TenantID.String()
+		l.metrics.RecordAPILatency(tenantLabel, evt.record.Alias, evt.record.Provider, evt.record.Status, evt.record.Latency)
+		if evt.record.Success {
+			l.metrics.RecordTokens(tenantLabel, evt.record.Alias, evt.record.Provider, int64(evt.record.Usage.PromptTokens), int64(evt.record.Usage.CompletionTokens))
+		}
+	}
+
+	if err := l.alerts.Dispatch(context.Background(), evt.record, evt.status, evt.timestamp); err != nil {
+		slog.Error("dispatch budget alert", slog.String("tenant_id", evt.record.Context.TenantID.String()), slog.String("error", err.Error()))
+	}
+}
+
+// RunBackground starts the usage log processor.
+// Shutdown stops the logger background processor and flushes pending events.
+func (l *Logger) Shutdown(ctx context.Context) error {
+	if l == nil {
+		return nil
+	}
+	l.shuttingDown.Store(true)
+	if l.cancel != nil {
+		l.cancel()
+	}
+	done := make(chan struct{})
+	go func() {
+		l.processorWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (l *Logger) priceFor(alias string) priceInfo {

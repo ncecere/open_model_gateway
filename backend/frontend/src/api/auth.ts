@@ -1,4 +1,9 @@
-import { api } from "./client";
+import { api, ADMIN_SKIP_AUTH_KEY, type RequestConfig } from "./client";
+import type { ThemePreference } from "@/types/theme";
+
+type AdminRequestConfig = RequestConfig & {
+  [ADMIN_SKIP_AUTH_KEY]?: boolean;
+};
 
 export type AuthMethodsResponse = {
   methods: string[];
@@ -44,9 +49,8 @@ export async function loginLocal(payload: LoginRequest) {
 
 export async function refreshSession(refreshToken?: string) {
   const payload = refreshToken ? { refresh_token: refreshToken } : undefined;
-  const { data } = await api.post<TokenResponse>("/auth/refresh", payload, {
-    skipAuthRefresh: true,
-  });
+  const skipConfig: AdminRequestConfig = { [ADMIN_SKIP_AUTH_KEY]: true };
+  const { data } = await api.post<TokenResponse>("/auth/refresh", payload, skipConfig);
   return data;
 }
 
@@ -59,6 +63,6 @@ export async function startOIDC(returnTo?: string) {
 }
 
 export async function logout() {
-  await api.post("/auth/logout", undefined, { skipAuthRefresh: true });
+  const skipConfig: AdminRequestConfig = { [ADMIN_SKIP_AUTH_KEY]: true };
+  await api.post("/auth/logout", undefined, skipConfig);
 }
-import type { ThemePreference } from "@/types/theme";

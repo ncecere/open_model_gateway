@@ -167,7 +167,10 @@ func TestInvokeAudioTranscriptionStreamHappyPath(t *testing.T) {
 	app.Post("/audio", func(c *fiber.Ctx) error {
 		ctx := requestctx.WithContext(context.Background(), &requestctx.Context{})
 		c.SetUserContext(ctx)
-		handler := &openAIHandler{container: container}
+		handler := &openAIHandler{
+			container:     container,
+			audioPipeline: newAudioPipeline(container),
+		}
 		return handler.invokeAudioTranscriptionStream(c, audioInvocation{
 			Model:   "gpt",
 			Task:    models.AudioTranscriptionTaskTranscribe,
@@ -254,7 +257,11 @@ func assertStatusContains(t *testing.T, resp *http.Response, status int, msg str
 }
 
 func newAudioHandlerForTests() *openAIHandler {
-	return &openAIHandler{container: basicTestContainer()}
+	container := basicTestContainer()
+	return &openAIHandler{
+		container:     container,
+		audioPipeline: newAudioPipeline(container),
+	}
 }
 func basicTestContainer() *app.Container {
 	return &app.Container{
@@ -294,7 +301,7 @@ func basicStreamingContainer(streamer providers.AudioTranscriptionStreaming) *ap
 		},
 		Engine:      engine,
 		UsageLogger: newFakeUsageLogger(),
-		RateLimiter: limits.NewRateLimiter(nil),
+		RateLimiter: limits.NewRateLimiter(nil, nil),
 	}
 }
 
@@ -320,4 +327,8 @@ func (f *fakeUsageLogger) CheckBudget(ctx context.Context, rc *requestctx.Contex
 
 func (f *fakeUsageLogger) Record(ctx context.Context, rec usagepipeline.Record) (usagepipeline.BudgetStatus, error) {
 	return f.status, errors.New("skip budget headers for tests")
+}
+
+func (f *fakeUsageLogger) Shutdown(ctx context.Context) error {
+	return nil
 }

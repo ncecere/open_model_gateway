@@ -1,66 +1,16 @@
-import axios, { type AxiosError, type AxiosRequestConfig } from "axios";
-import { toast } from "@/hooks/use-toast";
+import { createHttpClient, type RequestConfig } from "./httpClient";
 
-const BASE_URL = "/user";
+export const USER_SKIP_AUTH_KEY = "__skipUserRefresh";
 
-export const userApi = axios.create({
-  baseURL: BASE_URL,
-  withCredentials: true,
-  headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  },
+const {
+  instance: userApi,
+  setAuthToken: setUserAuthToken,
+  setUnauthorizedHandler: setUserUnauthorizedHandler,
+} = createHttpClient({
+  baseURL: "/user",
+  skipAuthKey: USER_SKIP_AUTH_KEY,
 });
 
-type UnauthorizedHandler = (error: AxiosError) => Promise<void> | void;
-let unauthorizedHandler: UnauthorizedHandler | undefined;
+export { userApi, setUserAuthToken, setUserUnauthorizedHandler };
 
-declare module "axios" {
-  interface AxiosRequestConfig {
-    userSkipAuthRefresh?: boolean;
-  }
-}
-
-export function setUserUnauthorizedHandler(handler?: UnauthorizedHandler) {
-  unauthorizedHandler = handler;
-}
-
-userApi.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError<{ error?: string; message?: string }>) => {
-    const { response, config } = error;
-
-    if (response?.status === 401 && config && !config.userSkipAuthRefresh) {
-      if (unauthorizedHandler) {
-        config.userSkipAuthRefresh = true;
-        try {
-          await unauthorizedHandler(error);
-          return userApi.request(config);
-        } catch (refreshError) {
-          return Promise.reject(refreshError);
-        }
-      }
-    }
-
-    const description =
-      response?.data?.error || response?.data?.message || error.message;
-
-    toast({
-      variant: "destructive",
-      title: "Request failed",
-      description,
-    });
-
-    return Promise.reject(error);
-  },
-);
-
-export function setUserAuthToken(token?: string) {
-  if (!token) {
-    delete userApi.defaults.headers.common.Authorization;
-    return;
-  }
-  userApi.defaults.headers.common.Authorization = `Bearer ${token}`;
-}
-
-export type UserRequestConfig<D = unknown> = AxiosRequestConfig<D>;
+export type UserRequestConfig<D = unknown> = RequestConfig<D>;

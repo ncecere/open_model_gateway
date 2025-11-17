@@ -20,7 +20,15 @@ import (
 )
 
 type batchHandler struct {
-	container *app.Container
+	pipeline *batchPipeline
+	files    *filesPipeline
+}
+
+func newBatchHandler(container *app.Container) *batchHandler {
+	return &batchHandler{
+		pipeline: newBatchPipeline(container),
+		files:    newFilesPipeline(container),
+	}
 }
 
 type createBatchRequest struct {
@@ -86,9 +94,6 @@ func (h *batchHandler) create(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if h.container.Batches == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "batches not enabled")
-	}
 	var req createBatchRequest
 	if err := c.BodyParser(&req); err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid request body")
@@ -109,7 +114,7 @@ func (h *batchHandler) create(c *fiber.Ctx) error {
 		slog.Error("batch create missing tenant id", slog.String("api_key", rc.APIKeyPrefix))
 	}
 
-	batch, err := h.container.Batches.Create(c.UserContext(), batchsvc.CreateParams{
+	batch, err := h.pipeline.create(c, rc, batchsvc.CreateParams{
 		TenantID:         rc.TenantID,
 		APIKeyID:         rc.APIKeyID,
 		Endpoint:         req.Endpoint,
@@ -129,9 +134,6 @@ func (h *batchHandler) list(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if h.container.Batches == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "batches not enabled")
-	}
 	limit := parseQueryInt(c, "limit", 20)
 	if limit < 1 {
 		limit = 1
@@ -147,7 +149,7 @@ func (h *batchHandler) list(c *fiber.Ctx) error {
 		}
 		afterID = &parsed
 	}
-	records, hasMore, err := h.container.Batches.ListCursor(c.UserContext(), rc.TenantID, int32(limit), afterID)
+	records, hasMore, err := h.pipeline.list(c, rc, int32(limit), afterID)
 	if err != nil {
 		return h.translateBatchError(c, err)
 	}
@@ -174,14 +176,11 @@ func (h *batchHandler) get(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if h.container.Batches == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "batches not enabled")
-	}
 	batchID, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid batch id")
 	}
-	batch, err := h.container.Batches.Get(c.UserContext(), rc.TenantID, batchID)
+	batch, err := h.pipeline.get(c, rc, batchID)
 	if err != nil {
 		return h.translateBatchError(c, err)
 	}
@@ -193,14 +192,11 @@ func (h *batchHandler) cancel(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if h.container.Batches == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "batches not enabled")
-	}
 	batchID, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid batch id")
 	}
-	batch, err := h.container.Batches.Cancel(c.UserContext(), rc.TenantID, batchID)
+	batch, err := h.pipeline.cancel(c, rc, batchID)
 	if err != nil {
 		return h.translateBatchError(c, err)
 	}
@@ -212,14 +208,11 @@ func (h *batchHandler) output(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if h.container.Batches == nil || h.container.Files == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "batches output not available")
-	}
 	batchID, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid batch id")
 	}
-	batch, err := h.container.Batches.Get(c.UserContext(), rc.TenantID, batchID)
+	batch, err := h.pipeline.get(c, rc, batchID)
 	if err != nil {
 		return h.translateBatchError(c, err)
 	}
@@ -227,7 +220,7 @@ func (h *batchHandler) output(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusNotFound, "batch output not available yet")
 	}
 
-	reader, fileRec, err := h.container.Files.Open(c.UserContext(), rc.TenantID, *batch.ResultFileID)
+	reader, fileRec, err := h.files.open(c, rc, *batch.ResultFileID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "output file not found")
@@ -262,14 +255,11 @@ func (h *batchHandler) errors(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if h.container.Batches == nil || h.container.Files == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "batches error output not available")
-	}
 	batchID, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid batch id")
 	}
-	batch, err := h.container.Batches.Get(c.UserContext(), rc.TenantID, batchID)
+	batch, err := h.pipeline.get(c, rc, batchID)
 	if err != nil {
 		return h.translateBatchError(c, err)
 	}
@@ -277,7 +267,7 @@ func (h *batchHandler) errors(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusNotFound, "batch error file not available")
 	}
 
-	reader, fileRec, err := h.container.Files.Open(c.UserContext(), rc.TenantID, *batch.ErrorFileID)
+	reader, fileRec, err := h.files.open(c, rc, *batch.ErrorFileID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "error file not found")

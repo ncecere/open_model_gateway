@@ -20,7 +20,11 @@ import (
 )
 
 type filesHandler struct {
-	container *app.Container
+	pipeline *filesPipeline
+}
+
+func newFilesHandler(container *app.Container) *filesHandler {
+	return &filesHandler{pipeline: newFilesPipeline(container)}
 }
 
 func (h *filesHandler) list(c *fiber.Ctx) error {
@@ -38,10 +42,7 @@ func (h *filesHandler) list(c *fiber.Ctx) error {
 		}
 		afterID = &parsed
 	}
-	if h.container.Files == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "files service disabled")
-	}
-	result, err := h.container.Files.List(c.UserContext(), rc.TenantID, filesvc.ListOptions{
+	result, err := h.pipeline.list(c, rc, filesvc.ListOptions{
 		Purpose: purpose,
 		Limit:   int32(limit),
 		AfterID: afterID,
@@ -81,10 +82,7 @@ func (h *filesHandler) get(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid file id")
 	}
-	if h.container.Files == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "files service disabled")
-	}
-	reader, rec, err := h.container.Files.Open(c.UserContext(), rc.TenantID, id)
+	reader, rec, err := h.pipeline.open(c, rc, id)
 	if err != nil {
 		return translateFileError(c, err)
 	}
@@ -101,10 +99,7 @@ func (h *filesHandler) delete(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid file id")
 	}
-	if h.container.Files == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "files service disabled")
-	}
-	if err := h.container.Files.Delete(c.UserContext(), rc.TenantID, id); err != nil {
+	if err := h.pipeline.delete(c, rc, id); err != nil {
 		return translateFileError(c, err)
 	}
 	return c.JSON(openAIDeleteFile{
@@ -123,10 +118,7 @@ func (h *filesHandler) download(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid file id")
 	}
-	if h.container.Files == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "files service disabled")
-	}
-	reader, rec, err := h.container.Files.Open(c.UserContext(), rc.TenantID, id)
+	reader, rec, err := h.pipeline.open(c, rc, id)
 	if err != nil {
 		return translateFileError(c, err)
 	}
@@ -142,9 +134,6 @@ func (h *filesHandler) upload(c *fiber.Ctx) error {
 	rc, err := h.requireRequestContext(c)
 	if err != nil {
 		return err
-	}
-	if h.container.Files == nil {
-		return httputil.WriteError(c, fiber.StatusNotImplemented, "files service disabled")
 	}
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -175,7 +164,7 @@ func (h *filesHandler) upload(c *fiber.Ctx) error {
 			params.TTL = time.Duration(ttlSeconds) * time.Second
 		}
 	}
-	record, err := h.container.Files.Upload(c.UserContext(), params)
+	record, err := h.pipeline.upload(c, rc, params)
 	if err != nil {
 		return translateFileError(c, err)
 	}

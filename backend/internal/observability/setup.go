@@ -28,10 +28,13 @@ type Provider struct {
 	promHandler    http.Handler
 	shutdownFuncs  []func(context.Context) error
 
-	httpRequestCounter *promreg.CounterVec
-	httpRequestLatency *promreg.HistogramVec
-	apiLatencyHist     *promreg.HistogramVec
-	apiTokensCounter   *promreg.CounterVec
+	httpRequestCounter  *promreg.CounterVec
+	httpRequestLatency  *promreg.HistogramVec
+	apiLatencyHist      *promreg.HistogramVec
+	apiTokensCounter    *promreg.CounterVec
+	apiRetryCounter     *promreg.CounterVec
+	rateLimiterGauge    *promreg.GaugeVec
+	budgetEvalHistogram *promreg.HistogramVec
 }
 
 func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, error) {
@@ -133,6 +136,31 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 			},
 			[]string{"tenant", "model", "provider", "type"},
 		)
+		retryCounter := promreg.NewCounterVec(
+			promreg.CounterOpts{
+				Namespace: "open_model_gateway",
+				Name:      "api_provider_retries_total",
+				Help:      "Number of provider retries triggered by the executor.",
+			},
+			[]string{"tenant", "model", "provider", "reason"},
+		)
+		rateLimiterGauge := promreg.NewGaugeVec(
+			promreg.GaugeOpts{
+				Namespace: "open_model_gateway",
+				Name:      "rate_limiter_parallel_inflight",
+				Help:      "Current number of in-flight parallel requests per key.",
+			},
+			[]string{"key", "scope"},
+		)
+		budgetEval := promreg.NewHistogramVec(
+			promreg.HistogramOpts{
+				Namespace: "open_model_gateway",
+				Name:      "budget_evaluation_duration_seconds",
+				Help:      "Duration of budget evaluation database queries.",
+				Buckets:   latencyBuckets,
+			},
+			[]string{"schedule"},
+		)
 		if err := registry.Register(httpRequests); err != nil {
 			return nil, err
 		}
@@ -145,10 +173,22 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		if err := registry.Register(tokenCounter); err != nil {
 			return nil, err
 		}
+		if err := registry.Register(retryCounter); err != nil {
+			return nil, err
+		}
+		if err := registry.Register(rateLimiterGauge); err != nil {
+			return nil, err
+		}
+		if err := registry.Register(budgetEval); err != nil {
+			return nil, err
+		}
 		provider.httpRequestCounter = httpRequests
 		provider.httpRequestLatency = httpLatency
 		provider.apiLatencyHist = apiLatency
 		provider.apiTokensCounter = tokenCounter
+		provider.apiRetryCounter = retryCounter
+		provider.rateLimiterGauge = rateLimiterGauge
+		provider.budgetEvalHistogram = budgetEval
 	}
 
 	return provider, nil
@@ -214,4 +254,32 @@ func (p *Provider) RecordTokens(tenantID, model, provider string, promptTokens, 
 	if completionTokens > 0 {
 		p.apiTokensCounter.WithLabelValues(tenantID, model, provider, "completion").Add(float64(completionTokens))
 	}
+}
+
+func (p *Provider) RecordRetry(tenantID, model, provider, reason string) {
+	if p == nil || p.apiRetryCounter == nil {
+		return
+	}
+	p.apiRetryCounter.WithLabelValues(tenantID, model, provider, reason).Inc()
+}
+
+func (p *Provider) RecordRateLimiter(key, scope string, value float64) {
+	if p == nil || p.rateLimiterGauge == nil {
+		return
+	}
+	p.rateLimiterGauge.WithLabelValues(key, scope).Set(value)
+}
+
+func (p *Provider) RateLimiterGauge() *promreg.GaugeVec {
+	if p == nil {
+		return nil
+	}
+	return p.rateLimiterGauge
+}
+
+func (p *Provider) RecordBudgetEval(schedule string, duration time.Duration) {
+	if p == nil || p.budgetEvalHistogram == nil {
+		return
+	}
+	p.budgetEvalHistogram.WithLabelValues(schedule).Observe(duration.Seconds())
 }

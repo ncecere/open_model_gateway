@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { UserAuthProvider } from "./auth/UserAuthProvider";
 import { useUserAuth } from "./hooks";
+import { useUserProfileQuery } from "./hooks/useUserData";
 import { UserRoutes } from "./routes";
 
 export function UserApp() {
@@ -20,9 +21,13 @@ export function UserApp() {
 
 function UserThemeBoundary() {
   const { isAuthenticated } = useUserAuth();
+  const profileQuery = useUserProfileQuery({ enabled: isAuthenticated });
 
   return (
-    <ThemeProvider isAuthenticated={isAuthenticated}>
+    <ThemeProvider
+      isAuthenticated={isAuthenticated}
+      profileQuery={profileQuery}
+    >
       <BrowserRouter>
         <UserRoutes />
       </BrowserRouter>

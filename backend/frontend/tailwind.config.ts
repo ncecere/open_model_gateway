@@ -4,7 +4,7 @@ import tailwindcssAnimate from 'tailwindcss-animate'
 
 const config: Config = {
   darkMode: ['class'],
-  content: ['index.html', './src/**/*.{ts,tsx,js,jsx}'],
+  content: ['index.html', 'admin/index.html', './src/**/*.{ts,tsx,js,jsx}'],
   theme: {
   	extend: {
   		fontFamily: {

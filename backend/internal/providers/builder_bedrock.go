@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/bedrock"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -16,7 +17,30 @@ func init() {
 		Name:         "bedrock",
 		Description:  "AWS Bedrock (Anthropic Claude, Titan embeddings/images)",
 		Capabilities: []string{"chat", "chat_stream", "embeddings", "images"},
-		Builder:      buildBedrockRoute,
+		Descriptor: Descriptor{
+			Summary: "AWS Bedrock adapter supporting Anthropic Claude chat/SSE and Titan embeddings/images.",
+			Auth:    []string{"aws_keys", "sts_profile"},
+			ConfigInputs: []Input{
+				{Name: "providers.aws_region", Description: "Default AWS region", Required: true, Source: "config.providers.aws_region"},
+				{Name: "providers.aws_access_key_id", Description: "Access key (when not using IAM role)", Secret: true, Source: "config.providers.aws_access_key_id"},
+				{Name: "providers.aws_secret_access_key", Description: "Secret key", Secret: true, Source: "config.providers.aws_secret_access_key"},
+			},
+			EntryFields: []Input{
+				{Name: "region", Description: "Override AWS region", Source: "catalog.region"},
+				{Name: "aws_access_key_id", Description: "Override access key", Secret: true, Source: "catalog.metadata.aws_access_key_id"},
+				{Name: "aws_secret_access_key", Description: "Override secret key", Secret: true, Source: "catalog.metadata.aws_secret_access_key"},
+				{Name: "aws_session_token", Description: "STS session token", Secret: true, Source: "catalog.metadata.aws_session_token"},
+				{Name: "aws_profile", Description: "Use shared credentials profile", Source: "catalog.metadata.aws_profile"},
+				{Name: "bedrock_chat_format", Description: "Override chat format (e.g. anthropic_messages)", Source: "catalog.metadata.bedrock_chat_format"},
+				{Name: "bedrock_embedding_format", Description: "Override embedding format", Source: "catalog.metadata.bedrock_embedding_format"},
+			},
+			RetryPolicy: RetryDescriptor{
+				Description:   "Executor retries two times; adapters translate AWS throttling errors into retryable responses.",
+				DefaultPolicy: "exponential 250ms backoff, max 2 attempts",
+			},
+			HealthNotes: "Uses Bedrock model invocation with minimal payload to verify IAM + region configuration.",
+		},
+		Builder: buildBedrockRoute,
 	})
 }
 
@@ -173,8 +197,10 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 		Model:    entry.ProviderModel,
 		Weight:   weight,
 		Metadata: metadata,
-		Health:   adapter.HealthCheck,
+		Health:   WrapHealth(adapter.HealthCheck),
 	}
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 300 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Tokenizer = selectTokenizer("anthropic", entry.ProviderOverrides.Tokenizer, route.Metadata)
 
 	if supportsModality(entry.Modalities, "text") && chatFormat != "" {
 		route.Chat = adapter

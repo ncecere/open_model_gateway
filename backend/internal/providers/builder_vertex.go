@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/vertex"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -25,7 +26,25 @@ func init() {
 		Name:         "vertex",
 		Description:  "Google Vertex AI (Gemini chat + embeddings + Imagen)",
 		Capabilities: []string{"chat", "chat_stream", "embeddings", "images"},
-		Builder:      buildVertexRoute,
+		Descriptor: Descriptor{
+			Summary: "Google Vertex AI via service account JSON (Gemini text+image models).",
+			Auth:    []string{"gcp_service_account"},
+			ConfigInputs: []Input{
+				{Name: "providers.gcp_project_id", Description: "Default GCP project", Required: true, Source: "config.providers.gcp_project_id"},
+				{Name: "providers.gcp_json_credentials", Description: "Base64 or JSON service account", Required: true, Secret: true, Source: "config.providers.gcp_json_credentials"},
+			},
+			EntryFields: []Input{
+				{Name: "region", Description: "Vertex location", Source: "catalog.region"},
+				{Name: "gcp_credentials_json", Description: "Override credentials", Secret: true, Source: "catalog.metadata.gcp_credentials_json"},
+				{Name: "gcp_credentials_format", Description: "`json` or `base64`", Source: "catalog.metadata.gcp_credentials_format"},
+			},
+			RetryPolicy: RetryDescriptor{
+				Description:   "Executor retries Vertex API calls twice; adapters unwrap Google errors with retry hints.",
+				DefaultPolicy: "exponential 250ms backoff, max 2 attempts",
+			},
+			HealthNotes: "Lists available Vertex models using the configured credentials/location.",
+		},
+		Builder: buildVertexRoute,
 	})
 }
 
@@ -145,8 +164,10 @@ func buildVertexRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 		Model:    entry.ProviderModel,
 		Weight:   weight,
 		Metadata: md,
-		Health:   adapter.HealthCheck,
+		Health:   WrapHealth(adapter.HealthCheck),
 	}
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 300 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Tokenizer = selectTokenizer("vertex", entry.ProviderOverrides.Tokenizer, route.Metadata)
 
 	if supportsModality(entry.Modalities, "text") {
 		route.Chat = adapter

@@ -71,7 +71,7 @@ func TestAcquireRateLimits_RespectsTenantParallelOverrides(t *testing.T) {
 
 	tenantID := uuid.New()
 	container := &Container{
-		RateLimiter:        limits.NewRateLimiter(client),
+		RateLimiter:        limits.NewRateLimiter(client, nil),
 		KeyRateLimits:      map[string]limits.LimitConfig{},
 		TenantRateLimits:   map[uuid.UUID]limits.LimitConfig{},
 		DefaultKeyLimit:    limits.LimitConfig{},

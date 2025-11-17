@@ -1,18 +1,15 @@
 package public
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -20,25 +17,35 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
-	"github.com/ncecere/open_model_gateway/backend/internal/limits"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
-	usagepipeline "github.com/ncecere/open_model_gateway/backend/internal/services/usagepipeline"
 )
 
 type openAIHandler struct {
-	container *app.Container
-	executor  *executor.Executor
+	container          *app.Container
+	executor           *executor.Executor
+	chatPipeline       *chatPipeline
+	chatStreamPipeline *chatStreamPipeline
+	imagePipeline      *imagePipeline
+	audioPipeline      *audioPipeline
+	embeddingPipeline  *embeddingPipeline
+	moderationPipeline *moderationPipeline
 }
 
-type imageOperationType string
-
-const (
-	imageOperationGeneration imageOperationType = "generation"
-	imageOperationEdit       imageOperationType = "edit"
-	imageOperationVariation  imageOperationType = "variation"
-)
+func newOpenAIHandler(container *app.Container) *openAIHandler {
+	exec := executor.New(container)
+	return &openAIHandler{
+		container:          container,
+		executor:           exec,
+		chatPipeline:       newChatPipeline(container, exec),
+		chatStreamPipeline: newChatStreamPipeline(container),
+		imagePipeline:      newImagePipeline(container, exec),
+		audioPipeline:      newAudioPipeline(container),
+		embeddingPipeline:  newEmbeddingPipeline(container, exec),
+		moderationPipeline: newModerationPipeline(container, exec),
+	}
+}
 
 const (
 	maxImageUploadBytes = 4 * 1024 * 1024
@@ -51,7 +58,7 @@ func (h *openAIHandler) listModels(c *fiber.Ctx) error {
 	if rctx, ok := requestctx.FromContext(ctx); ok {
 		rc = rctx
 		if status, err := h.container.UsageLogger.CheckBudget(ctx, rctx, time.Now().UTC()); err == nil {
-			setBudgetHeaders(c, status)
+			httputil.ApplyBudgetHeaders(c, status)
 		}
 	}
 
@@ -83,158 +90,16 @@ func (h *openAIHandler) listModels(c *fiber.Ctx) error {
 	})
 }
 
-type imageOperationConfig struct {
-	Alias          string
-	IdempotencyKey string
-	Operation      imageOperationType
-	Builder        func(route providers.Route) (models.ImageResponse, error)
-}
-
 func (h *openAIHandler) runImageOperation(c *fiber.Ctx, cfg imageOperationConfig) error {
 	ctx := c.UserContext()
 	rc, ok := requestctx.FromContext(ctx)
 	if !ok || rc == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "request context missing")
 	}
-	alias := strings.TrimSpace(cfg.Alias)
-	if alias == "" {
-		return httputil.WriteError(c, fiber.StatusBadRequest, "model is required")
+	if err := h.imagePipeline.Execute(c, rc, cfg); err != nil {
+		return err
 	}
-	if !h.container.IsModelAllowed(rc.TenantID, alias) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
-	}
-
-	operation := cfg.Operation
-	if operation == "" {
-		operation = imageOperationGeneration
-	}
-
-	routes := h.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
-	}
-
-	traceID := traceIDFromContext(c)
-	initialBudget, err := h.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
-	}
-	if initialBudget.Exceeded {
-		setBudgetHeaders(c, initialBudget)
-		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant budget exceeded")
-	}
-	setBudgetHeaders(c, initialBudget)
-
-	idempotencyKey := strings.TrimSpace(cfg.IdempotencyKey)
-	if idempotencyKey != "" {
-		if data, ok := h.container.Idempotency.Get(ctx, idempotencyKey); ok {
-			c.Set("Content-Type", "application/json")
-			return c.Send(data)
-		}
-	}
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := h.container.AcquireRateLimits(ctx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			return httputil.WriteError(c, fiber.StatusTooManyRequests, "rate limit exceeded")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	defer release()
-
-	var lastErr error
-	var lastRoute providers.Route
-	for _, route := range routes {
-		if route.Image == nil {
-			continue
-		}
-		lastRoute = route
-		start := time.Now()
-		resp, err := cfg.Builder(route)
-		if err != nil {
-			if errors.Is(err, models.ErrImageOperationUnsupported) {
-				continue
-			}
-			h.container.Engine.ReportFailure(alias, route)
-			lastErr = err
-			continue
-		}
-		h.container.Engine.ReportSuccess(alias, route)
-
-		tokensUsed := int(resp.Usage.TotalTokens)
-		if tokensUsed > 0 {
-			if err := h.container.RateLimiter.TokenAllowance(context.Background(), keyKey, tokensUsed, keyCfg); err != nil {
-				release()
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
-				}
-				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-			}
-			if err := h.container.RateLimiter.TokenAllowance(context.Background(), tenantKey, tokensUsed, tenantCfg); err != nil {
-				release()
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
-				}
-				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-			}
-		}
-
-		record := usagepipeline.Record{
-			Context:           rc,
-			Alias:             alias,
-			Provider:          route.Provider,
-			Usage:             resp.Usage,
-			Latency:           time.Since(start),
-			Status:            fiber.StatusOK,
-			TraceID:           traceID,
-			Timestamp:         time.Now().UTC(),
-			Success:           true,
-			IdempotencyKey:    idempotencyKey,
-			OverrideCostCents: parseImageOverrideCost(route.Metadata, operation),
-		}
-		budgetStatus, err := h.container.UsageLogger.Record(ctx, record)
-		if err != nil {
-			return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to persist usage")
-		}
-		setBudgetHeaders(c, budgetStatus)
-
-		payload, err := json.Marshal(convertImageResponse(resp))
-		if err != nil {
-			return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to encode response")
-		}
-		if idempotencyKey != "" {
-			h.container.Idempotency.Set(ctx, idempotencyKey, payload)
-		}
-
-		c.Set("Content-Type", "application/json")
-		return c.Send(payload)
-	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	h.container.Engine.ReportFailure(alias, lastRoute)
-	_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
-		Context:   rc,
-		Alias:     alias,
-		Provider:  lastRoute.Provider,
-		Status:    fiber.StatusBadGateway,
-		ErrorCode: errMessage(lastErr),
-		TraceID:   traceID,
-		Timestamp: time.Now().UTC(),
-		Success:   false,
-	})
-	return httputil.WriteError(c, fiber.StatusBadGateway, errMessage(lastErr))
+	return nil
 }
 
 type openAIModel struct {
@@ -339,259 +204,10 @@ func (h *openAIHandler) chatCompletions(c *fiber.Ctx) error {
 	}
 
 	if req.Stream {
-		return h.handleStreamChat(c, rc, alias, traceID, idempotencyKey, modelReq)
+		return h.chatStreamPipeline.Stream(c, rc, alias, traceID, idempotencyKey, modelReq)
 	}
 
-	if idempotencyKey != "" {
-		if data, ok := h.container.Idempotency.Get(ctx, idempotencyKey); ok {
-			c.Set("Content-Type", "application/json")
-			return c.Send(data)
-		}
-	}
-
-	chatResult, err := h.executor.Chat(ctx, rc, alias, modelReq, traceID, idempotencyKey)
-	if err != nil {
-		if status, msg, ok := executor.AsAPIError(err); ok {
-			return httputil.WriteError(c, status, msg)
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	setBudgetHeaders(c, chatResult.BudgetStatus)
-
-	resp := convertChatResponse(chatResult.Response, alias)
-	if idempotencyKey != "" {
-		if payload, err := json.Marshal(resp); err == nil {
-			h.container.Idempotency.Set(ctx, idempotencyKey, payload)
-		}
-	}
-
-	return c.JSON(resp)
-}
-
-func (h *openAIHandler) handleStreamChat(
-	c *fiber.Ctx,
-	rc *requestctx.Context,
-	alias string,
-	traceID string,
-	idempotencyKey string,
-	req models.ChatRequest,
-) error {
-	ctx := c.UserContext()
-	routes := h.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
-	}
-
-	initialBudget, err := h.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
-	}
-	if initialBudget.Exceeded {
-		setBudgetHeaders(c, initialBudget)
-		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant budget exceeded")
-	}
-	setBudgetHeaders(c, initialBudget)
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := h.container.AcquireRateLimits(ctx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			return httputil.WriteError(c, fiber.StatusTooManyRequests, "rate limit exceeded")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	var once sync.Once
-	releaseOnce := func() { once.Do(release) }
-
-	return h.streamChat(c, alias, rc, traceID, idempotencyKey, req, routes, keyKey, keyCfg, tenantKey, tenantCfg, releaseOnce)
-}
-
-func (h *openAIHandler) streamChat(
-	c *fiber.Ctx,
-	alias string,
-	rc *requestctx.Context,
-	traceID, idempotencyKey string,
-	req models.ChatRequest,
-	routes []providers.Route,
-	keyKey string,
-	keyCfg limits.LimitConfig,
-	tenantKey string,
-	tenantCfg limits.LimitConfig,
-	release func(),
-) error {
-	ctx := c.UserContext()
-
-	var lastErr error
-	var lastRoute providers.Route
-	for _, route := range routes {
-		if route.ChatStream == nil {
-			continue
-		}
-		lastRoute = route
-		req.Model = route.ResolveDeployment()
-		chunks, cancel, err := route.ChatStream.ChatStream(ctx, req)
-		if err != nil {
-			h.container.Engine.ReportFailure(alias, route)
-			lastErr = err
-			continue
-		}
-		lastRoute = route
-
-		c.Set("Content-Type", "text/event-stream")
-		c.Set("Cache-Control", "no-cache")
-		c.Set("Connection", "keep-alive")
-
-		streamStart := time.Now()
-		var firstTokenLatency time.Duration
-		var firstTokenMeasured bool
-
-		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-			defer cancel()
-			defer release()
-
-			recordStatus := fiber.StatusOK
-			recordSuccess := false
-			reported := false
-			var streamUsage models.Usage
-			usageCaptured := false
-
-			recordUsage := func() {
-				tokensUsed := int(streamUsage.TotalTokens)
-				if usageCaptured && tokensUsed > 0 {
-					if err := h.container.RateLimiter.TokenAllowance(ctx, keyKey, tokensUsed, keyCfg); err != nil {
-						if errors.Is(err, limits.ErrLimitExceeded) {
-							recordStatus = fiber.StatusTooManyRequests
-						} else {
-							recordStatus = fiber.StatusInternalServerError
-						}
-						recordSuccess = false
-					}
-					if err := h.container.RateLimiter.TokenAllowance(ctx, tenantKey, tokensUsed, tenantCfg); err != nil {
-						if errors.Is(err, limits.ErrLimitExceeded) {
-							recordStatus = fiber.StatusTooManyRequests
-						} else {
-							recordStatus = fiber.StatusInternalServerError
-						}
-						recordSuccess = false
-					}
-				}
-
-				latency := time.Since(streamStart)
-				if firstTokenMeasured && firstTokenLatency > 0 {
-					latency = firstTokenLatency
-				}
-				record := usagepipeline.Record{
-					Context:        rc,
-					Alias:          alias,
-					Provider:       route.Provider,
-					Usage:          streamUsage,
-					Latency:        latency,
-					Status:         recordStatus,
-					TraceID:        traceID,
-					IdempotencyKey: idempotencyKey,
-					Timestamp:      time.Now().UTC(),
-					Success:        recordSuccess && recordStatus == fiber.StatusOK,
-				}
-
-				if _, err := h.container.UsageLogger.Record(ctx, record); err != nil {
-					slog.Error("record stream usage", slog.String("alias", alias), slog.String("error", err.Error()))
-				}
-			}
-
-			defer recordUsage()
-			defer func() {
-				if !reported {
-					h.container.Engine.ReportFailure(alias, route)
-				}
-			}()
-
-			for chunk := range chunks {
-				if chunk.IsUsageOnly() {
-					if chunk.Usage != nil {
-						streamUsage = *chunk.Usage
-						usageCaptured = true
-					}
-					continue
-				}
-
-				if !firstTokenMeasured {
-					firstTokenLatency = time.Since(streamStart)
-					firstTokenMeasured = true
-				}
-
-				payload := convertStreamChunk(chunk, alias)
-				data, err := json.Marshal(payload)
-				if err != nil {
-					recordStatus = fiber.StatusInternalServerError
-					return
-				}
-				if _, err = w.WriteString("data: "); err != nil {
-					recordStatus = fiber.StatusInternalServerError
-					return
-				}
-				if _, err = w.Write(data); err != nil {
-					recordStatus = fiber.StatusInternalServerError
-					return
-				}
-				if _, err = w.WriteString("\n\n"); err != nil {
-					recordStatus = fiber.StatusInternalServerError
-					return
-				}
-				if err = w.Flush(); err != nil {
-					recordStatus = fiber.StatusInternalServerError
-					return
-				}
-
-				if chunk.Usage != nil {
-					streamUsage = *chunk.Usage
-					usageCaptured = true
-				}
-
-				recordSuccess = true
-			}
-
-			if _, err := w.WriteString("data: [DONE]\n\n"); err != nil {
-				recordStatus = fiber.StatusInternalServerError
-				return
-			}
-			if err := w.Flush(); err != nil {
-				recordStatus = fiber.StatusInternalServerError
-				return
-			}
-
-			h.container.Engine.ReportSuccess(alias, route)
-			reported = true
-		})
-
-		return nil
-	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	if lastRoute.Provider != "" && rc != nil {
-		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: lastErr.Error(),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-	release()
-	return httputil.WriteError(c, fiber.StatusBadGateway, lastErr.Error())
+	return h.chatPipeline.Execute(c, rc, alias, traceID, idempotencyKey, modelReq)
 }
 
 type openAIEmbeddingRequest struct {
@@ -675,122 +291,7 @@ func (h *openAIHandler) moderations(c *fiber.Ctx) error {
 	if !ok || rc == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "request context missing")
 	}
-	if !h.container.IsModelAllowed(rc.TenantID, alias) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
-	}
-
-	routes := h.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
-	}
-
-	traceID := traceIDFromContext(c)
-	initialBudget, err := h.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
-	}
-	if initialBudget.Exceeded {
-		setBudgetHeaders(c, initialBudget)
-		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant budget exceeded")
-	}
-	setBudgetHeaders(c, initialBudget)
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := h.container.AcquireRateLimits(ctx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			return httputil.WriteError(c, fiber.StatusTooManyRequests, "rate limit exceeded")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	defer release()
-
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-	for _, route := range routes {
-		if route.Moderations == nil {
-			continue
-		}
-		lastRoute = route
-		modelReq := models.ModerationRequest{
-			Model: route.ResolveDeployment(),
-			Input: inputs,
-		}
-		start := time.Now()
-		resp, err := route.Moderations.Moderate(ctx, modelReq)
-		if err != nil {
-			h.container.Engine.ReportFailure(alias, route)
-			lastErr = err
-			lastLatency = time.Since(start)
-			continue
-		}
-		h.container.Engine.ReportSuccess(alias, route)
-
-		tokens := int(resp.Usage.TotalTokens)
-		if tokens > 0 {
-			if err := h.container.RateLimiter.TokenAllowance(context.Background(), keyKey, tokens, keyCfg); err != nil {
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
-				}
-				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-			}
-			if err := h.container.RateLimiter.TokenAllowance(context.Background(), tenantKey, tokens, tenantCfg); err != nil {
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
-				}
-				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-			}
-		}
-
-		record := usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  route.Provider,
-			Usage:     resp.Usage,
-			Latency:   time.Since(start),
-			Status:    fiber.StatusOK,
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   true,
-		}
-		if status, err := h.container.UsageLogger.Record(ctx, record); err == nil {
-			setBudgetHeaders(c, status)
-		} else {
-			return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to persist usage")
-		}
-
-		response := convertModerationHTTPResponse(resp, alias)
-		return c.JSON(response)
-	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	if lastRoute.Provider != "" {
-		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Latency:   lastLatency,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: errMessage(lastErr),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-
-	return httputil.WriteError(c, fiber.StatusBadGateway, errMessage(lastErr))
+	return h.moderationPipeline.Execute(c, rc, alias, inputs)
 }
 
 func (h *openAIHandler) embeddings(c *fiber.Ctx) error {
@@ -812,124 +313,12 @@ func (h *openAIHandler) embeddings(c *fiber.Ctx) error {
 	if !ok || rc == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "request context missing")
 	}
-	if !h.container.IsModelAllowed(rc.TenantID, req.Model) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
-	}
-
-	routes := h.container.Engine.SelectRoutes(req.Model)
-	if len(routes) == 0 {
-		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
-	}
-
-	alias := req.Model
-
-	traceID := traceIDFromContext(c)
-
-	initialBudget, err := h.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
-	}
-	if initialBudget.Exceeded {
-		setBudgetHeaders(c, initialBudget)
-		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     req.Model,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant budget exceeded")
-	}
-	setBudgetHeaders(c, initialBudget)
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := h.container.AcquireRateLimits(ctx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			return httputil.WriteError(c, fiber.StatusTooManyRequests, "rate limit exceeded")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	defer release()
-
 	modelReq := models.EmbeddingsRequest{
+		Model: req.Model,
 		Input: inputs,
 	}
 
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-	for _, route := range routes {
-		lastRoute = route
-		modelReq.Model = route.ResolveDeployment()
-		start := time.Now()
-		resp, err := route.Embedding.Embed(ctx, modelReq)
-		if err != nil {
-			h.container.Engine.ReportFailure(req.Model, route)
-			lastLatency = time.Since(start)
-			lastErr = err
-			continue
-		}
-		h.container.Engine.ReportSuccess(req.Model, route)
-		elapsed := time.Since(start)
-		lastLatency = elapsed
-
-		tokensUsed := int(resp.Usage.TotalTokens)
-		if tokensUsed > 0 {
-			if err := h.container.RateLimiter.TokenAllowance(context.Background(), keyKey, tokensUsed, keyCfg); err != nil {
-				release()
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
-				}
-				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-			}
-			if err := h.container.RateLimiter.TokenAllowance(context.Background(), tenantKey, tokensUsed, tenantCfg); err != nil {
-				release()
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
-				}
-				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-			}
-		}
-		openaiResp := convertEmbeddingResponse(resp, alias)
-		record := usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  route.Provider,
-			Usage:     resp.Usage,
-			Latency:   elapsed,
-			Status:    fiber.StatusOK,
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   true,
-		}
-		if status, err := h.container.UsageLogger.Record(ctx, record); err == nil {
-			setBudgetHeaders(c, status)
-		} else {
-			return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to persist usage")
-		}
-		return c.JSON(openaiResp)
-	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	if lastRoute.Provider != "" {
-		_, _ = h.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Latency:   lastLatency,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: lastErr.Error(),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-	return httputil.WriteError(c, fiber.StatusBadGateway, lastErr.Error())
+	return h.embeddingPipeline.Execute(c, rc, req.Model, modelReq)
 }
 
 func (h *openAIHandler) imageGenerations(c *fiber.Ctx) error {
@@ -954,14 +343,13 @@ func (h *openAIHandler) imageGenerations(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "n must be between 1 and 10")
 	}
 
-	ctx := c.UserContext()
 	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 	baseReq := req
 	return h.runImageOperation(c, imageOperationConfig{
 		Alias:          req.Model,
 		IdempotencyKey: idempotencyKey,
 		Operation:      imageOperationGeneration,
-		Builder: func(route providers.Route) (models.ImageResponse, error) {
+		Builder: func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
 			modelReq := models.ImageRequest{
 				Model:          route.ResolveDeployment(),
 				Prompt:         baseReq.Prompt,
@@ -973,7 +361,7 @@ func (h *openAIHandler) imageGenerations(c *fiber.Ctx) error {
 				Background:     baseReq.Background,
 				Style:          baseReq.Style,
 			}
-			return route.Image.Generate(ctx, modelReq)
+			return route.Image.Generate(callCtx, modelReq)
 		},
 	})
 }
@@ -1035,13 +423,12 @@ func (h *openAIHandler) imageEdits(c *fiber.Ctx) error {
 		N:              n,
 		User:           strings.TrimSpace(c.FormValue("user")),
 	}
-	ctx := c.UserContext()
 	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 	return h.runImageOperation(c, imageOperationConfig{
 		Alias:          model,
 		IdempotencyKey: idempotencyKey,
 		Operation:      imageOperationEdit,
-		Builder: func(route providers.Route) (models.ImageResponse, error) {
+		Builder: func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
 			req := baseReq
 			req.Model = route.ResolveDeployment()
 			req.Images = cloneImageInputs(baseReq.Images)
@@ -1049,7 +436,7 @@ func (h *openAIHandler) imageEdits(c *fiber.Ctx) error {
 				maskCopy := *baseReq.Mask
 				req.Mask = &maskCopy
 			}
-			return route.Image.Edit(ctx, req)
+			return route.Image.Edit(callCtx, req)
 		},
 	})
 }
@@ -1089,17 +476,16 @@ func (h *openAIHandler) imageVariations(c *fiber.Ctx) error {
 		N:              n,
 		User:           strings.TrimSpace(c.FormValue("user")),
 	}
-	ctx := c.UserContext()
 	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 	return h.runImageOperation(c, imageOperationConfig{
 		Alias:          model,
 		IdempotencyKey: idempotencyKey,
 		Operation:      imageOperationVariation,
-		Builder: func(route providers.Route) (models.ImageResponse, error) {
+		Builder: func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
 			req := baseReq
 			req.Model = route.ResolveDeployment()
 			req.Image = baseReq.Image
-			return route.Image.Variation(ctx, req)
+			return route.Image.Variation(callCtx, req)
 		},
 	})
 }
@@ -1242,22 +628,6 @@ func traceIDFromContext(c *fiber.Ctx) string {
 		}
 	}
 	return ""
-}
-
-func setBudgetHeaders(c *fiber.Ctx, status usagepipeline.BudgetStatus) {
-	c.Set("X-Budget-Limit-Cents", strconv.FormatInt(status.LimitCents, 10))
-	c.Set("X-Budget-Total-Cents", strconv.FormatInt(status.TotalCostCents, 10))
-	remaining := status.LimitCents - status.TotalCostCents
-	if remaining < 0 {
-		remaining = 0
-	}
-	c.Set("X-Budget-Remaining-Cents", strconv.FormatInt(remaining, 10))
-	if status.Warning {
-		c.Set("X-Budget-Warning", "true")
-	}
-	if status.Exceeded {
-		c.Set("X-Budget-Exceeded", "true")
-	}
 }
 
 func convertChatResponse(resp models.ChatResponse, alias string) openAIChatResponse {

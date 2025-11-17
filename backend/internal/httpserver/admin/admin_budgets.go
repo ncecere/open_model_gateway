@@ -15,6 +15,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/runtime/budgets"
 	adminbudgetsvc "github.com/ncecere/open_model_gateway/backend/internal/services/adminbudget"
 )
 
@@ -47,7 +48,7 @@ func (h *budgetHandler) getDefault(c *fiber.Ctx) error {
 	if h.service != nil {
 		record, err := h.service.GetDefaults(c.Context())
 		if err == nil {
-			cfg = app.BudgetConfigFromRecord(cfg, record)
+			cfg = budgets.FromRecord(cfg, record)
 			metadata, err = h.buildBudgetDefaultsMetadata(c.Context(), record)
 			if err != nil {
 				return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
@@ -98,7 +99,7 @@ func (h *budgetHandler) updateDefault(c *fiber.Ctx) error {
 		return writeBudgetError(c, err)
 	}
 
-	updated := app.BudgetConfigFromRecord(h.container.Config.Budgets, record)
+	updated := budgets.FromRecord(h.container.Config.Budgets, record)
 	h.container.UpdateBudgetConfig(updated)
 
 	if err := recordAudit(c, h.container, "budget.default.update", "budget_default", "global", fiber.Map{

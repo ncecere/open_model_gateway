@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	groq "github.com/ncecere/open_model_gateway/backend/internal/adapters/groq"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -14,7 +15,26 @@ func init() {
 		Name:         "groq",
 		Description:  "Groq OpenAI-compatible API (chat + streaming)",
 		Capabilities: []string{"chat", "chat_stream"},
-		Builder:      buildGroqRoute,
+		Descriptor: Descriptor{
+			Summary: "Groq-hosted OpenAI-compatible endpoint optimized for low-latency chat.",
+			Auth:    []string{"api_key"},
+			ConfigInputs: []Input{
+				{Name: "providers.groq.api_key", Description: "Default Groq API key", Secret: true, Source: "config.providers.groq.api_key"},
+				{Name: "providers.groq.base_url", Description: "Optional base URL override", Source: "config.providers.groq.base_url"},
+				{Name: "providers.groq.region", Description: "Preferred region", Source: "config.providers.groq.region"},
+			},
+			EntryFields: []Input{
+				{Name: "endpoint", Description: "Override base URL", Source: "catalog.endpoint"},
+				{Name: "api_key", Description: "Override API key", Secret: true, Source: "catalog.api_key"},
+				{Name: "groq_region", Description: "Override region", Source: "catalog.metadata.groq_region"},
+			},
+			RetryPolicy: RetryDescriptor{
+				Description:   "Executor retries Groq 429/500 responses twice.",
+				DefaultPolicy: "exponential 250ms backoff, max 2 attempts",
+			},
+			HealthNotes: "Uses Groq's /v1/models endpoint for health checks via SDK.",
+		},
+		Builder: buildGroqRoute,
 	})
 }
 
@@ -86,7 +106,9 @@ func buildGroqRoute(ctx context.Context, cfg *config.Config, entry config.ModelC
 		Metadata:   md,
 		Chat:       adapter,
 		ChatStream: adapter,
-		Health:     adapter.HealthCheck,
+		Health:     WrapHealth(adapter.HealthCheck),
 	}
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil
 }

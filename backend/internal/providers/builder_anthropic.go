@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/anthropic"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -14,7 +15,24 @@ func init() {
 		Name:         "anthropic",
 		Description:  "Anthropic Claude API",
 		Capabilities: []string{"chat", "chat_stream"},
-		Builder:      buildAnthropicRoute,
+		Descriptor: Descriptor{
+			Summary: "Anthropic Claude Messages API (sync + SSE).",
+			Auth:    []string{"api_key"},
+			ConfigInputs: []Input{
+				{Name: "providers.anthropic_key", Description: "Default Anthropic API key", Secret: true, Source: "config.providers.anthropic_key"},
+			},
+			EntryFields: []Input{
+				{Name: "api_key", Description: "Override API key", Secret: true, Source: "catalog.api_key"},
+				{Name: "endpoint", Description: "Custom base URL (e.g. self-hosted proxy)", Source: "catalog.endpoint"},
+				{Name: "anthropic_version", Description: "Claude API version", Source: "catalog.metadata.anthropic_version"},
+			},
+			RetryPolicy: RetryDescriptor{
+				Description:   "Executor retries two times; Anthropic 529/RateLimit headers dictate additional waits.",
+				DefaultPolicy: "exponential 250ms backoff, max 2 attempts",
+			},
+			HealthNotes: "Uses the Claude /models endpoint via SDK for health.",
+		},
+		Builder: buildAnthropicRoute,
 	})
 }
 
@@ -77,7 +95,9 @@ func buildAnthropicRoute(ctx context.Context, cfg *config.Config, entry config.M
 		Metadata:   md,
 		Chat:       adapter,
 		ChatStream: adapter,
-		Health:     adapter.HealthCheck,
+		Health:     WrapHealth(adapter.HealthCheck),
 	}
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Tokenizer = selectTokenizer("anthropic", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil
 }

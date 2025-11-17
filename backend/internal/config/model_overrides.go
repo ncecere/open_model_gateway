@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 // ProviderOverrides captures provider specific configuration for a model catalog entry.
 type ProviderOverrides struct {
 	Azure            *AzureProviderConfig            `mapstructure:"azure" json:"azure,omitempty"`
@@ -10,6 +12,15 @@ type ProviderOverrides struct {
 	Anthropic        *AnthropicProviderConfig        `mapstructure:"anthropic" json:"anthropic,omitempty"`
 	OpenRouter       *OpenRouterProviderConfig       `mapstructure:"openrouter" json:"openrouter,omitempty"`
 	Groq             *GroqProviderConfig             `mapstructure:"groq" json:"groq,omitempty"`
+	Retry            *ProviderRetryConfig            `mapstructure:"retry" json:"retry,omitempty"`
+	Tokenizer        string                          `mapstructure:"tokenizer" json:"tokenizer,omitempty"`
+}
+
+// ProviderRetryConfig allows per-entry overrides for retry/backoff.
+type ProviderRetryConfig struct {
+	MaxAttempts      int           `mapstructure:"max_attempts" json:"max_attempts"`
+	InitialBackoff   time.Duration `mapstructure:"initial_backoff" json:"initial_backoff"`
+	BackoffMultiplier float64      `mapstructure:"backoff_multiplier" json:"backoff_multiplier"`
 }
 
 type AzureProviderConfig struct {

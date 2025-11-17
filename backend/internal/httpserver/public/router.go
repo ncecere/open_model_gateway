@@ -4,13 +4,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
-	"github.com/ncecere/open_model_gateway/backend/internal/executor"
+	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 )
 
 // Register wires up the OpenAI-compatible public API routes.
 func Register(app *fiber.App, container *app.Container) {
 	group := app.Group("/v1", apiKeyAuth(container))
-	handler := &openAIHandler{container: container, executor: executor.New(container)}
+	group.Use(httputil.BudgetHeaderMiddleware(container))
+	handler := newOpenAIHandler(container)
 	group.Get("/models", handler.listModels)
 	group.Post("/chat/completions", handler.chatCompletions)
 	group.Post("/embeddings", handler.embeddings)
@@ -22,7 +23,7 @@ func Register(app *fiber.App, container *app.Container) {
 	group.Post("/audio/translations", handler.audioTranslations)
 	group.Post("/audio/speech", handler.audioSpeech)
 
-	filesHandler := &filesHandler{container: container}
+	filesHandler := newFilesHandler(container)
 	group.Get("/files", filesHandler.list)
 	group.Post("/files", filesHandler.upload)
 	group.Get("/files/:id", filesHandler.get)
@@ -30,7 +31,7 @@ func Register(app *fiber.App, container *app.Container) {
 	group.Get("/files/:id/content", filesHandler.download)
 	group.Post("/uploads", filesHandler.createUpload)
 
-	batchHandler := &batchHandler{container: container}
+	batchHandler := newBatchHandler(container)
 	group.Get("/batches", batchHandler.list)
 	group.Post("/batches", batchHandler.create)
 	group.Get("/batches/:id", batchHandler.get)

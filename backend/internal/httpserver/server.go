@@ -19,6 +19,7 @@ import (
 	adminroutes "github.com/ncecere/open_model_gateway/backend/internal/httpserver/admin"
 	publicroutes "github.com/ncecere/open_model_gateway/backend/internal/httpserver/public"
 	userroutes "github.com/ncecere/open_model_gateway/backend/internal/httpserver/user"
+	"github.com/ncecere/open_model_gateway/backend/internal/runtime"
 )
 
 // Server wraps the Fiber app and configuration.
@@ -26,10 +27,11 @@ type Server struct {
 	app       *fiber.App
 	cfg       *config.Config
 	container *app.Container
+	health    runtime.HealthReporter
 }
 
 // New constructs a server with baseline middleware ready.
-func New(container *app.Container) (*Server, error) {
+func New(container *app.Container, health runtime.HealthReporter) (*Server, error) {
 	if container == nil {
 		return nil, fmt.Errorf("dependency container is required")
 	}
@@ -104,7 +106,7 @@ func New(container *app.Container) (*Server, error) {
 		}
 	}
 
-	registerHealthRoutes(app, container)
+	registerHealthRoutes(app, container, health)
 	mountAdminUISubpath(app)
 	adminroutes.Register(app, container)
 	userroutes.Register(app, container)
@@ -115,6 +117,7 @@ func New(container *app.Container) (*Server, error) {
 		app:       app,
 		cfg:       cfg,
 		container: container,
+		health:    health,
 	}, nil
 }
 
@@ -143,7 +146,7 @@ func (s *Server) Listen(ctx context.Context) error {
 	}
 }
 
-func registerHealthRoutes(app *fiber.App, container *app.Container) {
+func registerHealthRoutes(app *fiber.App, container *app.Container, reporter runtime.HealthReporter) {
 	app.Get("/healthz", func(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(c.Context(), 2*time.Second)
 		defer cancel()
@@ -151,37 +154,22 @@ func registerHealthRoutes(app *fiber.App, container *app.Container) {
 		checks := make(map[string]fiber.Map)
 		overall := "ok"
 
-		if container != nil && container.DBPool != nil {
-			start := time.Now()
-			err := container.DBPool.Ping(ctx)
-			latency := time.Since(start)
-			status := "ok"
-			check := fiber.Map{
-				"status":     status,
-				"latency_ms": latency.Milliseconds(),
+		if reporter != nil {
+			for _, res := range reporter.Run(ctx) {
+				status := "ok"
+				if res.Err != nil {
+					status = "error"
+					overall = "degraded"
+				}
+				check := fiber.Map{
+					"status":     status,
+					"latency_ms": res.Latency.Milliseconds(),
+				}
+				if res.Err != nil {
+					check["error"] = res.Err.Error()
+				}
+				checks[res.Name] = check
 			}
-			if err != nil {
-				check["status"] = "error"
-				check["error"] = err.Error()
-				overall = "degraded"
-			}
-			checks["postgres"] = check
-		}
-
-		if container != nil && container.Redis != nil {
-			start := time.Now()
-			err := container.Redis.Ping(ctx).Err()
-			latency := time.Since(start)
-			check := fiber.Map{
-				"status":     "ok",
-				"latency_ms": latency.Milliseconds(),
-			}
-			if err != nil {
-				check["status"] = "error"
-				check["error"] = err.Error()
-				overall = "degraded"
-			}
-			checks["redis"] = check
 		}
 
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{

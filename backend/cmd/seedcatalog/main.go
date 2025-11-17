@@ -4,29 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
+	"strings"
 
 	decimal "github.com/shopspring/decimal"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
-	"github.com/ncecere/open_model_gateway/backend/internal/database"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
+	"github.com/ncecere/open_model_gateway/backend/internal/runtime"
 )
 
 func main() {
-	cfg, err := config.Load(config.Options{ConfigFile: "../deploy/router.local.yaml"})
-	if err != nil {
-		log.Fatalf("load config: %v", err)
-	}
 	ctx := context.Background()
-	pool, err := database.Connect(ctx, cfg.Database)
+	rt, err := runtime.New(ctx, runtime.Options{
+		Config: runtimeConfigOptions(),
+	})
 	if err != nil {
-		log.Fatalf("connect: %v", err)
+		log.Fatalf("init runtime: %v", err)
 	}
-	defer pool.Close()
+	defer rt.Shutdown(ctx)
 
-	q := db.New(pool)
+	container := rt.Container
+	if container == nil || container.Queries == nil {
+		log.Fatalf("runtime container missing queries")
+	}
+	q := container.Queries
 
-	for _, entry := range cfg.ModelCatalog {
+	for _, entry := range rt.Config.ModelCatalog {
 		modalitiesJSON, err := json.Marshal(entry.Modalities)
 		if err != nil {
 			log.Fatalf("marshal modalities for %s: %v", entry.Alias, err)
@@ -80,4 +84,11 @@ func main() {
 		}
 		log.Printf("seeded %s", entry.Alias)
 	}
+}
+
+func runtimeConfigOptions() config.Options {
+	if cfgPath := os.Getenv("ROUTER_CONFIG_FILE"); strings.TrimSpace(cfgPath) != "" {
+		return config.Options{ConfigFile: cfgPath}
+	}
+	return config.Options{ConfigFile: "../deploy/router.local.yaml"}
 }

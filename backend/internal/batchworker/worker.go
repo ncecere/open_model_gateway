@@ -23,13 +23,10 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
-	"github.com/ncecere/open_model_gateway/backend/internal/limits"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
-	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 	batchsvc "github.com/ncecere/open_model_gateway/backend/internal/services/batches"
 	filesvc "github.com/ncecere/open_model_gateway/backend/internal/services/files"
-	usagepipeline "github.com/ncecere/open_model_gateway/backend/internal/services/usagepipeline"
 )
 
 // Worker processes queued batch jobs and executes the corresponding /v1/* calls.
@@ -381,6 +378,13 @@ func (w *Worker) runChatItem(ctx context.Context, rc *requestctx.Context, traceI
 			errPayload: encodeErrorPayload("invalid_request_error", "model is required"),
 		}
 	}
+	if !w.container.IsModelAllowed(rc.TenantID, alias) {
+		return itemOutcome{
+			statusCode: fiber.StatusForbidden,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("permission_error", "model not enabled for tenant"),
+		}
+	}
 	if body.Stream {
 		return itemOutcome{
 			statusCode: fiber.StatusBadRequest,
@@ -434,42 +438,7 @@ func (w *Worker) runChatItem(ctx context.Context, rc *requestctx.Context, traceI
 		Stop:        stop,
 	}
 
-	callCtx := requestctx.WithContext(ctx, rc)
-	result, err := w.executor.Chat(callCtx, rc, alias, req, traceID, "")
-	if err != nil {
-		status, msg, ok := executor.AsAPIError(err)
-		if !ok {
-			return itemOutcome{
-				statusCode: fiber.StatusBadGateway,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("provider_error", err.Error()),
-			}
-		}
-		return itemOutcome{
-			statusCode: status,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload(mapStatusToCode(status), msg),
-		}
-	}
-
-	response := convertChatResponse(result.Response, alias)
-	data, err := json.Marshal(response)
-	if err != nil {
-		return itemOutcome{
-			statusCode: fiber.StatusInternalServerError,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("serialization_error", err.Error()),
-		}
-	}
-	requestID := response.ID
-	if requestID == "" {
-		requestID = traceID
-	}
-	return itemOutcome{
-		statusCode: fiber.StatusOK,
-		requestID:  requestID,
-		response:   data,
-	}
+	return w.executeChatItem(ctx, rc, traceID, alias, req)
 }
 
 func (w *Worker) runEmbeddingItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
@@ -518,167 +487,8 @@ func (w *Worker) runEmbeddingItem(ctx context.Context, rc *requestctx.Context, t
 		}
 	}
 
-	routes := w.container.Engine.SelectRoutes(body.Model)
-	if len(routes) == 0 {
-		return itemOutcome{
-			statusCode: fiber.StatusServiceUnavailable,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("service_unavailable", "no backend available for model"),
-		}
-	}
-
-	callCtx := requestctx.WithContext(ctx, rc)
-
-	status, err := w.container.UsageLogger.CheckBudget(callCtx, rc, time.Now().UTC())
-	if err != nil {
-		return itemOutcome{
-			statusCode: fiber.StatusInternalServerError,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("budget_error", err.Error()),
-		}
-	}
-	if status.Exceeded {
-		_, _ = w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     body.Model,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return itemOutcome{
-			statusCode: fiber.StatusForbidden,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("budget_exceeded", "tenant budget exceeded"),
-		}
-	}
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := w.container.AcquireRateLimits(callCtx, body.Model)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			return itemOutcome{
-				statusCode: fiber.StatusTooManyRequests,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("rate_limit_error", "rate limit exceeded"),
-			}
-		}
-		return itemOutcome{
-			statusCode: fiber.StatusTooManyRequests,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-		}
-	}
-	defer release()
-
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-
-	for _, route := range routes {
-		if route.Embedding == nil {
-			continue
-		}
-		lastRoute = route
-		modelReq := models.EmbeddingsRequest{
-			Model: route.ResolveDeployment(),
-			Input: values,
-		}
-		start := time.Now()
-		resp, err := route.Embedding.Embed(callCtx, modelReq)
-		if err != nil {
-			w.container.Engine.ReportFailure(body.Model, route)
-			lastErr = err
-			lastLatency = time.Since(start)
-			continue
-		}
-
-		if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
-			if err := w.container.RateLimiter.TokenAllowance(callCtx, keyKey, tokens, keyCfg); err != nil {
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return itemOutcome{
-						statusCode: fiber.StatusTooManyRequests,
-						requestID:  traceID,
-						errPayload: encodeErrorPayload("rate_limit_error", "token limit exceeded"),
-					}
-				}
-				return itemOutcome{
-					statusCode: fiber.StatusTooManyRequests,
-					requestID:  traceID,
-					errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-				}
-			}
-			if err := w.container.RateLimiter.TokenAllowance(callCtx, tenantKey, tokens, tenantCfg); err != nil {
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return itemOutcome{
-						statusCode: fiber.StatusTooManyRequests,
-						requestID:  traceID,
-						errPayload: encodeErrorPayload("rate_limit_error", "token limit exceeded"),
-					}
-				}
-				return itemOutcome{
-					statusCode: fiber.StatusTooManyRequests,
-					requestID:  traceID,
-					errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-				}
-			}
-		}
-
-		w.container.Engine.ReportSuccess(body.Model, route)
-		record := usagepipeline.Record{
-			Context:   rc,
-			Alias:     body.Model,
-			Provider:  route.Provider,
-			Usage:     resp.Usage,
-			Latency:   time.Since(start),
-			Status:    fiber.StatusOK,
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   true,
-		}
-		if _, err := w.container.UsageLogger.Record(callCtx, record); err != nil {
-			return itemOutcome{
-				statusCode: fiber.StatusInternalServerError,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("usage_error", err.Error()),
-			}
-		}
-
-		payload := convertEmbeddingResponse(resp, body.Model)
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return itemOutcome{
-				statusCode: fiber.StatusInternalServerError,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("serialization_error", err.Error()),
-			}
-		}
-		return itemOutcome{
-			statusCode: fiber.StatusOK,
-			requestID:  traceID,
-			response:   data,
-		}
-	}
-
-	if lastRoute.Provider != "" {
-		_, _ = w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     body.Model,
-			Provider:  lastRoute.Provider,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: errMessage(lastErr),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-			Latency:   lastLatency,
-		})
-	}
-	return itemOutcome{
-		statusCode: fiber.StatusBadGateway,
-		requestID:  traceID,
-		errPayload: encodeErrorPayload("provider_error", errMessage(lastErr)),
-	}
+	req := models.EmbeddingsRequest{Model: body.Model, Input: values}
+	return w.executeEmbeddingItem(ctx, rc, traceID, body.Model, req)
 }
 
 func (w *Worker) runModerationItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
@@ -720,170 +530,7 @@ func (w *Worker) runModerationItem(ctx context.Context, rc *requestctx.Context, 
 		}
 	}
 
-	routes := w.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		return itemOutcome{
-			statusCode: fiber.StatusServiceUnavailable,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("service_unavailable", "no backend available for model"),
-		}
-	}
-
-	callCtx := requestctx.WithContext(ctx, rc)
-	status, err := w.container.UsageLogger.CheckBudget(callCtx, rc, time.Now().UTC())
-	if err != nil {
-		return itemOutcome{
-			statusCode: fiber.StatusInternalServerError,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("budget_error", err.Error()),
-		}
-	}
-	if status.Exceeded {
-		_, _ = w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return itemOutcome{
-			statusCode: fiber.StatusForbidden,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("budget_exceeded", "tenant budget exceeded"),
-		}
-	}
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := w.container.AcquireRateLimits(callCtx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			return itemOutcome{
-				statusCode: fiber.StatusTooManyRequests,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("rate_limit_error", "rate limit exceeded"),
-			}
-		}
-		return itemOutcome{
-			statusCode: fiber.StatusTooManyRequests,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-		}
-	}
-	defer release()
-
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-
-	for _, route := range routes {
-		if route.Moderations == nil {
-			continue
-		}
-		lastRoute = route
-		modelReq := models.ModerationRequest{
-			Model: route.ResolveDeployment(),
-			Input: values,
-		}
-		start := time.Now()
-		resp, err := route.Moderations.Moderate(callCtx, modelReq)
-		if err != nil {
-			w.container.Engine.ReportFailure(alias, route)
-			lastErr = err
-			lastLatency = time.Since(start)
-			continue
-		}
-
-		tokens := int(resp.Usage.TotalTokens)
-		if tokens > 0 {
-			if err := w.container.RateLimiter.TokenAllowance(callCtx, keyKey, tokens, keyCfg); err != nil {
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return itemOutcome{
-						statusCode: fiber.StatusTooManyRequests,
-						requestID:  traceID,
-						errPayload: encodeErrorPayload("rate_limit_error", "token limit exceeded"),
-					}
-				}
-				return itemOutcome{
-					statusCode: fiber.StatusTooManyRequests,
-					requestID:  traceID,
-					errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-				}
-			}
-			if err := w.container.RateLimiter.TokenAllowance(callCtx, tenantKey, tokens, tenantCfg); err != nil {
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return itemOutcome{
-						statusCode: fiber.StatusTooManyRequests,
-						requestID:  traceID,
-						errPayload: encodeErrorPayload("rate_limit_error", "token limit exceeded"),
-					}
-				}
-				return itemOutcome{
-					statusCode: fiber.StatusTooManyRequests,
-					requestID:  traceID,
-					errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-				}
-			}
-		}
-
-		w.container.Engine.ReportSuccess(alias, route)
-		if _, err := w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  route.Provider,
-			Usage:     resp.Usage,
-			Latency:   time.Since(start),
-			Status:    fiber.StatusOK,
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   true,
-		}); err != nil {
-			return itemOutcome{
-				statusCode: fiber.StatusInternalServerError,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("usage_error", err.Error()),
-			}
-		}
-
-		payload := convertModerationResponse(resp, alias)
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return itemOutcome{
-				statusCode: fiber.StatusInternalServerError,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("serialization_error", err.Error()),
-			}
-		}
-		return itemOutcome{
-			statusCode: fiber.StatusOK,
-			requestID:  traceID,
-			response:   data,
-		}
-	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	if lastRoute.Provider != "" {
-		_, _ = w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Latency:   lastLatency,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: errMessage(lastErr),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-
-	return itemOutcome{
-		statusCode: fiber.StatusBadGateway,
-		requestID:  traceID,
-		errPayload: encodeErrorPayload("provider_error", errMessage(lastErr)),
-	}
+	return w.executeModerationItem(ctx, rc, traceID, alias, values)
 }
 
 func (w *Worker) runImageItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
@@ -929,20 +576,27 @@ func (w *Worker) runImageItem(ctx context.Context, rc *requestctx.Context, trace
 		}
 	}
 
-	return w.runBatchImageOperation(ctx, rc, traceID, alias, imageOperationGeneration, func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
-		modelReq := models.ImageRequest{
-			Model:          route.ResolveDeployment(),
-			Prompt:         body.Prompt,
-			Size:           body.Size,
-			ResponseFormat: body.ResponseFormat,
-			Quality:        body.Quality,
-			N:              n,
-			User:           body.User,
-			Background:     body.Background,
-			Style:          body.Style,
+	if !w.container.IsModelAllowed(rc.TenantID, alias) {
+		return itemOutcome{
+			statusCode: fiber.StatusForbidden,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("permission_error", "model not enabled for tenant"),
 		}
-		return route.Image.Generate(callCtx, modelReq)
-	})
+	}
+
+	req := models.ImageRequest{
+		Model:          alias,
+		Prompt:         body.Prompt,
+		Size:           body.Size,
+		ResponseFormat: body.ResponseFormat,
+		Quality:        body.Quality,
+		N:              n,
+		User:           body.User,
+		Background:     body.Background,
+		Style:          body.Style,
+	}
+
+	return w.executeImageOperation(ctx, rc, traceID, alias, newImageGenerationOperationConfig(req))
 }
 
 func (w *Worker) runImageEditItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
@@ -974,6 +628,13 @@ func (w *Worker) runImageEditItem(ctx context.Context, rc *requestctx.Context, t
 			statusCode: fiber.StatusBadRequest,
 			requestID:  traceID,
 			errPayload: encodeErrorPayload("invalid_request_error", "prompt is required"),
+		}
+	}
+	if !w.container.IsModelAllowed(rc.TenantID, alias) {
+		return itemOutcome{
+			statusCode: fiber.StatusForbidden,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("permission_error", "model not enabled for tenant"),
 		}
 	}
 
@@ -1028,25 +689,23 @@ func (w *Worker) runImageEditItem(ctx context.Context, rc *requestctx.Context, t
 		}
 	}
 
-	return w.runBatchImageOperation(ctx, rc, traceID, alias, imageOperationEdit, func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
-		req := models.ImageEditRequest{
-			Model:          route.ResolveDeployment(),
-			Prompt:         prompt,
-			Images:         cloneImageInputs(images),
-			Size:           body.Size,
-			ResponseFormat: body.ResponseFormat,
-			Quality:        body.Quality,
-			Background:     body.Background,
-			Style:          body.Style,
-			N:              n,
-			User:           body.User,
-		}
-		if maskInput != nil {
-			maskCopy := *maskInput
-			req.Mask = &maskCopy
-		}
-		return route.Image.Edit(callCtx, req)
-	})
+	baseReq := models.ImageEditRequest{
+		Model:          alias,
+		Prompt:         prompt,
+		Images:         images,
+		Size:           body.Size,
+		ResponseFormat: body.ResponseFormat,
+		Quality:        body.Quality,
+		Background:     body.Background,
+		Style:          body.Style,
+		N:              n,
+		User:           body.User,
+	}
+	if maskInput != nil {
+		baseReq.Mask = maskInput
+	}
+
+	return w.executeImageOperation(ctx, rc, traceID, alias, newImageEditOperationConfig(baseReq))
 }
 
 func (w *Worker) runImageVariationItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
@@ -1114,202 +773,19 @@ func (w *Worker) runImageVariationItem(ctx context.Context, rc *requestctx.Conte
 		}
 	}
 
-	return w.runBatchImageOperation(ctx, rc, traceID, alias, imageOperationVariation, func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
-		req := models.ImageVariationRequest{
-			Model:          route.ResolveDeployment(),
-			Image:          baseImage,
-			Size:           body.Size,
-			ResponseFormat: body.ResponseFormat,
-			Quality:        body.Quality,
-			Background:     body.Background,
-			Style:          body.Style,
-			N:              n,
-			User:           body.User,
-		}
-		return route.Image.Variation(callCtx, req)
-	})
-}
-
-func (w *Worker) runBatchImageOperation(ctx context.Context, rc *requestctx.Context, traceID, alias string, operation imageOperationType, builder func(context.Context, providers.Route) (models.ImageResponse, error)) itemOutcome {
-	if !w.container.IsModelAllowed(rc.TenantID, alias) {
-		return itemOutcome{
-			statusCode: fiber.StatusForbidden,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("permission_error", "model not enabled for tenant"),
-		}
+	baseReq := models.ImageVariationRequest{
+		Model:          alias,
+		Image:          baseImage,
+		Size:           body.Size,
+		ResponseFormat: body.ResponseFormat,
+		Quality:        body.Quality,
+		Background:     body.Background,
+		Style:          body.Style,
+		N:              n,
+		User:           body.User,
 	}
 
-	routes := w.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		return itemOutcome{
-			statusCode: fiber.StatusServiceUnavailable,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("service_unavailable", "no backend available for model"),
-		}
-	}
-
-	callCtx := requestctx.WithContext(ctx, rc)
-
-	status, err := w.container.UsageLogger.CheckBudget(callCtx, rc, time.Now().UTC())
-	if err != nil {
-		return itemOutcome{
-			statusCode: fiber.StatusInternalServerError,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("budget_error", err.Error()),
-		}
-	}
-	if status.Exceeded {
-		_, _ = w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return itemOutcome{
-			statusCode: fiber.StatusForbidden,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("budget_exceeded", "tenant budget exceeded"),
-		}
-	}
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := w.container.AcquireRateLimits(callCtx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			return itemOutcome{
-				statusCode: fiber.StatusTooManyRequests,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("rate_limit_error", "rate limit exceeded"),
-			}
-		}
-		return itemOutcome{
-			statusCode: fiber.StatusTooManyRequests,
-			requestID:  traceID,
-			errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-		}
-	}
-	defer release()
-
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-
-	for _, route := range routes {
-		if route.Image == nil {
-			continue
-		}
-		lastRoute = route
-		start := time.Now()
-		resp, err := builder(callCtx, route)
-		if err != nil {
-			if errors.Is(err, models.ErrImageOperationUnsupported) {
-				continue
-			}
-			w.container.Engine.ReportFailure(alias, route)
-			lastErr = err
-			lastLatency = time.Since(start)
-			continue
-		}
-		w.container.Engine.ReportSuccess(alias, route)
-
-		if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
-			if err := w.container.RateLimiter.TokenAllowance(callCtx, keyKey, tokens, keyCfg); err != nil {
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return itemOutcome{
-						statusCode: fiber.StatusTooManyRequests,
-						requestID:  traceID,
-						errPayload: encodeErrorPayload("rate_limit_error", "token limit exceeded"),
-					}
-				}
-				return itemOutcome{
-					statusCode: fiber.StatusTooManyRequests,
-					requestID:  traceID,
-					errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-				}
-			}
-			if err := w.container.RateLimiter.TokenAllowance(callCtx, tenantKey, tokens, tenantCfg); err != nil {
-				if errors.Is(err, limits.ErrLimitExceeded) {
-					return itemOutcome{
-						statusCode: fiber.StatusTooManyRequests,
-						requestID:  traceID,
-						errPayload: encodeErrorPayload("rate_limit_error", "token limit exceeded"),
-					}
-				}
-				return itemOutcome{
-					statusCode: fiber.StatusTooManyRequests,
-					requestID:  traceID,
-					errPayload: encodeErrorPayload("rate_limit_error", err.Error()),
-				}
-			}
-		}
-
-		record := usagepipeline.Record{
-			Context:           rc,
-			Alias:             alias,
-			Provider:          route.Provider,
-			Usage:             resp.Usage,
-			Latency:           time.Since(start),
-			Status:            fiber.StatusOK,
-			TraceID:           traceID,
-			Timestamp:         time.Now().UTC(),
-			Success:           true,
-			OverrideCostCents: parseImageOverrideCost(route.Metadata, operation),
-		}
-		if _, err := w.container.UsageLogger.Record(callCtx, record); err != nil {
-			return itemOutcome{
-				statusCode: fiber.StatusInternalServerError,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("usage_error", err.Error()),
-			}
-		}
-
-		payload := convertImageResponse(resp)
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return itemOutcome{
-				statusCode: fiber.StatusInternalServerError,
-				requestID:  traceID,
-				errPayload: encodeErrorPayload("serialization_error", err.Error()),
-			}
-		}
-		return itemOutcome{
-			statusCode: fiber.StatusOK,
-			requestID:  traceID,
-			response:   data,
-		}
-	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	if lastRoute.Provider != "" {
-		statusCode := fiber.StatusBadGateway
-		msg := errMessage(lastErr)
-		if status, apiMsg, ok := executor.AsAPIError(lastErr); ok {
-			statusCode = status
-			msg = apiMsg
-		}
-		_, _ = w.container.UsageLogger.Record(callCtx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Latency:   lastLatency,
-			Status:    statusCode,
-			ErrorCode: msg,
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-
-	return itemOutcome{
-		statusCode: fiber.StatusBadGateway,
-		requestID:  traceID,
-		errPayload: encodeErrorPayload("provider_error", errMessage(lastErr)),
-	}
+	return w.executeImageOperation(ctx, rc, traceID, alias, newImageVariationOperationConfig(baseReq))
 }
 
 type batchItem struct {

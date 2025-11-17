@@ -85,7 +85,7 @@ func (m *Monitor) checkRoutes(ctx context.Context) {
 				timeoutCtx, cancel := context.WithTimeout(ctx, m.timeout)
 				defer cancel()
 
-				if err := route.Health(timeoutCtx); err != nil {
+				if err := route.Health.Check(timeoutCtx); err != nil {
 					m.engine.ReportFailure(alias, route)
 					return
 				}

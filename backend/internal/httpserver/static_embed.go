@@ -43,11 +43,11 @@ func mountAdminUISubpath(app *fiber.App) {
 		return
 	}
 
-	app.Use("/admin/ui", fiberfs.New(fiberfs.Config{
-		Root:         http.FS(dist),
-		PathPrefix:   "/admin/ui",
-		Index:        "index.html",
-		NotFoundFile: "index.html",
-		Browse:       false,
-	}))
+app.Use("/admin/ui", fiberfs.New(fiberfs.Config{
+	Root:         http.FS(dist),
+	PathPrefix:   "/admin/ui",
+	Index:        "admin/index.html",
+	NotFoundFile: "admin/index.html",
+	Browse:       false,
+}))
 }

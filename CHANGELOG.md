@@ -6,6 +6,26 @@ All notable changes to this project will be documented in this file. The format 
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [Unreleased]
+### Added
+#### Backend
+- Unified request lifecycle runs through shared pipelines/executor helpers for chat (sync + SSE), audio (sync/stream), images, embeddings, moderations, files, and batch HTTP routes. The background batch worker now reuses the same executor code paths so budgets, rate limits, idempotency, and usage logging are enforced consistently.
+- Provider routes now expose retry/tokenizer metadata. The executor honors per-provider backoff policies, and new helpers (`normalizedRetry`, `shouldRetryProvider`) replace bespoke handler logic. Added `cmd/generateproviderfixtures` + `providers/catalog_fixture_test.go` so catalog-driven fixtures/tests stay in sync as entries change.
+
+#### Frontend
+- Split the admin/user portals into first-class Vite entry points with new bootstraps (`src/apps/{admin,user}/main.tsx`), shared branding helper, and dedicated Bun scripts (`dev:admin`, `dev:user`).
+- Introduced `auth/createAuthStore.tsx` + `auth/storage.ts` so both portals share token storage/refresh/logout logic, a shared Axios client factory (`api/httpClient.ts`), and a `DirectoryProvider` that preloads tenants/users/models once for the admin portal.
+- Added shared UI kit primitives (`DataTable`, `ChartCard`), documented them in `docs/frontend/ui-kit.md`, and wired new Vitest coverage + a Playwright smoke test to keep regressions in check.
+- Added `features/users/hooks/usePersonalTenants.ts` to centralize personal-tenant queries/filters for the admin users view.
+
+### Changed
+- Admin Usage and Users pages now consume `DirectoryProvider`, the UI kit, and shared hooks so they stop duplicating query/filter logic.
+- `tsconfig.json` includes `vitest/globals` for IDE support and excludes test specs from production builds; Vitest config mirrors the alias setup and ignores Playwright specs.
+- `docs/architecture/frontend.md` links to the UI kit reference doc.
+
+### Removed
+- Replaced the Storybook task with lightweight documentation/tests for the shared kit.
+
 ## [v0.1.10] - 2025-11-18
 ### Added
 - Added a native Groq provider adapter (sync + streaming chat, health checks) with config overrides (`providers.groq.*`, `provider_overrides.groq`, and new `groq_*` metadata keys) so catalog entries can BYOK or pin specific regions without auto-discovery.

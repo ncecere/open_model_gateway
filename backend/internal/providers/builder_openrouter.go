@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	openrouter "github.com/ncecere/open_model_gateway/backend/internal/adapters/openrouter"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -14,7 +15,28 @@ func init() {
 		Name:         "openrouter",
 		Description:  "OpenRouter meta-routing API (chat, streaming, embeddings, model discovery)",
 		Capabilities: []string{"chat", "chat_stream", "embeddings", "models"},
-		Builder:      buildOpenRouterRoute,
+		Descriptor: Descriptor{
+			Summary: "OpenRouter aggregator routing requests to multiple upstream LLM providers.",
+			Auth:    []string{"api_key"},
+			ConfigInputs: []Input{
+				{Name: "providers.openrouter.api_key", Description: "Default OpenRouter API key", Secret: true, Source: "config.providers.openrouter.api_key"},
+				{Name: "providers.openrouter.base_url", Description: "Optional private base URL", Source: "config.providers.openrouter.base_url"},
+				{Name: "providers.openrouter.referer", Description: "Referer header for attribution", Source: "config.providers.openrouter.referer"},
+				{Name: "providers.openrouter.app_name", Description: "App name metadata sent to OpenRouter", Source: "config.providers.openrouter.app_name"},
+			},
+			EntryFields: []Input{
+				{Name: "api_key", Description: "Override API key", Secret: true, Source: "catalog.api_key"},
+				{Name: "endpoint", Description: "Override base URL", Source: "catalog.endpoint"},
+				{Name: "openrouter_referer", Description: "Per-entry referer header", Source: "catalog.metadata.openrouter_referer"},
+				{Name: "openrouter_app_name", Description: "Per-entry app name", Source: "catalog.metadata.openrouter_app_name"},
+			},
+			RetryPolicy: RetryDescriptor{
+				Description:   "Executor retries OpenRouter 429/5xx responses twice.",
+				DefaultPolicy: "exponential 250ms backoff, max 2 attempts",
+			},
+			HealthNotes: "Uses OpenRouter models listing for health.",
+		},
+		Builder: buildOpenRouterRoute,
 	})
 }
 
@@ -103,7 +125,9 @@ func buildOpenRouterRoute(ctx context.Context, cfg *config.Config, entry config.
 		ChatStream: adapter,
 		Embedding:  adapter,
 		Models:     adapter,
-		Health:     adapter.HealthCheck,
+		Health:     WrapHealth(adapter.HealthCheck),
 	}
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil
 }

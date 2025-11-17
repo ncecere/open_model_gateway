@@ -2,11 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Eye, MoreHorizontal, RefreshCcw } from "lucide-react";
 
-import {
-  listPersonalTenants,
-  type PersonalTenantRecord,
-  type TenantStatus,
-} from "@/api/tenants";
+import { type PersonalTenantRecord, type TenantStatus } from "@/api/tenants";
 import { getUserTenants, type UserTenantMembership } from "@/api/users";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,8 +23,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BudgetMeter } from "@/ui/kit/BudgetMeter";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -38,41 +32,114 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DataTable, type DataTableColumn } from "@/ui/kit/DataTable";
+import {
+  usePersonalTenantsQuery,
+  usePersonalTenantFilters,
+} from "@/features/users/hooks/usePersonalTenants";
 
 export function UsersPage() {
-  const query = useQuery({
-    queryKey: ["personal-tenants"],
-    queryFn: () => listPersonalTenants({ limit: 500 }),
-  });
-
-  const records: PersonalTenantRecord[] = query.data?.personal_tenants ?? [];
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | TenantStatus>("all");
+  const personalTenantsQuery = usePersonalTenantsQuery();
+  const records: PersonalTenantRecord[] = personalTenantsQuery.data?.personal_tenants ?? [];
+  const { searchTerm, setSearchTerm, statusFilter, setStatusFilter, filteredRecords } =
+    usePersonalTenantFilters(records);
   const [selectedUser, setSelectedUser] = useState<PersonalTenantRecord | null>(null);
-
-  const filteredRecords = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    return records.filter((record) => {
-      const matchesStatus =
-        statusFilter === "all" || record.status === statusFilter;
-      if (!matchesStatus) {
-        return false;
-      }
-      if (!term) {
-        return true;
-      }
-      return (
-        record.user_email.toLowerCase().includes(term) ||
-        record.user_name.toLowerCase().includes(term)
-      );
-    });
-  }, [records, searchTerm, statusFilter]);
 
   const userTenantsQuery = useQuery<UserTenantMembership[]>({
     queryKey: ["user-tenants", selectedUser?.user_id],
     queryFn: () => getUserTenants(selectedUser!.user_id),
     enabled: Boolean(selectedUser?.user_id),
   });
+
+  const personalTenantColumns = useMemo(() => {
+    return [
+      {
+        header: "User",
+        cell: (record: PersonalTenantRecord) => (
+          <div className="flex flex-col">
+            <span className="font-medium">{record.user_name}</span>
+            <span className="text-xs text-muted-foreground">{record.user_email}</span>
+          </div>
+        ),
+      },
+      {
+        header: "Status",
+        cell: (record: PersonalTenantRecord) => (
+          <span className="capitalize">{record.status}</span>
+        ),
+      },
+      {
+        header: "Budget",
+        cell: (record: PersonalTenantRecord) => (
+          <BudgetMeter used={record.budget_used_usd ?? 0} limit={record.budget_limit_usd ?? 0} />
+        ),
+        cellClassName: "min-w-[220px]",
+      },
+      {
+        header: "Tenants",
+        cell: (record: PersonalTenantRecord) => (
+          <Badge variant="secondary">{record.membership_count ?? 1} tenants</Badge>
+        ),
+      },
+      {
+        header: "Created",
+        cell: (record: PersonalTenantRecord) => (
+          <span className="text-sm text-muted-foreground">
+            {new Date(record.created_at).toLocaleDateString()}
+          </span>
+        ),
+      },
+      {
+        header: "Tenant ID",
+        cell: (record: PersonalTenantRecord) => (
+          <span className="font-mono text-xs">{record.tenant_id}</span>
+        ),
+      },
+      {
+        header: "Actions",
+        headerClassName: "text-right",
+        cellClassName: "text-right",
+        cell: (record: PersonalTenantRecord) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Open user actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => setSelectedUser(record)}>
+                <Eye className="mr-2 h-4 w-4" /> View details
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+      },
+    ];
+  }, []);
+
+  const membershipColumns: DataTableColumn<UserTenantMembership>[] = useMemo(
+    () => [
+      {
+        header: "Tenant",
+        cell: (membership) => membership.tenant_name,
+      },
+      {
+        header: "Role",
+        cell: (membership) => <span className="capitalize">{membership.role}</span>,
+      },
+      {
+        header: "Status",
+        cell: (membership) => <span className="capitalize">{membership.status}</span>,
+      },
+      {
+        header: "Joined",
+        cell: (membership) =>
+          new Date(membership.joined_at).toLocaleDateString(),
+      },
+    ],
+    [],
+  );
 
   return (
     <div className="space-y-6">
@@ -87,8 +154,8 @@ export function UsersPage() {
         <Button
           variant="outline"
           size="icon"
-          onClick={() => query.refetch()}
-          disabled={query.isFetching}
+          onClick={() => personalTenantsQuery.refetch()}
+          disabled={personalTenantsQuery.isFetching}
           title="Refresh"
         >
           <RefreshCcw className="h-4 w-4" />
@@ -132,76 +199,13 @@ export function UsersPage() {
           </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {query.isLoading ? (
-            <Skeleton className="h-48 w-full" />
-          ) : filteredRecords.length ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Budget</TableHead>
-                  <TableHead>Tenants</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Tenant ID</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRecords.map((record) => (
-                  <TableRow key={record.tenant_id}>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{record.user_name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {record.user_email}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="capitalize">
-                      {record.status}
-                    </TableCell>
-                    <TableCell className="min-w-[220px]">
-                      <BudgetMeter
-                        used={record.budget_used_usd ?? 0}
-                        limit={record.budget_limit_usd ?? 0}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">
-                        {record.membership_count ?? 1} tenants
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {new Date(record.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {record.tenant_id}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" aria-label="Open user actions">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onSelect={() => setSelectedUser(record)}>
-                            <Eye className="mr-2 h-4 w-4" /> View details
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No users match the current filters.
-            </p>
-          )}
+          <DataTable
+            data={filteredRecords}
+            columns={personalTenantColumns}
+            getKey={(record) => record.tenant_id}
+            isLoading={personalTenantsQuery.isLoading}
+            emptyState="No users match the current filters."
+          />
         </CardContent>
       </Card>
 
@@ -246,36 +250,14 @@ export function UsersPage() {
                     <CardTitle>Tenant memberships</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {userTenantsQuery.isLoading ? (
-                      <Skeleton className="h-32 w-full" />
-                    ) : userTenantsQuery.data && userTenantsQuery.data.length ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Tenant</TableHead>
-                            <TableHead>Role</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Joined</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {userTenantsQuery.data.map((membership) => (
-                            <TableRow key={membership.tenant_id + membership.role}>
-                              <TableCell>{membership.tenant_name}</TableCell>
-                              <TableCell className="capitalize">{membership.role}</TableCell>
-                              <TableCell className="capitalize">{membership.status}</TableCell>
-                              <TableCell>
-                                {new Date(membership.joined_at).toLocaleDateString()}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No additional tenant memberships found.
-                      </p>
-                    )}
+                    <DataTable
+                      data={userTenantsQuery.data ?? []}
+                      columns={membershipColumns}
+                      getKey={(membership) => `${membership.tenant_id}-${membership.role}`}
+                      isLoading={userTenantsQuery.isLoading}
+                      emptyState="No additional tenant memberships found."
+                      dense
+                    />
                   </CardContent>
                 </Card>
               </div>

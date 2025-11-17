@@ -17,7 +17,7 @@ func newTestLimiter(t *testing.T) (*RateLimiter, func()) {
 		t.Fatalf("start miniredis: %v", err)
 	}
 	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
-	limiter := NewRateLimiter(client)
+	limiter := NewRateLimiter(client, nil)
 	cleanup := func() {
 		client.Close()
 		server.Close()

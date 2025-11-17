@@ -92,7 +92,9 @@ Super admin access: every email listed under `bootstrap.admin_users` is elevated
 ## Observability & Ops
 
 - Prometheus metrics exposed at `/metrics` whenever `observability.enable_metrics` is true, including `open_model_gateway_http_requests_total`, `open_model_gateway_http_request_duration_seconds`, and target metadata.
+- Additional metrics now surface executor retries (`open_model_gateway_api_provider_retries_total`), rate limiter inflight counts (`open_model_gateway_rate_limiter_parallel_inflight`), API tokens, and budget evaluation timings (`open_model_gateway_budget_evaluation_duration_seconds`) so dashboards can highlight churny providers and slow budget windows.
 - OTLP tracing configurable through `observability.enable_otlp` and `observability.otlp_endpoint`; exporter stays idle if disabled to avoid noisy logs. The repo ships `deploy/otel-collector.yaml` plus a docker-compose service listening on `4317/4318` to keep spans local during development.
+- Executor, rate limiter, and budget evaluator now emit OTEL spans (`open-model-gateway/executor`, `.../ratelimiter`, `.../budget-evaluator`) so traces include retry attempts, limit errors, and budget-query durations alongside existing HTTP spans.
 - Structured logging currently uses stdlib; a switch to zap/zerolog is on the backlog once log schema stabilises.
 - `deploy/docker-compose.yml` now includes an OTLP collector alongside Postgres and Redis; `make run-backend` builds the frontend bundle, runs migrations, and starts the binary.
 - See `docs/observability.md` for step-by-step OTLP collector instructions (Docker Compose + Kubernetes manifest).

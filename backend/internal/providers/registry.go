@@ -12,6 +12,34 @@ type Definition struct {
 	Description  string
 	Capabilities []string
 	Builder      Builder
+	Descriptor   Descriptor
+}
+
+// Descriptor documents configuration inputs, authentication modes, retry policy,
+// and other metadata for provider builders. This powers documentation, CLI help,
+// and future validation tooling.
+type Descriptor struct {
+	Summary      string
+	Auth         []string
+	ConfigInputs []Input
+	EntryFields  []Input
+	RetryPolicy  RetryDescriptor
+	HealthNotes  string
+}
+
+// Input captures a provider configuration field (global or per-entry).
+type Input struct {
+	Name        string
+	Description string
+	Required    bool
+	Secret      bool
+	Source      string
+}
+
+// RetryDescriptor documents default retry/backoff behaviour for a provider.
+type RetryDescriptor struct {
+	Description   string
+	DefaultPolicy string
 }
 
 var defaultDefinitions = map[string]Definition{}
@@ -31,6 +59,9 @@ func RegisterDefinition(def Definition) {
 	}
 	if def.Description == "" {
 		def.Description = def.Name
+	}
+	if def.Descriptor.Summary == "" {
+		def.Descriptor.Summary = def.Description
 	}
 	if len(def.Capabilities) > 0 {
 		caps := make([]string, len(def.Capabilities))
@@ -54,6 +85,16 @@ func DefaultDefinitions() []Definition {
 		return defs[i].Name < defs[j].Name
 	})
 	return defs
+}
+
+// DefaultDescriptors returns the descriptors attached to registered providers.
+func DefaultDescriptors() []Descriptor {
+	defs := DefaultDefinitions()
+	descriptors := make([]Descriptor, len(defs))
+	for i, def := range defs {
+		descriptors[i] = def.Descriptor
+	}
+	return descriptors
 }
 
 func cloneDefaultBuilders() map[string]Builder {

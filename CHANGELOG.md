@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file. The format 
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.11] - 2025-11-18
 ### Added
 #### Backend
 - Unified request lifecycle runs through shared pipelines/executor helpers for chat (sync + SSE), audio (sync/stream), images, embeddings, moderations, files, and batch HTTP routes. The background batch worker now reuses the same executor code paths so budgets, rate limits, idempotency, and usage logging are enforced consistently.

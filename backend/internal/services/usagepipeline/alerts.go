@@ -22,13 +22,16 @@ type AlertChannels struct {
 }
 
 type AlertPayload struct {
-	TenantID     uuid.UUID
-	Level        AlertLevel
-	Status       BudgetStatus
-	Channels     AlertChannels
-	Timestamp    time.Time
-	APIKeyPrefix string
-	ModelAlias   string
+	TenantID         uuid.UUID
+	TenantName       string
+	Level            AlertLevel
+	Status           BudgetStatus
+	Channels         AlertChannels
+	Timestamp        time.Time
+	WarningThreshold float64
+	BudgetReset      time.Time
+	APIKeyPrefix     string
+	ModelAlias       string
 }
 
 type AlertSink interface {

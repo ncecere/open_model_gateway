@@ -188,11 +188,12 @@ func (h *settingsHandler) sendTestAlertEmail(c *fiber.Ctx) error {
 	}
 	var payload struct {
 		Email string `json:"email"`
+		Type  string `json:"type"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid request body")
 	}
-	if err := svc.SendAlertTestEmail(c.Context(), payload.Email); err != nil {
+	if err := svc.SendTestEmail(c.Context(), payload.Email, payload.Type); err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
 	return c.SendStatus(fiber.StatusNoContent)

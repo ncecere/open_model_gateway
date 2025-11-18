@@ -21,6 +21,8 @@ type AlertDispatcher struct {
 
 	stateMu sync.Mutex
 	state   map[uuid.UUID]alertSnapshot
+	nameMu  sync.Mutex
+	names   map[uuid.UUID]string
 }
 
 func NewAlertDispatcher(queries *db.Queries, sink AlertSink) *AlertDispatcher {
@@ -31,6 +33,7 @@ func NewAlertDispatcher(queries *db.Queries, sink AlertSink) *AlertDispatcher {
 		sink:    sink,
 		queries: queries,
 		state:   make(map[uuid.UUID]alertSnapshot),
+		names:   make(map[uuid.UUID]string),
 	}
 }
 
@@ -72,13 +75,16 @@ func (a *AlertDispatcher) Dispatch(ctx context.Context, rec Record, status Budge
 	}
 
 	payload := AlertPayload{
-		TenantID:     rc.TenantID,
-		Level:        level,
-		Status:       status,
-		Channels:     channels,
-		Timestamp:    ts,
-		APIKeyPrefix: rc.APIKeyPrefix,
-		ModelAlias:   rec.Alias,
+		TenantID:         rc.TenantID,
+		TenantName:       a.lookupTenantName(ctx, rc.TenantID),
+		Level:            level,
+		Status:           status,
+		Channels:         channels,
+		Timestamp:        ts,
+		WarningThreshold: rc.WarningThreshold,
+		BudgetReset:      nextReset(ts, rc.BudgetRefreshSchedule),
+		APIKeyPrefix:     rc.APIKeyPrefix,
+		ModelAlias:       rec.Alias,
 	}
 
 	err := a.sink.Notify(ctx, payload)
@@ -114,6 +120,41 @@ func (a *AlertDispatcher) storeAlertState(tenantID uuid.UUID, snapshot alertSnap
 	}
 
 	a.state[tenantID] = snapshot
+}
+
+func (a *AlertDispatcher) lookupTenantName(ctx context.Context, tenantID uuid.UUID) string {
+	if tenantID == uuid.Nil || a == nil {
+		return ""
+	}
+	a.nameMu.Lock()
+	if name, ok := a.names[tenantID]; ok {
+		a.nameMu.Unlock()
+		return name
+	}
+	a.nameMu.Unlock()
+	if a.queries == nil {
+		return tenantID.String()
+	}
+	row, err := a.queries.GetTenantByID(ctx, toPgUUID(tenantID))
+	if err != nil {
+		return tenantID.String()
+	}
+	name := strings.TrimSpace(row.Name)
+	if name == "" {
+		name = tenantID.String()
+	}
+	a.nameMu.Lock()
+	a.names[tenantID] = name
+	a.nameMu.Unlock()
+	return name
+}
+
+func nextReset(now time.Time, schedule string) time.Time {
+	if strings.TrimSpace(schedule) == "" {
+		return time.Time{}
+	}
+	_, end := periodBounds(now, schedule)
+	return end
 }
 
 func (a *AlertDispatcher) updateAlertState(ctx context.Context, rc *requestctx.Context, level AlertLevel, ts time.Time) error {
@@ -173,12 +214,15 @@ func (a *AlertDispatcher) recordAlertEvent(ctx context.Context, payload AlertPay
 		return
 	}
 	eventJSON, err := json.Marshal(alertEventBody{
-		TenantID:     payload.TenantID.String(),
-		Level:        payload.Level,
-		Status:       payload.Status,
-		APIKeyPrefix: payload.APIKeyPrefix,
-		ModelAlias:   payload.ModelAlias,
-		Timestamp:    payload.Timestamp.UTC(),
+		TenantID:         payload.TenantID.String(),
+		TenantName:       payload.TenantName,
+		Level:            payload.Level,
+		Status:           payload.Status,
+		WarningThreshold: payload.WarningThreshold,
+		BudgetReset:      payload.BudgetReset.UTC(),
+		APIKeyPrefix:     payload.APIKeyPrefix,
+		ModelAlias:       payload.ModelAlias,
+		Timestamp:        payload.Timestamp.UTC(),
 	})
 	if err != nil {
 		return
@@ -199,10 +243,13 @@ func (a *AlertDispatcher) recordAlertEvent(ctx context.Context, payload AlertPay
 }
 
 type alertEventBody struct {
-	TenantID     string       `json:"tenant_id"`
-	Level        AlertLevel   `json:"level"`
-	Status       BudgetStatus `json:"status"`
-	APIKeyPrefix string       `json:"api_key_prefix"`
-	ModelAlias   string       `json:"model_alias"`
-	Timestamp    time.Time    `json:"timestamp"`
+	TenantID         string       `json:"tenant_id"`
+	TenantName       string       `json:"tenant_name"`
+	Level            AlertLevel   `json:"level"`
+	Status           BudgetStatus `json:"status"`
+	WarningThreshold float64      `json:"warning_threshold"`
+	BudgetReset      time.Time    `json:"budget_reset"`
+	APIKeyPrefix     string       `json:"api_key_prefix"`
+	ModelAlias       string       `json:"model_alias"`
+	Timestamp        time.Time    `json:"timestamp"`
 }

@@ -30,11 +30,12 @@ type Service struct {
 	adminAuth   *auth.AdminAuthService
 	emailSender email.Sender
 	emailFrom   string
+	baseURL     string
 	logger      *slog.Logger
 }
 
 // NewService wires dependencies for the admin user service.
-func NewService(queries *db.Queries, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, sender email.Sender, from string, logger *slog.Logger) *Service {
+func NewService(queries *db.Queries, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, sender email.Sender, from string, baseURL string, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -44,6 +45,7 @@ func NewService(queries *db.Queries, accounts *accounts.PersonalService, adminAu
 		adminAuth:   adminAuth,
 		emailSender: sender,
 		emailFrom:   strings.TrimSpace(from),
+		baseURL:     strings.TrimSpace(baseURL),
 		logger:      logger,
 	}
 }
@@ -168,6 +170,9 @@ func (s *Service) SendInvite(ctx context.Context, user db.User, baseURL string, 
 	}
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
+		base = strings.TrimRight(s.baseURL, "/")
+	}
+	if base == "" {
 		return errors.New("invite base url required")
 	}
 	name := strings.TrimSpace(user.Name)
@@ -175,21 +180,28 @@ func (s *Service) SendInvite(ctx context.Context, user db.User, baseURL string, 
 		name = user.Email
 	}
 	adminURL := fmt.Sprintf("%s/admin/ui", base)
-	userURL := fmt.Sprintf("%s/user/ui", base)
 	subject := "You've been invited to Open Model Gateway"
 	inviter := strings.TrimSpace(invitedBy)
 	if inviter == "" {
 		inviter = "an administrator"
 	}
 	body := fmt.Sprintf(
-		"Hi %s,\n\n%s invited you to access the Open Model Gateway admin console.\n\nAdmin Portal: %s\nUser Portal: %s\n\nUse your organization's SSO or the credentials provided by your administrator to sign in.\n",
-		name, inviter, adminURL, userURL,
+		"Hi %s,\n\n%s invited you to collaborate in Open Model Gateway. Visit %s to access the console and manage your routing configuration. Use your organization's SSO or the credentials provided by your administrator to sign in.\n",
+		name, inviter, adminURL,
 	)
+	htmlBody, err := email.RenderAdminInviteTemplate(email.AdminInviteTemplateData{
+		RecipientName: name,
+		PortalURL:     adminURL,
+	})
+	if err != nil && s.logger != nil {
+		s.logger.Error("render invite email", "error", err)
+	}
 	msg := email.Message{
-		From:    s.emailFrom,
-		To:      []string{user.Email},
-		Subject: subject,
-		Body:    body,
+		From:     s.emailFrom,
+		To:       []string{user.Email},
+		Subject:  subject,
+		Body:     body,
+		HTMLBody: htmlBody,
 	}
 	return s.emailSender.Send(ctx, msg)
 }

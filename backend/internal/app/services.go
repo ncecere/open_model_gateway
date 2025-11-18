@@ -76,7 +76,7 @@ func BuildServices(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) 
 		return nil, fmt.Errorf("init admin auth: %w", err)
 	}
 	mailSender := email.NewSMTPSender(cfg.Budgets.Alert.SMTP)
-	adminUserSvc := adminusersvc.NewService(queries, personalSvc, adminAuth, mailSender, cfg.Budgets.Alert.SMTP.From, nil)
+	adminUserSvc := adminusersvc.NewService(queries, personalSvc, adminAuth, mailSender, cfg.Budgets.Alert.SMTP.From, cfg.Public.BaseURL, nil)
 	keyLimitOverrides, err := runtimeratelimits.LoadKeyOverrides(ctx, queries)
 	if err != nil {
 		return nil, fmt.Errorf("load api key rate limits: %w", err)

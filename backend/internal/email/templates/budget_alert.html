@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Budget Alert</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;font-family:Inter,Helvetica,Arial,sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#0f172a;padding:32px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:16px;border-collapse:collapse;box-shadow:0 12px 32px rgba(15,23,42,0.25);">
+            <tr>
+              <td style="padding:40px;">
+                <table width="100%" role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:#6366f1;font-weight:600;padding-bottom:16px;">Open Model Gateway</td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:26px;font-weight:700;color:#0f172a;padding-bottom:12px;">Budget Alert for {{ .TenantName }}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:15px;line-height:1.6;color:#475467;padding-bottom:16px;">
+                      {{ .TenantName }} triggered a <strong>{{ .LevelLabel }}</strong> budget event at {{ .Timestamp }}. Review the latest spend below and adjust routing or quotas as needed.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <span style='display:inline-block;padding:6px 16px;border-radius:999px;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;background:{{ if eq .LevelClass "warning" }}rgba(251,146,60,0.15){{ else }}rgba(248,113,113,0.15){{ end }};color:{{ if eq .LevelClass "warning" }}#c2410c{{ else }}#b91c1c{{ end }};'>
+                        {{ .LevelLabel }} Alert
+                      </span>
+                    </td>
+                  </tr>
+                </table>
+                <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;border-collapse:separate;border-spacing:16px 16px;">
+                  <tr>
+                    <td width="50%" style="background:#f9fafb;border:1px solid #e4e7ec;border-radius:12px;padding:18px;">
+                      <span style="display:block;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;margin-bottom:6px;">Current Spend</span>
+                      <strong style="font-size:20px;color:#0f172a;">{{ .CurrentSpend }}</strong>
+                    </td>
+                    <td width="50%" style="background:#f9fafb;border:1px solid #e4e7ec;border-radius:12px;padding:18px;">
+                      <span style="display:block;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;margin-bottom:6px;">Budget Limit</span>
+                      <strong style="font-size:20px;color:#0f172a;">{{ .BudgetLimit }}</strong>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td width="50%" style="background:#f9fafb;border:1px solid #e4e7ec;border-radius:12px;padding:18px;">
+                      <span style="display:block;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;margin-bottom:6px;">Warning Threshold</span>
+                      <strong style="font-size:20px;color:#0f172a;">{{ .WarningThreshold }}</strong>
+                    </td>
+                    <td width="50%" style="background:#f9fafb;border:1px solid #e4e7ec;border-radius:12px;padding:18px;">
+                      <span style="display:block;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;margin-bottom:6px;">Budget Reset</span>
+                      <strong style="font-size:20px;color:#0f172a;">{{ .BudgetReset }}</strong>
+                    </td>
+                  </tr>
+                </table>
+                <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+                  <tr>
+                    <td align="center">
+                      <a href="{{ .ManageLink }}" style="display:inline-block;padding:14px 40px;background:linear-gradient(135deg,#4338ca,#6366f1);color:#ffffff;text-decoration:none;border-radius:12px;font-weight:600;font-size:16px;letter-spacing:-0.01em;box-shadow:0 8px 20px rgba(79,70,229,0.35);">
+                        Login to review
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:0 32px 32px 32px;">
+                <p style="margin:0;font-size:13px;color:#97a3b6;text-align:center;">
+                  You are receiving this email because budget alerts are enabled. Update alert recipients in the admin console if needed.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

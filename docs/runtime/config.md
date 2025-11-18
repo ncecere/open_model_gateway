@@ -84,6 +84,10 @@ Defaults used when a tenant/key has no custom overrides (persisted in `rate_limi
 | `alert.smtp.host` / `port` / `username` / `password` / `from` / `use_tls` / `skip_tls_verify` / `connect_timeout` | Configure SMTP delivery. Set `host` + `from` (and optionally credentials) to enable email alerts. |
 | `alert.webhook.timeout`, `alert.webhook.max_retries` | Control JSON webhook delivery behavior (per-URL timeout + retry count). |
 
+## Public (`public.base_url`)
+
+Set the externally reachable hostname for the gateway (for example `https://gateway.example.com`). HTML email templates (budget alerts, invites, etc.) use this to build CTA links so recipients land on the correct UI even when the request that triggered the email originated behind a proxy. Leave blank to fall back to the request `BaseURL`, but background jobs and invite flows work best when this value is configured.
+
 ## Reporting (`reporting.timezone`)
 
 Single IANA timezone used for aggregating usage dashboards. Default `UTC`.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,9 +14,10 @@ import (
 
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
+	"github.com/ncecere/open_model_gateway/backend/internal/email"
 	batchsvc "github.com/ncecere/open_model_gateway/backend/internal/services/batches"
 	filesvc "github.com/ncecere/open_model_gateway/backend/internal/services/files"
-	"github.com/ncecere/open_model_gateway/backend/internal/services/usagepipeline"
+	usagepipeline "github.com/ncecere/open_model_gateway/backend/internal/services/usagepipeline"
 )
 
 const (
@@ -160,25 +161,112 @@ func (s *Service) UpdateAlertSettings(ctx context.Context, req AlertSettings, up
 	return req, nil
 }
 
-func (s *Service) SendAlertTestEmail(ctx context.Context, to string) error {
+func (s *Service) SendTestEmail(ctx context.Context, to string, kind string) error {
 	to = strings.TrimSpace(to)
 	if to == "" {
 		return errors.New("email required")
 	}
-	sink := usagepipeline.NewEmailSink(s.cfg.Budgets.Alert.SMTP, slog.Default())
+	emailType := strings.ToLower(strings.TrimSpace(kind))
+	if emailType == "" {
+		emailType = "budget"
+	}
+	switch emailType {
+	case "invite":
+		return s.sendSampleInvite(ctx, to)
+	case "smtp", "transport":
+		return s.sendSampleTransport(ctx, to)
+	case "budget":
+		return s.sendSampleBudgetAlert(ctx, to)
+	default:
+		return fmt.Errorf("unknown test email type %q", kind)
+	}
+}
+
+func (s *Service) sendSampleBudgetAlert(ctx context.Context, to string) error {
+	sink := usagepipeline.NewEmailSink(s.cfg.Budgets.Alert.SMTP, s.cfg.Public.BaseURL, nil)
 	if sink == nil {
 		return errors.New("smtp not configured")
 	}
 	payload := usagepipeline.AlertPayload{
-		TenantID:  uuid.Nil,
-		Level:     usagepipeline.AlertLevelWarning,
-		Status:    usagepipeline.BudgetStatus{},
-		Channels:  usagepipeline.AlertChannels{Emails: []string{to}},
-		Timestamp: time.Now().UTC(),
+		TenantID:         uuid.Nil,
+		TenantName:       "Sample Tenant",
+		Level:            usagepipeline.AlertLevelWarning,
+		Status:           usagepipeline.BudgetStatus{TotalCostCents: 4500, LimitCents: 10000, Warning: true},
+		Channels:         usagepipeline.AlertChannels{Emails: []string{to}},
+		Timestamp:        time.Now().UTC(),
+		WarningThreshold: 0.8,
+		BudgetReset:      time.Now().Add(24 * time.Hour),
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	return sink.Notify(ctx, payload)
+}
+
+func (s *Service) sendSampleInvite(ctx context.Context, to string) error {
+	sender, err := s.smtpSender()
+	if err != nil {
+		return err
+	}
+	base := strings.TrimRight(strings.TrimSpace(s.cfg.Public.BaseURL), "/")
+	if base == "" {
+		return errors.New("public.base_url must be configured to send invite previews")
+	}
+	portal := fmt.Sprintf("%s/admin/ui", base)
+	htmlBody, err := email.RenderAdminInviteTemplate(email.AdminInviteTemplateData{
+		RecipientName: "Sample User",
+		PortalURL:     portal,
+	})
+	if err != nil {
+		return err
+	}
+	plain := fmt.Sprintf(
+		"Hi Sample User,\n\nYou've been invited to Open Model Gateway. Visit %s to accept the invite and sign in with your organization's SSO provider or assigned credentials.\n",
+		portal,
+	)
+	msg := email.Message{
+		From:     strings.TrimSpace(s.cfg.Budgets.Alert.SMTP.From),
+		To:       []string{to},
+		Subject:  "You're invited to Open Model Gateway",
+		Body:     plain,
+		HTMLBody: htmlBody,
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return sender.Send(ctx, msg)
+}
+
+func (s *Service) sendSampleTransport(ctx context.Context, to string) error {
+	sender, err := s.smtpSender()
+	if err != nil {
+		return err
+	}
+	ts := time.Now().UTC()
+	htmlBody, err := email.RenderTestEmailTemplate(email.TestEmailTemplateData{
+		Recipient: to,
+		Timestamp: ts.Format("Jan 02, 2006 15:04 MST"),
+	})
+	if err != nil {
+		return err
+	}
+	plain := fmt.Sprintf("SMTP test email\n\nRecipient: %s\nDispatched at: %s\n", to, ts.Format(time.RFC3339))
+	msg := email.Message{
+		From:     strings.TrimSpace(s.cfg.Budgets.Alert.SMTP.From),
+		To:       []string{to},
+		Subject:  "Open Model Gateway SMTP Test",
+		Body:     plain,
+		HTMLBody: htmlBody,
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return sender.Send(ctx, msg)
+}
+
+func (s *Service) smtpSender() (email.Sender, error) {
+	sender := email.NewSMTPSender(s.cfg.Budgets.Alert.SMTP)
+	if sender == nil {
+		return nil, errors.New("smtp not configured")
+	}
+	return sender, nil
 }
 
 func toPgUUID(id uuid.UUID) pgtype.UUID {

@@ -59,6 +59,9 @@ budgets:
       timeout: 5s
       max_retries: 3
 
+public:
+  base_url: "https://gateway.example.com"
+
 reporting:
   timezone: "UTC"
 

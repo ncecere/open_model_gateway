@@ -51,6 +51,12 @@ const REFRESH_OPTIONS = [
   { value: "rolling_30d", label: "Rolling 30 days" },
 ];
 
+const TEST_EMAIL_OPTIONS = [
+  { value: "budget", label: "Budget alert" },
+  { value: "invite", label: "Invite preview" },
+  { value: "smtp", label: "Transport smoke test" },
+];
+
 export function SettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -287,6 +293,8 @@ export function SettingsPage() {
       });
     },
   });
+
+  const [testEmailType, setTestEmailType] = useState("budget");
 
   const testEmailMutation = useMutation({
     mutationFn: sendTestAlertEmail,
@@ -783,19 +791,43 @@ export function SettingsPage() {
           )}
           <div className="space-y-2 border-t pt-4">
             <Label htmlFor="test-email">Send test email</Label>
-            <div className="flex flex-col gap-2 md:flex-row">
-              <Input
-                id="test-email"
-                placeholder="alerts@example.com"
-                value={testEmail}
-                onChange={(event) => setTestEmail(event.target.value)}
-                className="md:flex-1"
-              />
+            <div className="flex flex-col gap-2 md:flex-row md:items-end">
+              <div className="space-y-2 md:flex-1">
+                <Label className="sr-only" htmlFor="test-email">
+                  Recipient email
+                </Label>
+                <Input
+                  id="test-email"
+                  placeholder="alerts@example.com"
+                  value={testEmail}
+                  onChange={(event) => setTestEmail(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2 md:w-56">
+                <Label htmlFor="test-email-type">Template</Label>
+                <Select value={testEmailType} onValueChange={setTestEmailType}>
+                  <SelectTrigger id="test-email-type">
+                    <SelectValue placeholder="Budget alert" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TEST_EMAIL_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 disabled={!testEmail || testEmailMutation.isPending}
-                onClick={() => testEmailMutation.mutate(testEmail)}
+                onClick={() =>
+                  testEmailMutation.mutate({
+                    email: testEmail,
+                    type: testEmailType,
+                  })
+                }
               >
                 {testEmailMutation.isPending ? "Sending…" : "Send test"}
               </Button>

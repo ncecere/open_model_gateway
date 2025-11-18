@@ -64,6 +64,11 @@ export async function updateAlertSettings(payload: AlertSettingsPayload) {
   return data;
 }
 
-export async function sendTestAlertEmail(email: string) {
-  await api.post("/settings/alerts/test-email", { email });
+export interface SendTestEmailPayload {
+  email: string;
+  type?: string;
+}
+
+export async function sendTestAlertEmail(payload: SendTestEmailPayload) {
+  await api.post("/settings/alerts/test-email", payload);
 }

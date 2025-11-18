@@ -22,6 +22,7 @@ type Config struct {
 	Redis         RedisConfig         `mapstructure:"redis"`
 	RateLimits    RateLimitConfig     `mapstructure:"rate_limits"`
 	Budgets       BudgetConfig        `mapstructure:"budgets"`
+	Public        PublicConfig        `mapstructure:"public"`
 	Reporting     ReportingConfig     `mapstructure:"reporting"`
 	Providers     ProviderConfig      `mapstructure:"providers"`
 	Files         FilesConfig         `mapstructure:"files"`
@@ -114,6 +115,10 @@ type BudgetAlertConfig struct {
 	Cooldown time.Duration `mapstructure:"cooldown"`
 	SMTP     SMTPConfig    `mapstructure:"smtp"`
 	Webhook  WebhookConfig `mapstructure:"webhook"`
+}
+
+type PublicConfig struct {
+	BaseURL string `mapstructure:"base_url"`
 }
 
 type SMTPConfig struct {
@@ -456,6 +461,8 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	c.Public.BaseURL = strings.TrimSpace(c.Public.BaseURL)
+
 	for i, entry := range c.ModelCatalog {
 		if entry.Alias == "" {
 			return fmt.Errorf("model_catalog[%d].alias must be provided", i)
@@ -607,6 +614,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("budgets.alert.smtp.connect_timeout", "5s")
 	v.SetDefault("budgets.alert.webhook.timeout", "5s")
 	v.SetDefault("budgets.alert.webhook.max_retries", 3)
+	v.SetDefault("public.base_url", "")
 
 	v.SetDefault("retention.metadata_days", 30)
 	v.SetDefault("retention.zero_retention", false)

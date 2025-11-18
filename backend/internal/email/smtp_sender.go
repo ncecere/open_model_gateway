@@ -13,7 +13,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 )
 
-// SMTPSender delivers plain-text emails using the configured SMTP server.
+// SMTPSender delivers emails using the configured SMTP server.
 type SMTPSender struct {
 	cfg config.SMTPConfig
 }
@@ -42,10 +42,11 @@ func (s *SMTPSender) Send(ctx context.Context, msg Message) error {
 		return nil
 	}
 	wireMsg := buildRFC822Message(Message{
-		From:    s.cfg.From,
-		To:      recipients,
-		Subject: msg.Subject,
-		Body:    msg.Body,
+		From:     s.cfg.From,
+		To:       recipients,
+		Subject:  msg.Subject,
+		Body:     msg.Body,
+		HTMLBody: msg.HTMLBody,
 	})
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 	client, err := s.newClient(ctx, addr)
@@ -123,10 +124,29 @@ func buildRFC822Message(msg Message) []byte {
 		buf.WriteString(fmt.Sprintf("Subject: %s\r\n", msg.Subject))
 	}
 	buf.WriteString("MIME-Version: 1.0\r\n")
+	if strings.TrimSpace(msg.HTMLBody) != "" {
+		boundary := fmt.Sprintf("omg-%d", time.Now().UnixNano())
+		buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundary))
+		buf.WriteString("\r\n")
+		buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+		buf.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
+		buf.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+		if strings.TrimSpace(msg.Body) != "" {
+			buf.WriteString(normalizeNewlines(msg.Body))
+		}
+		buf.WriteString("\r\n")
+		buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+		buf.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
+		buf.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+		buf.WriteString(msg.HTMLBody)
+		buf.WriteString("\r\n")
+		buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+		return buf.Bytes()
+	}
 	buf.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
 	buf.WriteString("Content-Transfer-Encoding: 8bit\r\n")
 	buf.WriteString("\r\n")
-	buf.WriteString(strings.ReplaceAll(msg.Body, "\r\n", "\n"))
+	buf.WriteString(normalizeNewlines(msg.Body))
 	buf.WriteString("\r\n")
 	return buf.Bytes()
 }
@@ -141,4 +161,8 @@ func normalizeAddresses(values []string) []string {
 		out = append(out, trimmed)
 	}
 	return out
+}
+
+func normalizeNewlines(body string) string {
+	return strings.ReplaceAll(body, "\r\n", "\n")
 }

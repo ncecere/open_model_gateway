@@ -68,14 +68,14 @@ CREATE TABLE model_catalog (
 );
 
 CREATE TABLE default_models (
-    alias TEXT PRIMARY KEY REFERENCES model_catalog(alias),
+    alias TEXT PRIMARY KEY REFERENCES model_catalog(alias) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE routes (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    alias           TEXT NOT NULL REFERENCES model_catalog(alias),
+    alias           TEXT NOT NULL REFERENCES model_catalog(alias) ON DELETE CASCADE,
     provider        TEXT NOT NULL,
     provider_model  TEXT NOT NULL,
     weight          INT NOT NULL DEFAULT 100,
@@ -92,7 +92,7 @@ CREATE INDEX idx_routes_tenant_alias ON routes(tenant_id, alias);
 
 CREATE TABLE tenant_models (
     tenant_id  UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    alias      TEXT NOT NULL REFERENCES model_catalog(alias),
+    alias      TEXT NOT NULL REFERENCES model_catalog(alias) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (tenant_id, alias)
 );

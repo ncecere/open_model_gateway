@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [Unreleased]
+### Added
+- Created a full `Code_Examples/` suite with shared README, curl/Python/TypeScript samples for chat, embeddings, images, files, and batches, plus reusable JSONL/data assets so operators can demo the OpenAI-compatible API surface instantly.
+
+### Fixed
+- Made the `20251113113000_model_catalog_model_type` migration idempotent so fresh databases no longer fail when the column already exists.
+- Updated all `model_catalog.alias` foreign keys (tenant models, default models, and routes) to cascade deletes, eliminating the admin UI 500 errors when removing config-seeded catalog entries.
+
 ## [v0.1.13] - 2025-11-19
 ### Added
 - Introduced HTML email templates (budget alerts, admin invites, SMTP smoke test) with inline styles/table layout, reusable typography, and buttons that honor the configured `base_url` so links now point at the correct router instance.

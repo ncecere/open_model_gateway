@@ -16,7 +16,7 @@ ALTER TABLE api_keys
         CHECK ((kind = 'personal' AND owner_user_id IS NOT NULL) OR (kind = 'service'));
 
 CREATE TABLE IF NOT EXISTS default_models (
-    alias TEXT PRIMARY KEY REFERENCES model_catalog(alias),
+    alias TEXT PRIMARY KEY REFERENCES model_catalog(alias) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

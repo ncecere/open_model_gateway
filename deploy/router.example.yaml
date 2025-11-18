@@ -43,7 +43,8 @@ budgets:
   refresh_schedule: "calendar_month"
   alert:
     enabled: true
-    emails: []
+    emails:
+      - "ops@example.com"
     webhooks: []
     cooldown: "1h"
     smtp:
@@ -172,6 +173,7 @@ model_catalog:
     price_input: 0.04
     price_output: 0.08
     currency: "USD"
+    deployment: "gpt-image-1"
     metadata:
       openai_organization: ""
       description: "Full images API (generate/edit/variation)"
@@ -187,6 +189,7 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    deployment: "gpt-4o-mini-tts"
     metadata:
       audio_voice: "alloy"
       audio_format: "mp3"
@@ -203,6 +206,7 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    deployment: "gpt-4o-mini-transcribe"
     metadata:
       audio_formats: "json,verbose_json,diarized_json,text,srt,vtt"
       audio_timestamp_granularities: "word,segment"
@@ -222,6 +226,7 @@ model_catalog:
     currency: "USD"
     endpoint: "https://partners.example.com/v1"
     api_key: "PARTNER_IMAGE_KEY"
+    deployment: "gpt-image-1"
     metadata:
       base_url: "https://partners.example.com/v1"
       openai_organization: ""
@@ -284,6 +289,7 @@ model_catalog:
     price_input: 0.006
     price_output: 0.015
     currency: "USD"
+    deployment: "anthropic.claude-3-sonnet-20240229-v1:0"
     region: "us-west-2"
     metadata:
       aws_session_token: ""
@@ -298,6 +304,7 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    deployment: "amazon.titan-image-generator-v1"
     region: "us-west-2"
     weight: 100
     metadata:
@@ -318,6 +325,7 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    deployment: "stability.stable-diffusion-xl-v1"
     region: "us-west-2"
     weight: 100
     metadata:
@@ -337,6 +345,7 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    deployment: "imagen-3.0-generate-001"
     region: "us-central1"
     metadata:
       gcp_project_id: "vertex-project"
@@ -362,6 +371,7 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    deployment: "imagen-3.0-fast-generate-001"
     region: "us-central1"
     metadata:
       gcp_project_id: "vertex-project"
@@ -387,6 +397,8 @@ bootstrap:
   api_keys:
     - tenant: "demo"
       name: "demo-shared"
+      prefix: "demo"
+      secret: "demo-secret"
       scopes: ["chat", "embeddings", "images", "files", "batches"]
   memberships:
     - tenant: "demo"

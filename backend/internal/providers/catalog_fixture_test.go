@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,26 +78,26 @@ func TestCatalogFixtureBuildsRoutes(t *testing.T) {
 }
 
 func resolveConfigPath(relative string) (string, error) {
-	clean := filepath.Clean(relative)
-	for strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		clean = strings.TrimPrefix(clean, ".."+string(filepath.Separator))
+	if relative == "" {
+		return "", fmt.Errorf("empty config path")
 	}
-	candidates := []string{relative}
-	if clean != relative {
-		candidates = append(candidates, clean)
+	if filepath.IsAbs(relative) {
+		if _, err := os.Stat(relative); err == nil {
+			return relative, nil
+		}
+		return "", fmt.Errorf("absolute path not found: %s", relative)
 	}
 
-	wd, err := os.Getwd()
+	start, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	dir := wd
+
+	dir := start
 	for {
-		for _, candidate := range candidates {
-			path := filepath.Join(dir, candidate)
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
-			}
+		candidate := filepath.Clean(filepath.Join(dir, relative))
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -104,5 +105,6 @@ func resolveConfigPath(relative string) (string, error) {
 		}
 		dir = parent
 	}
-	return "", os.ErrNotExist
+
+	return "", fmt.Errorf("unable to resolve path %s from %s", relative, start)
 }

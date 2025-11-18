@@ -1,7 +1,7 @@
 {
   "generated_at": "2025-11-17T00:00:00Z",
   "source": "sample",
-  "config_path": "../deploy/router.local.yaml",
+  "config_path": "../deploy/router.example.yaml",
   "entries": [
     {
       "Alias": "openai-chat",

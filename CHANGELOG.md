@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [Unreleased]
+### Added
+- Introduced HTML email templates (budget alerts, admin invites, SMTP smoke test) with inline styles/table layout, reusable typography, and buttons that honor the configured `base_url` so links now point at the correct router instance.
+- Added admin test-email tooling that lets operators target the budget alert, invite, or SMTP smoke-test template directly from Settings without touching config files.
+- Budget alert emails now display tenant names, level labels, current spend, limit, warning threshold, and reset date (date-only) so recipients get human-readable context.
+- Added a shared `statusToneClass` helper so health/model badges share the same green/amber/red semantics across the dashboard, admin catalog, and user catalog.
+
+### Changed
+- Settings page now renders as proper tabs, each with its own card layout, and the Default models tab shows a structured table plus a searchable select instead of an unwieldy chip wall.
+- Admin dashboard health chips, model health rows, and admin model catalog rows now display provider icons and color-coded badges; the same styling powers the user portal catalog.
+- Budget meters across admin/users/user portals gained dynamic coloring (green → amber → red) so nearing/over-budget entities stand out instantly.
+
+### Fixed
+- Selecting different tabs on the Settings page no longer shows every settings panel at once thanks to the tab-content visibility fix.
+- Budget alert subject lines use tenant names instead of IDs, and the HTML templates removed redundant metadata to match the new visual design.
+
 ## [v0.1.12] - 2025-11-19
 ### Added
 - Introduced a shared SMTP-backed email sender under `backend/internal/email/` so budget alerts, admin invites, and future email flows reuse the same transport. Admin user creation now supports optional invite emails, and admins can trigger invites on demand via `/admin/users/:id/invite`.

@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { BudgetMeter } from "@/ui/kit/BudgetMeter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -184,6 +185,7 @@ export function UserTenantsPage() {
                   <tr className="text-left text-xs uppercase text-muted-foreground">
                     <th className="pb-3 font-medium">Name</th>
                     <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium">Budget</th>
                     <th className="pb-3 font-medium">Role</th>
                     <th className="pb-3 font-medium text-right">Actions</th>
                   </tr>
@@ -196,6 +198,13 @@ export function UserTenantsPage() {
                         <Badge variant={tenant.status === "active" ? "secondary" : "outline"}>
                           {tenant.status}
                         </Badge>
+                      </td>
+                      <td className="py-3">
+                        <BudgetMeter
+                          used={tenant.budget_used_usd ?? 0}
+                          limit={tenant.budget_limit_usd ?? 0}
+                          warningThreshold={tenant.warning_threshold ?? 0.8}
+                        />
                       </td>
                       <td className="py-3 capitalize">{tenant.role}</td>
                       <td className="py-3 text-right">

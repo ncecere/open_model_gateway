@@ -177,6 +177,11 @@ export function TenantDirectoryCard({
                       limit={
                         tenant.budget_limit_usd ?? budgetDefaults?.default_usd ?? 0
                       }
+                      warningThreshold={
+                        tenant.warning_threshold ??
+                        budgetDefaults?.warning_threshold_perc ??
+                        0.8
+                      }
                     />
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">

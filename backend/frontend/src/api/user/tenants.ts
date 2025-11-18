@@ -8,6 +8,9 @@ export type UserTenant = {
   joined_at: string;
   created_at: string;
   is_personal: boolean;
+  budget_used_usd?: number;
+  budget_limit_usd?: number;
+  warning_threshold?: number;
 };
 
 export type ListUserTenantsResponse = {

@@ -43,6 +43,15 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const REFRESH_OPTIONS = [
   { value: "calendar_month", label: "Calendar month" },
@@ -116,6 +125,7 @@ export function SettingsPage() {
   const [formEmails, setFormEmails] = useState("");
   const [formWebhooks, setFormWebhooks] = useState("");
   const [newDefaultModel, setNewDefaultModel] = useState("");
+  const [activeTab, setActiveTab] = useState("budgets");
   const [formRequestsPerMinute, setFormRequestsPerMinute] = useState("");
   const [formTokensPerMinute, setFormTokensPerMinute] = useState("");
   const [formParallelKey, setFormParallelKey] = useState("");
@@ -531,641 +541,711 @@ export function SettingsPage() {
 
       <Separator />
 
-      <Card>
-        <CardHeader>
-          <div className="space-y-1">
-            <CardTitle>Budget defaults</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {budgetMetadataDescription
-                ? `${budgetMetadataDescription} Detailed history view coming soon.`
-                : "Detailed history view coming soon. Save changes to capture metadata."}
-            </p>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {defaultsLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-6 w-1/3" />
-              <Skeleton className="h-6 w-1/2" />
-              <Skeleton className="h-6 w-2/3" />
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="default-budget">Default monthly budget (USD)</Label>
-                  <Input
-                    id="default-budget"
-                    value={formBudget}
-                    onChange={(event) => setFormBudget(event.target.value)}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="warning-threshold">Warning threshold (0-1)</Label>
-                  <Input
-                    id="warning-threshold"
-                    value={formThreshold}
-                    onChange={(event) => setFormThreshold(event.target.value)}
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Refresh schedule</Label>
-                  <Select
-                    value={formSchedule}
-                    onValueChange={setFormSchedule}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select schedule" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REFRESH_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="alert-cooldown">Alert cooldown (seconds)</Label>
-                  <Input
-                    id="alert-cooldown"
-                    value={formCooldown}
-                    onChange={(event) => setFormCooldown(event.target.value)}
-                    type="number"
-                    min="60"
-                  />
-                </div>
-                <div className="md:col-span-3 space-y-2">
-                  <Label>Alert emails (comma or line separated)</Label>
-                  <Textarea
-                    value={formEmails}
-                    onChange={(event) => setFormEmails(event.target.value)}
-                    placeholder="alerts@example.com, ops@example.com"
-                    rows={2}
-                  />
-                </div>
-                <div className="md:col-span-3 space-y-2">
-                  <Label>Alert webhooks (comma or line separated)</Label>
-                  <Textarea
-                    value={formWebhooks}
-                    onChange={(event) => setFormWebhooks(event.target.value)}
-                    placeholder="https://hooks.slack.com/..."
-                    rows={2}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleReset}
-                  disabled={!defaults}
-                >
-                  Reset
-                </Button>
-                <Button
-                  onClick={handleSave}
-                  disabled={updateMutation.isPending || defaultsLoading}
-                >
-                  {updateMutation.isPending ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </>
-          )}
-      </CardContent>
-      </Card>
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
+        <TabsList className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          <TabsTrigger value="budgets">Budgets</TabsTrigger>
+          <TabsTrigger value="alerts">Alerts</TabsTrigger>
+          <TabsTrigger value="rate-limits">Rate limits</TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger value="batches">Batches</TabsTrigger>
+          <TabsTrigger value="models">Default models</TabsTrigger>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Alert transports</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Manage SMTP and webhook delivery for budget alerts. Leave fields blank to disable a channel.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {alertSettingsQuery.isLoading ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="smtp-host">SMTP host</Label>
-                  <Input
-                    id="smtp-host"
-                    value={smtpHost}
-                    onChange={(event) => setSmtpHost(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smtp-port">SMTP port</Label>
-                  <Input
-                    id="smtp-port"
-                    type="number"
-                    value={smtpPort}
-                    onChange={(event) => setSmtpPort(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smtp-username">SMTP username</Label>
-                  <Input
-                    id="smtp-username"
-                    value={smtpUsername}
-                    onChange={(event) => setSmtpUsername(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smtp-password">SMTP password / token</Label>
-                  <Input
-                    id="smtp-password"
-                    type="password"
-                    value={smtpPassword}
-                    onChange={(event) => setSmtpPassword(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smtp-from">From address</Label>
-                  <Input
-                    id="smtp-from"
-                    value={smtpFrom}
-                    onChange={(event) => setSmtpFrom(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smtp-timeout">Connect timeout (seconds)</Label>
-                  <Input
-                    id="smtp-timeout"
-                    type="number"
-                    value={smtpTimeout}
-                    onChange={(event) => setSmtpTimeout(event.target.value)}
-                  />
-                </div>
+        <TabsContent value="budgets" forceMount>
+          <Card>
+            <CardHeader>
+              <div className="space-y-1">
+                <CardTitle>Budget defaults</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {budgetMetadataDescription
+                    ? `${budgetMetadataDescription} Detailed history view coming soon.`
+                    : "Detailed history view coming soon. Save changes to capture metadata."}
+                </p>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="text-sm font-medium">Use TLS / STARTTLS</p>
-                    <p className="text-xs text-muted-foreground">
-                      Attempts STARTTLS if supported by the server.
-                    </p>
-                  </div>
-                  <Switch checked={smtpUseTLS} onCheckedChange={setSmtpUseTLS} />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {defaultsLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-6 w-1/3" />
+                  <Skeleton className="h-6 w-1/2" />
+                  <Skeleton className="h-6 w-2/3" />
                 </div>
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="text-sm font-medium">Skip TLS verification</p>
-                    <p className="text-xs text-muted-foreground">
-                      Only enable for local/self-signed servers.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={smtpSkipVerify}
-                    onCheckedChange={setSmtpSkipVerify}
-                  />
-                </div>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="webhook-timeout">Webhook timeout (seconds)</Label>
-                  <Input
-                    id="webhook-timeout"
-                    type="number"
-                    value={webhookTimeout}
-                    onChange={(event) => setWebhookTimeout(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="webhook-retries">Webhook max retries</Label>
-                  <Input
-                    id="webhook-retries"
-                    type="number"
-                    value={webhookRetries}
-                    onChange={(event) => setWebhookRetries(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => alertSettingsQuery.refetch()}
-                  disabled={alertSettingsQuery.isLoading}
-                >
-                  Reset
-                </Button>
-                <Button
-                  onClick={() =>
-                    alertSettingsMutation.mutate({
-                      smtp: {
-                        host: smtpHost,
-                        port: Number(smtpPort) || 0,
-                        username: smtpUsername,
-                        password: smtpPassword,
-                        from: smtpFrom,
-                        use_tls: smtpUseTLS,
-                        skip_tls_verify: smtpSkipVerify,
-                        connect_timeout_seconds:
-                          Number(smtpTimeout) >= 0 ? Number(smtpTimeout) : 0,
-                      },
-                      webhook: {
-                        timeout_seconds:
-                          Number(webhookTimeout) >= 0 ? Number(webhookTimeout) : 0,
-                        max_retries:
-                          Number(webhookRetries) >= 0 ? Number(webhookRetries) : 0,
-                      },
-                    })
-                  }
-                  disabled={alertSettingsMutation.isPending}
-                >
-                  {alertSettingsMutation.isPending ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </>
-          )}
-          <div className="space-y-2 border-t pt-4">
-            <Label htmlFor="test-email">Send test email</Label>
-            <div className="flex flex-col gap-2 md:flex-row md:items-end">
-              <div className="space-y-2 md:flex-1">
-                <Label className="sr-only" htmlFor="test-email">
-                  Recipient email
-                </Label>
-                <Input
-                  id="test-email"
-                  placeholder="alerts@example.com"
-                  value={testEmail}
-                  onChange={(event) => setTestEmail(event.target.value)}
-                />
-              </div>
-              <div className="space-y-2 md:w-56">
-                <Label htmlFor="test-email-type">Template</Label>
-                <Select value={testEmailType} onValueChange={setTestEmailType}>
-                  <SelectTrigger id="test-email-type">
-                    <SelectValue placeholder="Budget alert" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TEST_EMAIL_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!testEmail || testEmailMutation.isPending}
-                onClick={() =>
-                  testEmailMutation.mutate({
-                    email: testEmail,
-                    type: testEmailType,
-                  })
-                }
-              >
-                {testEmailMutation.isPending ? "Sending…" : "Send test"}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Rate limit defaults</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Define the baseline RPM/TPM/parallel ceilings applied to every API key
-            and tenant unless an override is configured.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {rateLimitLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-6 w-1/3" />
-              <Skeleton className="h-6 w-1/2" />
-              <Skeleton className="h-6 w-2/3" />
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="requests-per-minute">Requests per minute</Label>
-                  <Input
-                    id="requests-per-minute"
-                    type="number"
-                    min="1"
-                    value={formRequestsPerMinute}
-                    onChange={(event) => setFormRequestsPerMinute(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="tokens-per-minute">Tokens per minute</Label>
-                  <Input
-                    id="tokens-per-minute"
-                    type="number"
-                    min="1"
-                    value={formTokensPerMinute}
-                    onChange={(event) => setFormTokensPerMinute(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="parallel-key">Parallel requests (per key)</Label>
-                  <Input
-                    id="parallel-key"
-                    type="number"
-                    min="1"
-                    value={formParallelKey}
-                    onChange={(event) => setFormParallelKey(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="parallel-tenant">Parallel requests (per tenant)</Label>
-                  <Input
-                    id="parallel-tenant"
-                    type="number"
-                    min="1"
-                    value={formParallelTenant}
-                    onChange={(event) => setFormParallelTenant(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleRateLimitReset}
-                  disabled={!rateLimitDefaults}
-                >
-                  Reset
-                </Button>
-                <Button
-                  onClick={handleRateLimitSave}
-                  disabled={rateLimitMutation.isPending || rateLimitLoading}
-                >
-                  {rateLimitMutation.isPending ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>File uploads</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Define the platform-wide guardrails for file uploads used by batch
-            jobs and fine-tuning workflows.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {fileSettingsLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-6 w-1/3" />
-              <Skeleton className="h-6 w-1/2" />
-              <Skeleton className="h-6 w-2/3" />
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="file-max-size">Max upload size (MB)</Label>
-                  <Input
-                    id="file-max-size"
-                    type="number"
-                    min="1"
-                    value={fileMaxSize}
-                    onChange={(event) => setFileMaxSize(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="file-default-ttl">Default TTL (seconds)</Label>
-                  <Input
-                    id="file-default-ttl"
-                    type="number"
-                    min="60"
-                    value={fileDefaultTTL}
-                    onChange={(event) => setFileDefaultTTL(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="file-max-ttl">Max TTL (seconds)</Label>
-                  <Input
-                    id="file-max-ttl"
-                    type="number"
-                    min="60"
-                    value={fileMaxTTL}
-                    onChange={(event) => setFileMaxTTL(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleFileSettingsReset}
-                  disabled={!fileSettings}
-                >
-                  Reset
-                </Button>
-                <Button
-                  onClick={handleFileSettingsSave}
-                  disabled={fileSettingsMutation.isPending || fileSettingsLoading}
-                >
-                  {fileSettingsMutation.isPending ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Batch jobs</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Tune the max requests, concurrency, and retention window enforced
-            for /v1/batches submissions.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {batchSettingsLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-6 w-1/3" />
-              <Skeleton className="h-6 w-1/2" />
-              <Skeleton className="h-6 w-2/3" />
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="batch-max-requests">Max requests per batch</Label>
-                  <Input
-                    id="batch-max-requests"
-                    type="number"
-                    min="1"
-                    value={batchMaxRequests}
-                    onChange={(event) => setBatchMaxRequests(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="batch-max-concurrency">Max concurrency</Label>
-                  <Input
-                    id="batch-max-concurrency"
-                    type="number"
-                    min="1"
-                    value={batchMaxConcurrency}
-                    onChange={(event) => setBatchMaxConcurrency(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="batch-default-ttl">Default TTL (seconds)</Label>
-                  <Input
-                    id="batch-default-ttl"
-                    type="number"
-                    min="60"
-                    value={batchDefaultTTL}
-                    onChange={(event) => setBatchDefaultTTL(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="batch-max-ttl">Max TTL (seconds)</Label>
-                  <Input
-                    id="batch-max-ttl"
-                    type="number"
-                    min="60"
-                    value={batchMaxTTL}
-                    onChange={(event) => setBatchMaxTTL(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleBatchSettingsReset}
-                  disabled={!batchSettings}
-                >
-                  Reset
-                </Button>
-                <Button
-                  onClick={handleBatchSettingsSave}
-                  disabled={batchSettingsMutation.isPending || batchSettingsLoading}
-                >
-                  {batchSettingsMutation.isPending ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Default models</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            These aliases are granted automatically to every personal tenant.
-            Remove access here to hide models from users unless a tenant override
-            explicitly re-enables them.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {modelsLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-6 w-1/3" />
-              <Skeleton className="h-6 w-1/2" />
-              <Skeleton className="h-6 w-2/3" />
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap gap-2">
-                {defaultModels.length ? (
-                  defaultModels.map((alias) => {
-                    const meta = catalogByAlias.get(alias);
-                    const label = meta ? `${alias} · ${meta.provider}` : alias;
-                    return (
-                      <Badge
-                        key={alias}
-                        variant="secondary"
-                        className="flex items-center gap-2"
+              ) : (
+                <>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="default-budget">Default monthly budget (USD)</Label>
+                      <Input
+                        id="default-budget"
+                        value={formBudget}
+                        onChange={(event) => setFormBudget(event.target.value)}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="warning-threshold">Warning threshold (0-1)</Label>
+                      <Input
+                        id="warning-threshold"
+                        value={formThreshold}
+                        onChange={(event) => setFormThreshold(event.target.value)}
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Refresh schedule</Label>
+                      <Select
+                        value={formSchedule}
+                        onValueChange={setFormSchedule}
                       >
-                        <span>{label}</span>
-                        <button
-                          type="button"
-                          className="rounded-full p-0.5 hover:text-destructive focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-                          onClick={() => handleRemoveModel(alias)}
-                          disabled={removeModelMutation.isPending}
-                          aria-label={`Remove ${alias}`}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    );
-                  })
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No default models selected yet.
-                  </p>
-                )}
-              </div>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select schedule" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REFRESH_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="alert-cooldown">Alert cooldown (seconds)</Label>
+                      <Input
+                        id="alert-cooldown"
+                        value={formCooldown}
+                        onChange={(event) => setFormCooldown(event.target.value)}
+                        type="number"
+                        min="60"
+                      />
+                    </div>
+                    <div className="md:col-span-3 space-y-2">
+                      <Label>Alert emails (comma or line separated)</Label>
+                      <Textarea
+                        value={formEmails}
+                        onChange={(event) => setFormEmails(event.target.value)}
+                        placeholder="alerts@example.com, ops@example.com"
+                        rows={2}
+                      />
+                    </div>
+                    <div className="md:col-span-3 space-y-2">
+                      <Label>Alert webhooks (comma or line separated)</Label>
+                      <Textarea
+                        value={formWebhooks}
+                        onChange={(event) => setFormWebhooks(event.target.value)}
+                        placeholder="https://hooks.slack.com/..."
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleReset}
+                      disabled={!defaults}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={handleSave}
+                      disabled={updateMutation.isPending || defaultsLoading}
+                    >
+                      {updateMutation.isPending ? "Saving…" : "Save changes"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-              <div className="flex flex-col gap-3 md:flex-row md:items-end">
-                <div className="md:w-96 space-y-2">
-                  <Label htmlFor="default-model-select">Add model</Label>
-                  <Select
-                    value={newDefaultModel}
-                    onValueChange={setNewDefaultModel}
-                    disabled={availableModelOptions.length === 0 || addModelMutation.isPending}
+        <TabsContent value="alerts" forceMount>
+          <Card>
+            <CardHeader>
+              <CardTitle>Alert transports</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Manage SMTP and webhook delivery for budget alerts. Leave fields blank to disable a channel.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {alertSettingsQuery.isLoading ? (
+                <Skeleton className="h-40 w-full" />
+              ) : (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="smtp-host">SMTP host</Label>
+                      <Input
+                        id="smtp-host"
+                        value={smtpHost}
+                        onChange={(event) => setSmtpHost(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="smtp-port">SMTP port</Label>
+                      <Input
+                        id="smtp-port"
+                        type="number"
+                        value={smtpPort}
+                        onChange={(event) => setSmtpPort(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="smtp-username">SMTP username</Label>
+                      <Input
+                        id="smtp-username"
+                        value={smtpUsername}
+                        onChange={(event) => setSmtpUsername(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="smtp-password">SMTP password / token</Label>
+                      <Input
+                        id="smtp-password"
+                        type="password"
+                        value={smtpPassword}
+                        onChange={(event) => setSmtpPassword(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="smtp-from">From address</Label>
+                      <Input
+                        id="smtp-from"
+                        value={smtpFrom}
+                        onChange={(event) => setSmtpFrom(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="smtp-timeout">Connect timeout (seconds)</Label>
+                      <Input
+                        id="smtp-timeout"
+                        type="number"
+                        value={smtpTimeout}
+                        onChange={(event) => setSmtpTimeout(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="text-sm font-medium">Use TLS / STARTTLS</p>
+                        <p className="text-xs text-muted-foreground">
+                          Attempts STARTTLS if supported by the server.
+                        </p>
+                      </div>
+                      <Switch checked={smtpUseTLS} onCheckedChange={setSmtpUseTLS} />
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="text-sm font-medium">Skip TLS verification</p>
+                        <p className="text-xs text-muted-foreground">
+                          Only enable for local/self-signed servers.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={smtpSkipVerify}
+                        onCheckedChange={setSmtpSkipVerify}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="webhook-timeout">Webhook timeout (seconds)</Label>
+                      <Input
+                        id="webhook-timeout"
+                        type="number"
+                        value={webhookTimeout}
+                        onChange={(event) => setWebhookTimeout(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="webhook-retries">Webhook max retries</Label>
+                      <Input
+                        id="webhook-retries"
+                        type="number"
+                        value={webhookRetries}
+                        onChange={(event) => setWebhookRetries(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => alertSettingsQuery.refetch()}
+                      disabled={alertSettingsQuery.isLoading}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={() =>
+                        alertSettingsMutation.mutate({
+                          smtp: {
+                            host: smtpHost,
+                            port: Number(smtpPort) || 0,
+                            username: smtpUsername,
+                            password: smtpPassword,
+                            from: smtpFrom,
+                            use_tls: smtpUseTLS,
+                            skip_tls_verify: smtpSkipVerify,
+                            connect_timeout_seconds:
+                              Number(smtpTimeout) >= 0 ? Number(smtpTimeout) : 0,
+                          },
+                          webhook: {
+                            timeout_seconds:
+                              Number(webhookTimeout) >= 0 ? Number(webhookTimeout) : 0,
+                            max_retries:
+                              Number(webhookRetries) >= 0 ? Number(webhookRetries) : 0,
+                          },
+                        })
+                      }
+                      disabled={alertSettingsMutation.isPending}
+                    >
+                      {alertSettingsMutation.isPending ? "Saving…" : "Save changes"}
+                    </Button>
+                  </div>
+                </>
+              )}
+              <div className="space-y-2 border-t pt-4">
+                <Label htmlFor="test-email">Send test email</Label>
+                <div className="flex flex-col gap-2 md:flex-row md:items-end">
+                  <div className="space-y-2 md:flex-1">
+                    <Label className="sr-only" htmlFor="test-email">
+                      Recipient email
+                    </Label>
+                    <Input
+                      id="test-email"
+                      placeholder="alerts@example.com"
+                      value={testEmail}
+                      onChange={(event) => setTestEmail(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2 md:w-56">
+                    <Label htmlFor="test-email-type">Template</Label>
+                    <Select value={testEmailType} onValueChange={setTestEmailType}>
+                      <SelectTrigger id="test-email-type">
+                        <SelectValue placeholder="Budget alert" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TEST_EMAIL_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!testEmail || testEmailMutation.isPending}
+                    onClick={() =>
+                      testEmailMutation.mutate({
+                        email: testEmail,
+                        type: testEmailType,
+                      })
+                    }
                   >
-                    <SelectTrigger id="default-model-select">
-                      <SelectValue placeholder={availableModelOptions.length ? "Select model" : "All enabled models already granted"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableModelOptions.map((entry) => (
-                        <SelectItem key={entry.alias} value={entry.alias}>
-                          {entry.alias} · {entry.provider}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    {testEmailMutation.isPending ? "Sending…" : "Send test"}
+                  </Button>
                 </div>
-                <Button
-                  onClick={handleAddModel}
-                  disabled={!newDefaultModel || addModelMutation.isPending}
-                >
-                  {addModelMutation.isPending ? "Adding…" : "Add model"}
-                </Button>
               </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Budget workflow</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>
-            Tenant budgets, warning thresholds, alert channels, and model access
-            policies are configured per-tenant from the Tenants page. Those
-            values are persisted in Postgres and enforced by the router on every
-            request.
-          </p>
-          <p>
-            Defaults shown above come from the active configuration and provide
-            the fallback when a tenant does not have its own override.
-          </p>
-          <p>
-            Looking for observability hooks or advanced provider knobs? Those
-            settings still live in configuration for now and will gain UI
-            controls in a future iteration.
-          </p>
-        </CardContent>
-      </Card>
+        <TabsContent value="rate-limits" forceMount>
+          <Card>
+            <CardHeader>
+              <CardTitle>Rate limit defaults</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Define the baseline RPM/TPM/parallel ceilings applied to every API key
+                and tenant unless an override is configured.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {rateLimitLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-6 w-1/3" />
+                  <Skeleton className="h-6 w-1/2" />
+                  <Skeleton className="h-6 w-2/3" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="requests-per-minute">Requests per minute</Label>
+                      <Input
+                        id="requests-per-minute"
+                        type="number"
+                        min="1"
+                        value={formRequestsPerMinute}
+                        onChange={(event) => setFormRequestsPerMinute(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tokens-per-minute">Tokens per minute</Label>
+                      <Input
+                        id="tokens-per-minute"
+                        type="number"
+                        min="1"
+                        value={formTokensPerMinute}
+                        onChange={(event) => setFormTokensPerMinute(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="parallel-key">Parallel requests (per key)</Label>
+                      <Input
+                        id="parallel-key"
+                        type="number"
+                        min="1"
+                        value={formParallelKey}
+                        onChange={(event) => setFormParallelKey(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="parallel-tenant">Parallel requests (per tenant)</Label>
+                      <Input
+                        id="parallel-tenant"
+                        type="number"
+                        min="1"
+                        value={formParallelTenant}
+                        onChange={(event) => setFormParallelTenant(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleRateLimitReset}
+                      disabled={!rateLimitDefaults}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={handleRateLimitSave}
+                      disabled={rateLimitMutation.isPending || rateLimitLoading}
+                    >
+                      {rateLimitMutation.isPending ? "Saving…" : "Save changes"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="files" forceMount>
+          <Card>
+            <CardHeader>
+              <CardTitle>File uploads</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Define the platform-wide guardrails for file uploads used by batch
+                jobs and fine-tuning workflows.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {fileSettingsLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-6 w-1/3" />
+                  <Skeleton className="h-6 w-1/2" />
+                  <Skeleton className="h-6 w-2/3" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="file-max-size">Max upload size (MB)</Label>
+                      <Input
+                        id="file-max-size"
+                        type="number"
+                        min="1"
+                        value={fileMaxSize}
+                        onChange={(event) => setFileMaxSize(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="file-default-ttl">Default TTL (seconds)</Label>
+                      <Input
+                        id="file-default-ttl"
+                        type="number"
+                        min="60"
+                        value={fileDefaultTTL}
+                        onChange={(event) => setFileDefaultTTL(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="file-max-ttl">Max TTL (seconds)</Label>
+                      <Input
+                        id="file-max-ttl"
+                        type="number"
+                        min="60"
+                        value={fileMaxTTL}
+                        onChange={(event) => setFileMaxTTL(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleFileSettingsReset}
+                      disabled={!fileSettings}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={handleFileSettingsSave}
+                      disabled={fileSettingsMutation.isPending || fileSettingsLoading}
+                    >
+                      {fileSettingsMutation.isPending ? "Saving…" : "Save changes"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="batches" forceMount>
+          <Card>
+            <CardHeader>
+              <CardTitle>Batch jobs</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Tune the max requests, concurrency, and retention window enforced
+                for /v1/batches submissions.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {batchSettingsLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-6 w-1/3" />
+                  <Skeleton className="h-6 w-1/2" />
+                  <Skeleton className="h-6 w-2/3" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="batch-max-requests">Max requests per batch</Label>
+                      <Input
+                        id="batch-max-requests"
+                        type="number"
+                        min="1"
+                        value={batchMaxRequests}
+                        onChange={(event) => setBatchMaxRequests(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="batch-max-concurrency">Max concurrency</Label>
+                      <Input
+                        id="batch-max-concurrency"
+                        type="number"
+                        min="1"
+                        value={batchMaxConcurrency}
+                        onChange={(event) => setBatchMaxConcurrency(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="batch-default-ttl">Default TTL (seconds)</Label>
+                      <Input
+                        id="batch-default-ttl"
+                        type="number"
+                        min="60"
+                        value={batchDefaultTTL}
+                        onChange={(event) => setBatchDefaultTTL(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="batch-max-ttl">Max TTL (seconds)</Label>
+                      <Input
+                        id="batch-max-ttl"
+                        type="number"
+                        min="60"
+                        value={batchMaxTTL}
+                        onChange={(event) => setBatchMaxTTL(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleBatchSettingsReset}
+                      disabled={!batchSettings}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={handleBatchSettingsSave}
+                      disabled={batchSettingsMutation.isPending || batchSettingsLoading}
+                    >
+                      {batchSettingsMutation.isPending ? "Saving…" : "Save changes"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="models" forceMount>
+          <Card>
+            <CardHeader>
+              <CardTitle>Default models</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                These aliases are granted automatically to every personal tenant.
+                Remove access here to hide models from users unless a tenant override explicitly re-enables them.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {modelsLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-6 w-1/3" />
+                  <Skeleton className="h-6 w-1/2" />
+                  <Skeleton className="h-6 w-2/3" />
+                </div>
+              ) : (
+                <>
+                  {defaultModels.length ? (
+                    <div className="rounded-lg border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Alias</TableHead>
+                            <TableHead>Provider</TableHead>
+                            <TableHead>Provider model</TableHead>
+                            <TableHead className="w-20 text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {defaultModels.map((alias) => {
+                            const meta = catalogByAlias.get(alias);
+                            return (
+                              <TableRow key={alias}>
+                                <TableCell className="font-medium">
+                                  {alias}
+                                  {!meta ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      Missing catalog entry
+                                    </p>
+                                  ) : null}
+                                </TableCell>
+                                <TableCell>
+                                  {meta ? (
+                                    <Badge variant="secondary">{meta.provider}</Badge>
+                                  ) : (
+                                    <span className="text-sm text-muted-foreground">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {meta?.provider_model ?? "—"}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={`Remove ${alias}`}
+                                    onClick={() => handleRemoveModel(alias)}
+                                    disabled={removeModelMutation.isPending}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No default models selected yet.
+                    </p>
+                  )}
+
+                  <div className="space-y-3">
+                    <Label>Add model</Label>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                      <div className="md:w-80">
+                        <Select
+                          value={newDefaultModel}
+                          onValueChange={setNewDefaultModel}
+                          disabled={
+                            availableModelOptions.length === 0 || addModelMutation.isPending
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                availableModelOptions.length
+                                  ? "Select model"
+                                  : "All enabled models already granted"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableModelOptions.map((entry) => (
+                              <SelectItem key={entry.alias} value={entry.alias}>
+                                <div className="flex flex-col text-left">
+                                  <span className="font-medium">{entry.alias}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {entry.provider}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        onClick={handleAddModel}
+                        disabled={!newDefaultModel || addModelMutation.isPending}
+                      >
+                        {addModelMutation.isPending ? "Adding…" : "Add model"}
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="overview" forceMount>
+          <Card>
+            <CardHeader>
+              <CardTitle>Budget workflow</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                Tenant budgets, warning thresholds, alert channels, and model access
+                policies are configured per-tenant from the Tenants page. Those
+                values are persisted in Postgres and enforced by the router on every
+                request.
+              </p>
+              <p>
+                Defaults shown above come from the active configuration and provide
+                the fallback when a tenant does not have its own override.
+              </p>
+              <p>
+                Looking for observability hooks or advanced provider knobs? Those
+                settings still live in configuration for now and will gain UI
+                controls in a future iteration.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

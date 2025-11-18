@@ -940,6 +940,7 @@ function KeyTable({
                               <BudgetMeter
                                 used={budgetMeta.used}
                                 limit={budgetMeta.limit ?? 0}
+                                warningThreshold={budgetMeta.warning}
                               />
                               <p className="text-xs text-muted-foreground">
                                 Warn at {Math.round(budgetMeta.warning * 100)}%

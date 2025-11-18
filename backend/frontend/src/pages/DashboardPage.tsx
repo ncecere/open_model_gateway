@@ -16,6 +16,7 @@ import PostgresIcon from "@/assets/system/postgres.svg";
 import RedisIcon from "@/assets/system/redis.svg";
 import { useTheme } from "@/providers/ThemeProvider";
 import { getProviderIcon } from "@/features/models/provider-icons";
+import { statusToneClass, toneFromStatus } from "@/ui/kit/status";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -112,13 +113,11 @@ export function DashboardPage() {
                     <span>Global status</span>
                   </div>
                   <Badge
-                    variant={
-                      healthQuery.data?.status === "ok"
-                        ? "secondary"
-                        : "destructive"
-                    }
+                    className={statusToneClass(
+                      toneFromStatus(healthQuery.data?.status),
+                    )}
                   >
-                    {healthQuery.data?.status ?? "unknown"}
+                    {formatStatusLabel(healthQuery.data?.status)}
                   </Badge>
                 </div>
                 <div className="space-y-3">
@@ -193,13 +192,19 @@ function ModelHealthCard({
         ) : (
           <div className="space-y-3">
             {providerStats.map((group) => {
-              const variant =
-                group.enabled === group.total
-                  ? "secondary"
-                  : group.enabled === 0
-                    ? "destructive"
-                    : "outline";
               const icon = getProviderIcon(group.provider, theme);
+              const tone =
+                group.enabled === group.total
+                  ? "success"
+                  : group.enabled === 0
+                    ? "danger"
+                    : "warning";
+              const statusLabel =
+                group.enabled === group.total
+                  ? "Healthy"
+                  : group.enabled === 0
+                    ? "Offline"
+                    : "Partial";
               return (
                 <div key={group.provider} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -213,12 +218,8 @@ function ModelHealthCard({
                     </p>
                     </div>
                   </div>
-                  <Badge variant={variant}>
-                    {group.enabled === group.total
-                      ? "Healthy"
-                      : group.enabled === 0
-                        ? "Offline"
-                        : "Partial"}
+                  <Badge className={statusToneClass(tone)}>
+                    {statusLabel}
                   </Badge>
                 </div>
               );
@@ -273,24 +274,31 @@ function HealthStatusRow({
   icon?: React.ReactNode;
 }) {
   const status = check?.status ?? "unknown";
-  const variant =
-    status === "ok" ? "secondary" : status === "error" ? "destructive" : "outline";
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
         {icon ? <span className="text-muted-foreground">{icon}</span> : null}
         <div>
           <p className="font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground">
-          {check?.error
-            ? check.error
-            : check?.latency_ms != null
-              ? `${check.latency_ms} ms`
-              : "No samples"}
-        </p>
+          <p className="text-xs text-muted-foreground">
+            {check?.error
+              ? check.error
+              : check?.latency_ms != null
+                ? `${check.latency_ms} ms`
+                : "No samples"}
+          </p>
         </div>
       </div>
-      <Badge variant={variant}>{status}</Badge>
+      <Badge className={statusToneClass(toneFromStatus(status))}>
+        {formatStatusLabel(status)}
+      </Badge>
     </div>
   );
+}
+
+function formatStatusLabel(status?: string | null) {
+  if (!status) {
+    return "Unknown";
+  }
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }

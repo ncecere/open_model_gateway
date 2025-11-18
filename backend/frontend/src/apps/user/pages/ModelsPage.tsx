@@ -16,6 +16,7 @@ import { formatModelTypeLabel } from "@/features/models/types";
 import { listUserModels, type UserModel } from "@/api/user/models";
 import { useTheme } from "@/providers/ThemeProvider";
 import { getProviderIcon } from "@/features/models/provider-icons";
+import { statusToneClass, toneFromStatus } from "@/ui/kit/status";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -131,7 +132,7 @@ function ModelTable({
               {formatLatency(model.avg_latency_ms)}
             </TableCell>
               <TableCell>
-                <Badge className={statusClassName(model.status)}>
+                <Badge className={statusToneClass(toneFromStatus(model.status))}>
                   {formatStatusLabel(model.status)}
                 </Badge>
               </TableCell>
@@ -158,20 +159,6 @@ function formatLatency(ms?: number) {
     return `${(ms / 1000).toFixed(2)} s`;
   }
   return `${ms.toFixed(0)} ms`;
-}
-
-function statusClassName(status: string) {
-  switch (status) {
-    case "online":
-      return "bg-emerald-500 text-white hover:bg-emerald-500";
-    case "degraded":
-      return "bg-amber-500/80 text-black hover:bg-amber-500";
-    case "offline":
-    case "disabled":
-      return "bg-destructive text-destructive-foreground hover:bg-destructive";
-    default:
-      return "bg-muted text-foreground";
-  }
 }
 
 function formatStatusLabel(status: string) {

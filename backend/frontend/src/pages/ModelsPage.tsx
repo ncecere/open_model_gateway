@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { useTheme } from "@/providers/ThemeProvider";
 import {
   ModelEditorDialog,
   ModelFilters,
@@ -38,6 +39,7 @@ const CATALOG_QUERY_KEY = ["model-catalog"] as const;
 export function ModelsPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { resolvedTheme } = useTheme();
 
   const catalogQuery = useQuery({
     queryKey: CATALOG_QUERY_KEY,
@@ -202,6 +204,7 @@ export function ModelsPage() {
             statuses={statusMap}
             onEdit={openEdit}
             onDelete={setDeleteTarget}
+            theme={resolvedTheme}
           />
         </CardContent>
       </Card>

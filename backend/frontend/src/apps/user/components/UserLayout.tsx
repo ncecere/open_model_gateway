@@ -166,7 +166,7 @@ function UserShell({
           </DropdownMenu>
         </header>
         <main className="flex-1 overflow-y-auto bg-muted/30 px-4 py-6 md:px-8">
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="mx-auto w-full max-w-6xl">
             <Outlet />
           </div>
         </main>

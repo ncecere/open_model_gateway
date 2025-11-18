@@ -20,6 +20,8 @@ import {
 import { Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import type { ModelCatalogEntry } from "@/api/model-catalog";
 import { formatModelTypeLabel } from "../types";
+import { getProviderIcon } from "@/features/models/provider-icons";
+import { statusToneClass, toneFromStatus } from "@/ui/kit/status";
 
 const currency = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -34,6 +36,7 @@ type ModelTableProps = {
   onEdit: (model: ModelCatalogEntry) => void;
   onDelete: (model: ModelCatalogEntry) => void;
   statuses?: Record<string, string>;
+  theme: "light" | "dark";
 };
 
 export function ModelTable({
@@ -43,6 +46,7 @@ export function ModelTable({
   onEdit,
   onDelete,
   statuses,
+  theme,
 }: ModelTableProps) {
   if (isLoading) {
     return (
@@ -88,16 +92,26 @@ export function ModelTable({
         {models.map((model) => {
           const status = statuses?.[model.alias]
             ?? (model.enabled ? "unknown" : "disabled");
+          const icon = getProviderIcon(model.provider, theme);
           return (
             <TableRow key={model.alias}>
-            <TableCell className="font-medium">
-              <div className="flex flex-col">
-                <span>{model.alias}</span>
-                <span className="text-xs text-muted-foreground">
-                  {model.enabled ? "enabled" : "disabled"}
-                </span>
-              </div>
-            </TableCell>
+              <TableCell className="font-medium">
+                <div className="flex items-center gap-3">
+                  {icon ? (
+                    <img
+                      src={icon}
+                      alt=""
+                      className="h-8 w-8 rounded bg-muted/40 p-1"
+                    />
+                  ) : null}
+                  <div className="flex flex-col">
+                    <span>{model.alias}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {model.provider}
+                    </span>
+                  </div>
+                </div>
+              </TableCell>
             <TableCell>
               <div className="flex flex-col">
                 <span>{model.provider}</span>
@@ -136,11 +150,11 @@ export function ModelTable({
                 )}
               </div>
             </TableCell>
-            <TableCell>
-              <Badge className={statusClassName(status)}>
-                {formatStatusLabel(status)}
-              </Badge>
-            </TableCell>
+              <TableCell>
+                <Badge className={statusToneClass(toneFromStatus(status))}>
+                  {formatStatusLabel(status)}
+                </Badge>
+              </TableCell>
             <TableCell className="text-right">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -169,20 +183,6 @@ export function ModelTable({
       </TableBody>
     </Table>
   );
-}
-
-function statusClassName(status: string) {
-  switch (status) {
-    case "online":
-      return "bg-emerald-500 text-white hover:bg-emerald-500";
-    case "degraded":
-      return "bg-amber-500/80 text-black hover:bg-amber-500";
-    case "offline":
-    case "disabled":
-      return "bg-destructive text-destructive-foreground hover:bg-destructive";
-    default:
-      return "bg-muted text-foreground";
-  }
 }
 
 function formatStatusLabel(status: string) {

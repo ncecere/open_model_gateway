@@ -155,7 +155,11 @@ export function UsersPage() {
       {
         header: "Budget",
         cell: (record: PersonalTenantRecord) => (
-          <BudgetMeter used={record.budget_used_usd ?? 0} limit={record.budget_limit_usd ?? 0} />
+          <BudgetMeter
+            used={record.budget_used_usd ?? 0}
+            limit={record.budget_limit_usd ?? 0}
+            warningThreshold={record.warning_threshold ?? 0.8}
+          />
         ),
         cellClassName: "min-w-[220px]",
       },
@@ -409,6 +413,7 @@ export function UsersPage() {
                     <BudgetMeter
                       used={selectedUser.budget_used_usd ?? 0}
                       limit={selectedUser.budget_limit_usd ?? 0}
+                      warningThreshold={selectedUser.warning_threshold ?? 0.8}
                     />
                   </CardContent>
                 </Card>

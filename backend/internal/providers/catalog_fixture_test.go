@@ -32,21 +32,11 @@ func TestCatalogFixtureBuildsRoutes(t *testing.T) {
 
 	configPath := payload.ConfigPath
 	if _, err := os.Stat(configPath); err != nil {
-		cwd, cwdErr := os.Getwd()
-		if cwdErr != nil {
-			t.Fatalf("working dir: %v", cwdErr)
+		path, resolveErr := resolveConfigPath(payload.ConfigPath)
+		if resolveErr != nil {
+			t.Fatalf("fixture config path not found: %s (%v)", payload.ConfigPath, resolveErr)
 		}
-		repoRoot := filepath.Clean(filepath.Join(cwd, "..", "..", ".."))
-		trimmed := payload.ConfigPath
-		for strings.HasPrefix(trimmed, "../") {
-			trimmed = strings.TrimPrefix(trimmed, "../")
-		}
-		relativeFromRoot := filepath.Clean(filepath.Join(repoRoot, trimmed))
-		if _, altErr := os.Stat(relativeFromRoot); altErr == nil {
-			configPath = relativeFromRoot
-		} else {
-			t.Fatalf("fixture config path not found: %s (%v)", payload.ConfigPath, err)
-		}
+		configPath = path
 	}
 
 	cfg, err := config.Load(config.Options{ConfigFile: configPath})
@@ -84,4 +74,35 @@ func TestCatalogFixtureBuildsRoutes(t *testing.T) {
 			}
 		}
 	}
+}
+
+func resolveConfigPath(relative string) (string, error) {
+	clean := filepath.Clean(relative)
+	for strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		clean = strings.TrimPrefix(clean, ".."+string(filepath.Separator))
+	}
+	candidates := []string{relative}
+	if clean != relative {
+		candidates = append(candidates, clean)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	dir := wd
+	for {
+		for _, candidate := range candidates {
+			path := filepath.Join(dir, candidate)
+			if _, err := os.Stat(path); err == nil {
+				return path, nil
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", os.ErrNotExist
 }

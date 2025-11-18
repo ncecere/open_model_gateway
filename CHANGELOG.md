@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.12] - 2025-11-19
 ### Added
 - Introduced a shared SMTP-backed email sender under `backend/internal/email/` so budget alerts, admin invites, and future email flows reuse the same transport. Admin user creation now supports optional invite emails, and admins can trigger invites on demand via `/admin/users/:id/invite`.
 - Added `/user/directory/users` plus user-portal invite suggestions so tenant admins can only add existing accounts. The UI shows live suggestions when typing, enforces “existing user only,” and drops the password/email invite UX from the user portal.

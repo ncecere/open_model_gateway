@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.14] - 2025-11-19
 ### Added
 - Created a full `Code_Examples/` suite with shared README, curl/Python/TypeScript samples for chat, embeddings, images, files, and batches, plus reusable JSONL/data assets so operators can demo the OpenAI-compatible API surface instantly.
 

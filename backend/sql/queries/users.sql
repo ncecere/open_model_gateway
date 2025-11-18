@@ -24,6 +24,16 @@ SELECT id, email, name, theme_preference
 FROM users
 WHERE id = ANY($1::uuid[]);
 
+-- name: SearchUsers :many
+SELECT *
+FROM users
+WHERE (
+    lower(email) LIKE lower($1) || '%'
+    OR lower(name) LIKE lower($1) || '%'
+)
+ORDER BY email
+LIMIT $2;
+
 -- name: UpdateUserLastLogin :exec
 UPDATE users
 SET last_login_at = NOW(),

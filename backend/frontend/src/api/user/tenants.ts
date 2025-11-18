@@ -64,7 +64,6 @@ export async function listTenantMemberships(tenantId: string) {
 export interface InviteTenantMemberPayload {
   email: string;
   role: MembershipRole;
-  password?: string;
 }
 
 export async function inviteTenantMember(

@@ -1,9 +1,14 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Eye, MoreHorizontal, RefreshCcw } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Eye, Mail, MoreHorizontal, RefreshCcw, UserPlus } from "lucide-react";
 
 import { type PersonalTenantRecord, type TenantStatus } from "@/api/tenants";
-import { getUserTenants, type UserTenantMembership } from "@/api/users";
+import {
+  createUser,
+  getUserTenants,
+  sendUserInvite,
+  type UserTenantMembership,
+} from "@/api/users";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -15,6 +20,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -37,19 +44,96 @@ import {
   usePersonalTenantsQuery,
   usePersonalTenantFilters,
 } from "@/features/users/hooks/usePersonalTenants";
+import { useToast } from "@/hooks/use-toast";
 
 export function UsersPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const personalTenantsQuery = usePersonalTenantsQuery();
   const records: PersonalTenantRecord[] = personalTenantsQuery.data?.personal_tenants ?? [];
   const { searchTerm, setSearchTerm, statusFilter, setStatusFilter, filteredRecords } =
     usePersonalTenantFilters(records);
   const [selectedUser, setSelectedUser] = useState<PersonalTenantRecord | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserInvite, setNewUserInvite] = useState(true);
+  const [inviteTarget, setInviteTarget] = useState<string | null>(null);
 
   const userTenantsQuery = useQuery<UserTenantMembership[]>({
     queryKey: ["user-tenants", selectedUser?.user_id],
     queryFn: () => getUserTenants(selectedUser!.user_id),
     enabled: Boolean(selectedUser?.user_id),
   });
+  const createMutation = useMutation({
+    mutationFn: createUser,
+    onSuccess: (data, variables) => {
+      toast({
+        title: "User created",
+        description: data.invite_sent
+          ? "Invite email sent."
+          : variables.send_invite
+            ? "User created but the invite email could not be sent."
+            : "Invite email not sent.",
+      });
+      setCreateOpen(false);
+      setNewUserEmail("");
+      setNewUserName("");
+      setNewUserPassword("");
+      setNewUserInvite(true);
+      void personalTenantsQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["users", "directory"] });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Failed to create user",
+        description: "Double-check the inputs and try again.",
+      });
+    },
+  });
+
+  const sendInviteMutation = useMutation({
+    mutationFn: (userId: string) => sendUserInvite(userId),
+    onSuccess: (_, userId) => {
+      toast({ title: "Invite email sent" });
+      if (inviteTarget === userId) {
+        setInviteTarget(null);
+      }
+    },
+    onError: (_, userId) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to send invite",
+        description: "Check SMTP configuration and try again.",
+      });
+      if (inviteTarget === userId) {
+        setInviteTarget(null);
+      }
+    },
+  });
+
+  const handleCreateUser = () => {
+    if (!newUserEmail.trim() || !newUserName.trim()) {
+      toast({ variant: "destructive", title: "Email and name are required" });
+      return;
+    }
+    createMutation.mutate({
+      email: newUserEmail.trim(),
+      name: newUserName.trim(),
+      password: newUserPassword.trim() || undefined,
+      send_invite: newUserInvite,
+    });
+  };
+
+  const handleSendInvite = useCallback(
+    (userId: string) => {
+      setInviteTarget(userId);
+      sendInviteMutation.mutate(userId);
+    },
+    [sendInviteMutation],
+  );
 
   const personalTenantColumns = useMemo(() => {
     return [
@@ -106,17 +190,29 @@ export function UsersPage() {
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => setSelectedUser(record)}>
-                <Eye className="mr-2 h-4 w-4" /> View details
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ),
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => setSelectedUser(record)}>
+                  <Eye className="mr-2 h-4 w-4" /> View details
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={
+                    (inviteTarget !== null && inviteTarget !== record.user_id) ||
+                    sendInviteMutation.isPending
+                  }
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    handleSendInvite(record.user_id);
+                  }}
+                >
+                  <Mail className="mr-2 h-4 w-4" /> Send invite email
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ),
       },
     ];
-  }, []);
+  }, [handleSendInvite, inviteTarget, sendInviteMutation.isPending]);
 
   const membershipColumns: DataTableColumn<UserTenantMembership>[] = useMemo(
     () => [
@@ -151,15 +247,20 @@ export function UsersPage() {
             defaults, usage, and budget consumption.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => personalTenantsQuery.refetch()}
-          disabled={personalTenantsQuery.isFetching}
-          title="Refresh"
-        >
-          <RefreshCcw className="h-4 w-4" />
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setCreateOpen(true)} variant="default">
+            <UserPlus className="mr-2 h-4 w-4" /> New user
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => personalTenantsQuery.refetch()}
+            disabled={personalTenantsQuery.isFetching}
+            title="Refresh"
+          >
+            <RefreshCcw className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <Separator />
@@ -208,6 +309,72 @@ export function UsersPage() {
           />
         </CardContent>
       </Card>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New user</DialogTitle>
+            <DialogDescription>
+              Create an account and optionally send an invite email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-user-email">Email</Label>
+              <Input
+                id="new-user-email"
+                placeholder="user@example.com"
+                value={newUserEmail}
+                onChange={(event) => setNewUserEmail(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-user-name">Name</Label>
+              <Input
+                id="new-user-name"
+                placeholder="Full name"
+                value={newUserName}
+                onChange={(event) => setNewUserName(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-user-password">
+                Password <span className="text-xs text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="new-user-password"
+                type="password"
+                placeholder="Set initial password"
+                value={newUserPassword}
+                onChange={(event) => setNewUserPassword(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to rely on SSO or send invite instructions without a password.
+              </p>
+            </div>
+            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+              <div>
+                <Label className="text-sm">Send invite email</Label>
+                <p className="text-xs text-muted-foreground">
+                  Email the user with admin/user portal links after creation.
+                </p>
+              </div>
+              <Switch
+                checked={newUserInvite}
+                onCheckedChange={(checked) => setNewUserInvite(checked)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createMutation.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateUser} disabled={createMutation.isPending}>
+              {createMutation.isPending ? "Creating…" : "Create user"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(selectedUser)} onOpenChange={(open) => !open && setSelectedUser(null)}>
         <DialogContent className="max-w-3xl">

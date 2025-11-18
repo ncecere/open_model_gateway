@@ -60,11 +60,21 @@ export function TenantMembershipDialog({
               placeholder="user@example.com"
               autoFocus
             />
+            <p className="text-xs text-muted-foreground">
+              Only existing users can be invited from this view. Create new users in the Users page
+              first.
+            </p>
             <MembershipSuggestions
               query={dialog.email}
               loading={usersLoading}
               suggestions={dialog.suggestions}
-              onSelect={(email) => dialog.setEmail(email)}
+              onSelect={(email) => {
+                const match = dialog.suggestions.find((user) => user.email === email);
+                if (match) {
+                  dialog.setEmail(match.email);
+                  dialog.setSelectedUser(match);
+                }
+              }}
             />
           </div>
           <div className="space-y-2">
@@ -94,7 +104,7 @@ export function TenantMembershipDialog({
           >
             Cancel
           </Button>
-          <Button onClick={onSubmit} disabled={isSubmitting}>
+          <Button onClick={onSubmit} disabled={isSubmitting || !dialog.selectedUser}>
             {isSubmitting ? "Saving…" : "Add member"}
           </Button>
         </DialogFooter>

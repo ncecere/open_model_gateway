@@ -146,6 +146,9 @@ type membershipResponse struct {
 }
 
 func (h *tenantHandler) list(c *fiber.Ctx) error {
+	if err := requireAnyRole(c, h.container, db.MembershipRoleViewer); err != nil {
+		return err
+	}
 	limit := int32(50)
 	offset := int32(0)
 
@@ -189,6 +192,9 @@ func (h *tenantHandler) list(c *fiber.Ctx) error {
 }
 
 func (h *tenantHandler) listPersonal(c *fiber.Ctx) error {
+	if err := requireAnyRole(c, h.container, db.MembershipRoleViewer); err != nil {
+		return err
+	}
 	limit := int32(50)
 	offset := int32(0)
 
@@ -431,7 +437,11 @@ func (h *tenantHandler) getBudget(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 
-	return c.JSON(mapBudgetOverride(override))
+	payload := mapBudgetOverride(override)
+	if err := recordAudit(c, h.container, "tenant.budget.view", "tenant", tenantUUID.String(), payload); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(payload)
 }
 
 func (h *tenantHandler) upsertBudget(c *fiber.Ctx) error {
@@ -743,6 +753,11 @@ func (h *tenantHandler) listAPIKeys(c *fiber.Ctx) error {
 		responses = append(responses, resp)
 	}
 
+	if err := recordAudit(c, h.container, "api_key.list", "tenant", id.String(), fiber.Map{
+		"count": len(responses),
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
 	return c.JSON(fiber.Map{
 		"api_keys": responses,
 	})
@@ -899,6 +914,11 @@ func (h *tenantHandler) listMemberships(c *fiber.Ctx) error {
 		})
 	}
 
+	if err := recordAudit(c, h.container, "tenant.memberships.view", "tenant", tenantID.String(), fiber.Map{
+		"count": len(out),
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
 	return c.JSON(fiber.Map{"memberships": out})
 }
 
@@ -923,6 +943,16 @@ func (h *tenantHandler) upsertMembership(c *fiber.Ctx) error {
 	role, ok := rbac.ParseRole(req.Role)
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "role must be owner, admin, viewer, or user")
+	}
+
+	if h.container == nil || h.container.Queries == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "tenant service unavailable")
+	}
+	if _, err := h.container.Queries.GetUserByEmail(c.Context(), req.Email); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "user does not exist")
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 
 	if h.service == nil {

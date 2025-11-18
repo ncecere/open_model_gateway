@@ -2,6 +2,7 @@ package user
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,12 +19,12 @@ func (h *userHandler) registerTenantManagementRoutes(group fiber.Router) {
 	group.Get("/tenants/:tenantID/memberships", h.listTenantMemberships)
 	group.Post("/tenants/:tenantID/memberships", h.inviteTenantMembership)
 	group.Delete("/tenants/:tenantID/memberships/:userID", h.removeTenantMembership)
+	group.Get("/directory/users", h.listDirectoryUsers)
 }
 
 type userMembershipRequest struct {
-	Email    string `json:"email"`
-	Role     string `json:"role"`
-	Password string `json:"password"`
+	Email string `json:"email"`
+	Role  string `json:"role"`
 }
 
 type userMembershipResponse struct {
@@ -127,11 +128,21 @@ func (h *userHandler) inviteTenantMembership(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusForbidden, "only owners can grant the owner role")
 	}
 
+	if h.container == nil || h.container.Queries == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "tenant service unavailable")
+	}
+	if _, err := h.container.Queries.GetUserByEmail(c.Context(), email); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "user does not exist")
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+
 	if h.container.AdminTenants == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "tenant service unavailable")
 	}
 
-	result, err := h.container.AdminTenants.UpsertMembership(c.Context(), tenantUUID, email, role, strings.TrimSpace(req.Password))
+	result, err := h.container.AdminTenants.UpsertMembership(c.Context(), tenantUUID, email, role, "")
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -207,4 +218,69 @@ func (h *userHandler) removeTenantMembership(c *fiber.Ctx) error {
 
 func canManageMemberships(role db.MembershipRole) bool {
 	return role == db.MembershipRoleOwner || role == db.MembershipRoleAdmin
+}
+
+type directoryUser struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+func (h *userHandler) listDirectoryUsers(c *fiber.Ctx) error {
+	user, ok := userFromContext(c.UserContext())
+	if !ok {
+		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
+	}
+	if h.container == nil || h.container.Queries == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "directory unavailable")
+	}
+
+	allowed := user.IsSuperAdmin
+	if !allowed {
+		memberships, err := h.tenantSvc.ListUserMemberships(c.Context(), user)
+		if err != nil {
+			return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+		}
+		for _, membership := range memberships {
+			if canManageMemberships(membership.Role) {
+				allowed = true
+				break
+			}
+		}
+	}
+	if !allowed {
+		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient permissions")
+	}
+
+	query := strings.TrimSpace(c.Query("query"))
+	if len(query) < 2 {
+		return c.JSON(fiber.Map{"users": []directoryUser{}})
+	}
+	limit := int32(10)
+	if val := strings.TrimSpace(c.Query("limit")); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil && parsed > 0 {
+			limit = int32(parsed)
+		}
+	}
+
+	rows, err := h.container.Queries.SearchUsers(c.Context(), db.SearchUsersParams{
+		Lower: strings.ToLower(query),
+		Limit: limit,
+	})
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	resp := make([]directoryUser, 0, len(rows))
+	for _, row := range rows {
+		id, err := uuidFromPg(row.ID)
+		if err != nil {
+			continue
+		}
+		resp = append(resp, directoryUser{
+			ID:    id.String(),
+			Email: row.Email,
+			Name:  row.Name,
+		})
+	}
+	return c.JSON(fiber.Map{"users": resp})
 }

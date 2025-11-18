@@ -39,7 +39,7 @@ func BuildTelemetry(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool,
 		return nil, fmt.Errorf("setup observability: %w", err)
 	}
 	alertSink := usagepipeline.NewCompositeSink(
-		usagepipeline.NewSMTPSink(cfg.Budgets.Alert.SMTP, slog.Default()),
+		usagepipeline.NewEmailSink(cfg.Budgets.Alert.SMTP, slog.Default()),
 		usagepipeline.NewWebhookSink(cfg.Budgets.Alert.Webhook, slog.Default()),
 		usagepipeline.NewLogAlertSink(slog.Default()),
 	)

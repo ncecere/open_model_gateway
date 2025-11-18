@@ -171,11 +171,13 @@ export function useMembershipDialog(users: AdminUser[] = []) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<MembershipRole>("admin");
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
 
   useEffect(() => {
     if (!open) {
       setEmail("");
       setRole("admin");
+      setSelectedUser(null);
     }
   }, [open]);
 
@@ -190,6 +192,28 @@ export function useMembershipDialog(users: AdminUser[] = []) {
     })
     .slice(0, 5);
 
+  useEffect(() => {
+    if (!normalizedQuery) {
+      setSelectedUser(null);
+      return;
+    }
+    if (selectedUser && selectedUser.email.toLowerCase() === normalizedQuery) {
+      return;
+    }
+    const match = users.find((user) => {
+      if (user.email.toLowerCase() === normalizedQuery) {
+        return true;
+      }
+      const name = user.name?.toLowerCase() ?? "";
+      return name === normalizedQuery;
+    });
+    if (match) {
+      setSelectedUser(match);
+    } else {
+      setSelectedUser(null);
+    }
+  }, [normalizedQuery, selectedUser, users]);
+
   return {
     open,
     setOpen,
@@ -198,6 +222,8 @@ export function useMembershipDialog(users: AdminUser[] = []) {
     role,
     setRole,
     suggestions,
+    selectedUser,
+    setSelectedUser,
   };
 }
 

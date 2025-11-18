@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
@@ -24,6 +25,7 @@ func registerAdminUserRoutes(router fiber.Router, container *app.Container) {
 	group.Get("/", handler.list)
 	group.Post("/", handler.create)
 	group.Get("/:userID/tenants", handler.listUserTenants)
+	group.Post("/:userID/invite", handler.sendInvite)
 }
 
 type adminUserHandler struct {
@@ -49,9 +51,10 @@ type userTenantMembershipResponse struct {
 }
 
 type createUserRequest struct {
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Name       string `json:"name"`
+	Password   string `json:"password"`
+	SendInvite bool   `json:"send_invite"`
 }
 
 func (h *adminUserHandler) list(c *fiber.Ctx) error {
@@ -104,10 +107,21 @@ func (h *adminUserHandler) create(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid request body")
 	}
-	user, err := h.service.Upsert(c.Context(), adminusersvc.CreateParams{
-		Email:    req.Email,
-		Name:     req.Name,
-		Password: req.Password,
+	inviter := "administrator"
+	if adminUser, ok := adminUserFromContext(c.UserContext()); ok {
+		inviter = strings.TrimSpace(adminUser.Email)
+		if strings.TrimSpace(adminUser.Name) != "" {
+			inviter = adminUser.Name
+		}
+	}
+	baseURL := strings.TrimSpace(c.BaseURL())
+	user, inviteSent, err := h.service.Upsert(c.Context(), adminusersvc.CreateParams{
+		Email:      req.Email,
+		Name:       req.Name,
+		Password:   req.Password,
+		SendInvite: req.SendInvite,
+		InviteBase: baseURL,
+		InvitedBy:  inviter,
 	})
 	if err != nil {
 		switch {
@@ -125,7 +139,10 @@ func (h *adminUserHandler) create(c *fiber.Ctx) error {
 	}); err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
-	return c.Status(fiber.StatusCreated).JSON(resp)
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"user":        resp,
+		"invite_sent": inviteSent,
+	})
 }
 
 func mapAdminUser(user adminusersvc.User) adminUserResponse {
@@ -175,4 +192,44 @@ func (h *adminUserHandler) listUserTenants(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"tenants": resp,
 	})
+}
+
+func (h *adminUserHandler) sendInvite(c *fiber.Ctx) error {
+	if err := requireAnyRole(c, h.container, db.MembershipRoleAdmin); err != nil {
+		return err
+	}
+	if h.service == nil || h.container == nil || h.container.Queries == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "user service unavailable")
+	}
+	rawID := strings.TrimSpace(c.Params("userID"))
+	if rawID == "" {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "user id required")
+	}
+	userID, err := uuid.Parse(rawID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid user id")
+	}
+	record, err := h.container.Queries.GetUserByID(c.Context(), toPgUUID(userID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return httputil.WriteError(c, fiber.StatusNotFound, "user not found")
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	inviter := "administrator"
+	if adminUser, ok := adminUserFromContext(c.UserContext()); ok {
+		inviter = strings.TrimSpace(adminUser.Email)
+		if strings.TrimSpace(adminUser.Name) != "" {
+			inviter = adminUser.Name
+		}
+	}
+	if err := h.service.SendInvite(c.Context(), record, strings.TrimSpace(c.BaseURL()), inviter); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if err := recordAudit(c, h.container, "admin_user.invite", "user", rawID, fiber.Map{
+		"email": record.Email,
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(fiber.Map{"invite_sent": true})
 }

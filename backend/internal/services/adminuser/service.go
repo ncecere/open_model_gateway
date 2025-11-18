@@ -3,6 +3,8 @@ package adminuser
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/accounts"
 	"github.com/ncecere/open_model_gateway/backend/internal/auth"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
+	"github.com/ncecere/open_model_gateway/backend/internal/email"
 )
 
 var (
@@ -22,14 +25,27 @@ var (
 
 // Service manages admin-facing user operations.
 type Service struct {
-	queries   *db.Queries
-	accounts  *accounts.PersonalService
-	adminAuth *auth.AdminAuthService
+	queries     *db.Queries
+	accounts    *accounts.PersonalService
+	adminAuth   *auth.AdminAuthService
+	emailSender email.Sender
+	emailFrom   string
+	logger      *slog.Logger
 }
 
 // NewService wires dependencies for the admin user service.
-func NewService(queries *db.Queries, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService) *Service {
-	return &Service{queries: queries, accounts: accounts, adminAuth: adminAuth}
+func NewService(queries *db.Queries, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, sender email.Sender, from string, logger *slog.Logger) *Service {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Service{
+		queries:     queries,
+		accounts:    accounts,
+		adminAuth:   adminAuth,
+		emailSender: sender,
+		emailFrom:   strings.TrimSpace(from),
+		logger:      logger,
+	}
 }
 
 // User represents an admin-facing user record.
@@ -45,9 +61,12 @@ type User struct {
 
 // CreateParams describes the inputs for creating or updating a user.
 type CreateParams struct {
-	Email    string
-	Name     string
-	Password string
+	Email      string
+	Name       string
+	Password   string
+	SendInvite bool
+	InviteBase string
+	InvitedBy  string
 }
 
 // List returns paginated users.
@@ -74,14 +93,14 @@ func (s *Service) List(ctx context.Context, limit, offset int32) ([]User, error)
 }
 
 // Upsert ensures a user exists (creating if necessary) and optionally sets a password.
-func (s *Service) Upsert(ctx context.Context, params CreateParams) (User, error) {
+func (s *Service) Upsert(ctx context.Context, params CreateParams) (User, bool, error) {
 	if s == nil || s.queries == nil {
-		return User{}, ErrServiceUnavailable
+		return User{}, false, ErrServiceUnavailable
 	}
 	email := strings.TrimSpace(params.Email)
 	name := strings.TrimSpace(params.Name)
 	if email == "" {
-		return User{}, ErrEmailRequired
+		return User{}, false, ErrEmailRequired
 	}
 	if name == "" {
 		name = email
@@ -90,14 +109,14 @@ func (s *Service) Upsert(ctx context.Context, params CreateParams) (User, error)
 	userRow, err := s.queries.GetUserByEmail(ctx, email)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			return User{}, err
+			return User{}, false, err
 		}
 		userRow, err = s.queries.CreateUser(ctx, db.CreateUserParams{
 			Email: email,
 			Name:  name,
 		})
 		if err != nil {
-			return User{}, err
+			return User{}, false, err
 		}
 	}
 
@@ -105,22 +124,74 @@ func (s *Service) Upsert(ctx context.Context, params CreateParams) (User, error)
 		if updated, _, err := s.accounts.EnsurePersonalTenant(ctx, userRow); err == nil {
 			userRow = updated
 		} else {
-			return User{}, err
+			return User{}, false, err
 		}
 	}
 
 	userID, err := fromPgUUID(userRow.ID)
 	if err != nil {
-		return User{}, err
+		return User{}, false, err
 	}
 
 	if pw := strings.TrimSpace(params.Password); pw != "" && s.adminAuth != nil {
 		if err := s.adminAuth.UpsertLocalPassword(ctx, userID, email, pw); err != nil {
-			return User{}, err
+			return User{}, false, err
 		}
 	}
 
-	return convertUser(userRow)
+	user, err := convertUser(userRow)
+	if err != nil {
+		return User{}, false, err
+	}
+
+	inviteSent := false
+	if params.SendInvite {
+		if err := s.SendInvite(ctx, userRow, params.InviteBase, params.InvitedBy); err != nil {
+			if s.logger != nil {
+				s.logger.Error("send invite email", "error", err)
+			}
+		} else {
+			inviteSent = true
+		}
+	}
+
+	return user, inviteSent, nil
+}
+
+// SendInvite dispatches an email invite using the configured sender.
+func (s *Service) SendInvite(ctx context.Context, user db.User, baseURL string, invitedBy string) error {
+	if s == nil {
+		return ErrServiceUnavailable
+	}
+	if s.emailSender == nil || s.emailFrom == "" {
+		return errors.New("email sender not configured")
+	}
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return errors.New("invite base url required")
+	}
+	name := strings.TrimSpace(user.Name)
+	if name == "" {
+		name = user.Email
+	}
+	adminURL := fmt.Sprintf("%s/admin/ui", base)
+	userURL := fmt.Sprintf("%s/user/ui", base)
+	subject := "You've been invited to Open Model Gateway"
+	inviter := strings.TrimSpace(invitedBy)
+	if inviter == "" {
+		inviter = "an administrator"
+	}
+	body := fmt.Sprintf(
+		"Hi %s,\n\n%s invited you to access the Open Model Gateway admin console.\n\nAdmin Portal: %s\nUser Portal: %s\n\nUse your organization's SSO or the credentials provided by your administrator to sign in.\n",
+		name, inviter, adminURL, userURL,
+	)
+	msg := email.Message{
+		From:    s.emailFrom,
+		To:      []string{user.Email},
+		Subject: subject,
+		Body:    body,
+	}
+	return s.emailSender.Send(ctx, msg)
 }
 
 func convertUser(row db.User) (User, error) {

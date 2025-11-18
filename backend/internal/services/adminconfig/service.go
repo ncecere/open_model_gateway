@@ -165,7 +165,7 @@ func (s *Service) SendAlertTestEmail(ctx context.Context, to string) error {
 	if to == "" {
 		return errors.New("email required")
 	}
-	sink := usagepipeline.NewSMTPSink(s.cfg.Budgets.Alert.SMTP, slog.Default())
+	sink := usagepipeline.NewEmailSink(s.cfg.Budgets.Alert.SMTP, slog.Default())
 	if sink == nil {
 		return errors.New("smtp not configured")
 	}

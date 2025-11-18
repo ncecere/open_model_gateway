@@ -24,19 +24,14 @@ export function MembershipSuggestions({
 
   const trimmed = query.trim();
   if (!trimmed) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Start typing to search existing users. New accounts are created
-        automatically when needed.
-      </p>
-    );
+    return <p className="text-xs text-muted-foreground">Start typing to search existing users.</p>;
   }
 
   if (suggestions.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        No existing user matches “{query}”. A new user will be created when you
-        add them.
+        No existing user matches “{query}”. Create the user from the Users page before inviting
+        them.
       </p>
     );
   }

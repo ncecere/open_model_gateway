@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { MoreHorizontal, Eye, Settings2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -30,6 +31,7 @@ import {
   type MembershipRole,
   type TenantMembership,
 } from "@/api/user/tenants";
+import { searchDirectoryUsers, type DirectoryUser } from "@/api/user/directory";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -55,13 +57,11 @@ export function UserTenantsPage() {
   const summaryQuery = useTenantSummaryQuery(detailOpen ? selectedTenant : undefined);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<MembershipRole>("user");
-  const [invitePassword, setInvitePassword] = useState("");
 
   useEffect(() => {
     if (!detailOpen) {
       setInviteEmail("");
       setInviteRole("user");
-      setInvitePassword("");
     }
   }, [detailOpen]);
 
@@ -89,26 +89,34 @@ export function UserTenantsPage() {
       return inviteTenantMember(selectedTenant, {
         email: inviteEmail,
         role: inviteRole,
-        password: invitePassword || undefined,
       });
     },
     onSuccess: () => {
-      toast({ title: "Member invited" });
+      toast({ title: "Member added" });
       queryClient.invalidateQueries({
         queryKey: ["user-tenant-memberships", selectedTenant],
       });
       setInviteEmail("");
-      setInvitePassword("");
       setInviteRole("user");
     },
     onError: (error) => {
       toast({
         variant: "destructive",
-        title: "Failed to invite member",
+        title: "Failed to add member",
         description: error instanceof Error ? error.message : undefined,
       });
     },
   });
+
+  const suggestionQuery = useQuery({
+    queryKey: ["user-directory", inviteEmail],
+    queryFn: () => searchDirectoryUsers(inviteEmail.trim()),
+    enabled:
+      Boolean(detailOpen && selectedTenant && canManageMembers) &&
+      inviteEmail.trim().length >= 2,
+    staleTime: 30_000,
+  });
+  const directorySuggestions = suggestionQuery.data ?? [];
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) => {
@@ -306,10 +314,11 @@ export function UserTenantsPage() {
                   <InviteForm
                     email={inviteEmail}
                     role={inviteRole}
-                    password={invitePassword}
+                    suggestions={directorySuggestions}
+                    loadingSuggestions={suggestionQuery.isFetching}
                     onEmailChange={setInviteEmail}
                     onRoleChange={(value) => setInviteRole(value as MembershipRole)}
-                    onPasswordChange={setInvitePassword}
+                    onSuggestionSelect={(user) => setInviteEmail(user.email)}
                     onSubmit={(event) => {
                       event.preventDefault();
                       inviteMutation.mutate();
@@ -391,19 +400,21 @@ function MemberRow({
 function InviteForm({
   email,
   role,
-  password,
+  suggestions,
+  loadingSuggestions,
   onEmailChange,
   onRoleChange,
-  onPasswordChange,
+  onSuggestionSelect,
   onSubmit,
   submitting,
 }: {
   email: string;
   role: MembershipRole;
-  password: string;
+  suggestions: DirectoryUser[];
+  loadingSuggestions: boolean;
   onEmailChange: (value: string) => void;
   onRoleChange: (value: string) => void;
-  onPasswordChange: (value: string) => void;
+  onSuggestionSelect: (user: DirectoryUser) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   submitting: boolean;
 }) {
@@ -419,6 +430,15 @@ function InviteForm({
             onChange={(event) => onEmailChange(event.target.value)}
             placeholder="name@example.com"
             required
+          />
+          <p className="text-xs text-muted-foreground">
+            Only existing users can be added. Ask an administrator to create new accounts first.
+          </p>
+          <DirectorySuggestions
+            query={email}
+            loading={loadingSuggestions}
+            suggestions={suggestions}
+            onSelect={onSuggestionSelect}
           />
         </div>
         <div>
@@ -437,24 +457,59 @@ function InviteForm({
           </Select>
         </div>
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="md:col-span-2">
-          <Label htmlFor="invite-password">Password (optional)</Label>
-          <Input
-            id="invite-password"
-            type="password"
-            value={password}
-            onChange={(event) => onPasswordChange(event.target.value)}
-            placeholder="Set an initial password"
-          />
-        </div>
-        <div className="flex items-end">
-          <Button type="submit" disabled={submitting} className="w-full">
-            {submitting ? "Inviting…" : "Send invite"}
-          </Button>
-        </div>
+      <div className="flex items-end justify-end">
+        <Button type="submit" disabled={submitting} className="w-full md:w-auto">
+          {submitting ? "Adding…" : "Add member"}
+        </Button>
       </div>
     </form>
+  );
+}
+
+function DirectorySuggestions({
+  query,
+  loading,
+  suggestions,
+  onSelect,
+}: {
+  query: string;
+  loading: boolean;
+  suggestions: DirectoryUser[];
+  onSelect: (user: DirectoryUser) => void;
+}) {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    return null;
+  }
+  if (loading) {
+    return (
+      <div className="mt-2 space-y-2">
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
+  }
+  if (suggestions.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        No user matches “{trimmed}”. Create the account from the admin portal first.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-1 rounded border bg-muted/50 p-2 text-sm">
+      <p className="text-xs font-medium uppercase text-muted-foreground">Suggestions</p>
+      {suggestions.map((user) => (
+        <button
+          key={user.id}
+          type="button"
+          className="flex w-full flex-col rounded px-2 py-1 text-left transition hover:bg-background"
+          onClick={() => onSelect(user)}
+        >
+          <span className="font-medium">{user.name || user.email}</span>
+          <span className="text-xs text-muted-foreground">{user.email}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 

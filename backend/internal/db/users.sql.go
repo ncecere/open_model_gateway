@@ -165,6 +165,52 @@ func (q *Queries) ListUsersByIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([
 	return items, nil
 }
 
+const searchUsers = `-- name: SearchUsers :many
+SELECT id, email, name, theme_preference, is_super_admin, personal_tenant_id, created_at, updated_at, last_login_at
+FROM users
+WHERE (
+    lower(email) LIKE lower($1) || '%'
+    OR lower(name) LIKE lower($1) || '%'
+)
+ORDER BY email
+LIMIT $2
+`
+
+type SearchUsersParams struct {
+	Lower string `json:"lower"`
+	Limit int32  `json:"limit"`
+}
+
+func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, searchUsers, arg.Lower, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Name,
+			&i.ThemePreference,
+			&i.IsSuperAdmin,
+			&i.PersonalTenantID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastLoginAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setUserSuperAdmin = `-- name: SetUserSuperAdmin :exec
 UPDATE users
 SET is_super_admin = $2,

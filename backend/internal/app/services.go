@@ -14,6 +14,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/catalog"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
+	"github.com/ncecere/open_model_gateway/backend/internal/email"
 	"github.com/ncecere/open_model_gateway/backend/internal/limits"
 	"github.com/ncecere/open_model_gateway/backend/internal/runtime/bootstrap"
 	runtimebudgets "github.com/ncecere/open_model_gateway/backend/internal/runtime/budgets"
@@ -74,7 +75,8 @@ func BuildServices(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) 
 	if err != nil {
 		return nil, fmt.Errorf("init admin auth: %w", err)
 	}
-	adminUserSvc := adminusersvc.NewService(queries, personalSvc, adminAuth)
+	mailSender := email.NewSMTPSender(cfg.Budgets.Alert.SMTP)
+	adminUserSvc := adminusersvc.NewService(queries, personalSvc, adminAuth, mailSender, cfg.Budgets.Alert.SMTP.From, nil)
 	keyLimitOverrides, err := runtimeratelimits.LoadKeyOverrides(ctx, queries)
 	if err != nil {
 		return nil, fmt.Errorf("load api key rate limits: %w", err)

@@ -45,26 +45,26 @@ services:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
 
-  router:
-    image: ghcr.io/ncecere/open-model-gateway:latest
-    container_name: open-model-gateway-router
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-    environment:
-      ROUTER_CONFIG_FILE: /config/router.yaml
-      ROUTER_DB_URL: postgres://open_gateway:open_gateway@postgres:5432/open_gateway?sslmode=disable
-      ROUTER_DATABASE_URL: postgres://open_gateway:open_gateway@postgres:5432/open_gateway?sslmode=disable
-      ROUTER_REDIS_URL: redis://redis:6379/0
-    volumes:
-      - ./router.local.yaml:/config/router.yaml:ro
-    ports:
-      - "8090:8090"
+  # router:
+  #   image: ghcr.io/ncecere/open-model-gateway:latest
+  #   container_name: open-model-gateway-router
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     otel-collector:
+  #       condition: service_started
+  #   environment:
+  #     ROUTER_CONFIG_FILE: /config/router.yaml
+  #     ROUTER_DB_URL: postgres://open_gateway:open_gateway@postgres:5432/open_gateway?sslmode=disable
+  #     ROUTER_DATABASE_URL: postgres://open_gateway:open_gateway@postgres:5432/open_gateway?sslmode=disable
+  #     ROUTER_REDIS_URL: redis://redis:6379/0
+  #   volumes:
+  #     - ./router.local.yaml:/config/router.yaml:ro
+  #   ports:
+  #     - "8090:8090"
 
 volumes:
   pg_data:

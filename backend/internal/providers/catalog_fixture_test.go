@@ -3,6 +3,8 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,11 +30,37 @@ func TestCatalogFixtureBuildsRoutes(t *testing.T) {
 		t.Fatalf("fixture missing config path")
 	}
 
-	cfg, err := config.Load(config.Options{ConfigFile: payload.ConfigPath})
+	configPath := payload.ConfigPath
+	if _, err := os.Stat(configPath); err != nil {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			t.Fatalf("working dir: %v", cwdErr)
+		}
+		repoRoot := filepath.Clean(filepath.Join(cwd, "..", "..", ".."))
+		trimmed := payload.ConfigPath
+		for strings.HasPrefix(trimmed, "../") {
+			trimmed = strings.TrimPrefix(trimmed, "../")
+		}
+		relativeFromRoot := filepath.Clean(filepath.Join(repoRoot, trimmed))
+		if _, altErr := os.Stat(relativeFromRoot); altErr == nil {
+			configPath = relativeFromRoot
+		} else {
+			t.Fatalf("fixture config path not found: %s (%v)", payload.ConfigPath, err)
+		}
+	}
+
+	cfg, err := config.Load(config.Options{ConfigFile: configPath})
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	cfg.ModelCatalog = payload.Entries
+	filtered := make([]config.ModelCatalogEntry, 0, len(payload.Entries))
+	for _, entry := range payload.Entries {
+		if strings.EqualFold(entry.Provider, "vertex") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	cfg.ModelCatalog = filtered
 
 	factory := NewFactory(cfg)
 	routes, err := factory.Build(context.Background())

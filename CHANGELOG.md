@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.16] - 2025-11-20
 ### Added
 - User portal model catalog now includes a tenant scope selector (Personal or any joined tenant) so users can quickly pivot between catalog views that apply to their current context.
 

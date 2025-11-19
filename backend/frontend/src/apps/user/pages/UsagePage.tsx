@@ -29,14 +29,16 @@ import { formatTokensShort } from "@/lib/numbers";
 import { formatUsageDate } from "@/lib/dates";
 import { useUserUsageQuery } from "../hooks/useUserData";
 import { listUserModels } from "@/api/user/models";
-import { getUserModelDailyUsage, getUserTenantDailyUsage } from "@/api/user/usage";
+import {
+  getUserModelDailyUsage,
+  getUserTenantDailyUsage,
+} from "@/api/user/usage";
 import type {
   ModelDailyTenantUsage,
   ModelDailyUsageDay,
   TenantDailyUsageDay,
   TenantDailyUsageKey,
 } from "@/api/usage";
-
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -47,18 +49,16 @@ const currencyFormatter = new Intl.NumberFormat(undefined, {
 
 const formatSpendValue = (usd?: number, cents?: number) =>
   currencyFormatter.format(
-    typeof usd === "number"
-      ? usd
-      : typeof cents === "number"
-        ? cents / 100
-        : 0,
+    typeof usd === "number" ? usd : typeof cents === "number" ? cents / 100 : 0,
   );
 
 export function UserUsagePage() {
   const [startInput, setStartInput] = useState(() =>
     formatDateInput(addDays(startOfToday(), -6)),
   );
-  const [endInput, setEndInput] = useState(() => formatDateInput(startOfToday()));
+  const [endInput, setEndInput] = useState(() =>
+    formatDateInput(startOfToday()),
+  );
   const rangeResult = useMemo(
     () => deriveRangeISO(startInput, endInput),
     [startInput, endInput],
@@ -96,7 +96,11 @@ export function UserUsagePage() {
       options.push({ value: id, label: label ?? id, hint });
     };
     if (usage?.personal?.tenant_id) {
-      push(usage.personal.tenant_id, usage.personal.name ?? "Personal", usage.personal.status);
+      push(
+        usage.personal.tenant_id,
+        usage.personal.name ?? "Personal",
+        usage.personal.status,
+      );
     }
     usage?.memberships.forEach((tenant) =>
       push(tenant.tenant_id, tenant.name, tenant.status),
@@ -104,44 +108,64 @@ export function UserUsagePage() {
     return options;
   }, [usage?.personal, usage?.memberships]);
 
-  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(
+    undefined,
+  );
   useEffect(() => {
     if (!tenantOptions.length) {
       setSelectedTenantId(undefined);
       return;
     }
-    if (!selectedTenantId || !tenantOptions.find((option) => option.value === selectedTenantId)) {
+    if (
+      !selectedTenantId ||
+      !tenantOptions.find((option) => option.value === selectedTenantId)
+    ) {
       setSelectedTenantId(tenantOptions[0].value);
     }
   }, [tenantOptions, selectedTenantId]);
 
   const userModelsQuery = useQuery({
     queryKey: ["user-models"],
-    queryFn: listUserModels,
+    queryFn: () => listUserModels(),
   });
   const modelOptions = useMemo(
     () =>
       (userModelsQuery.data ?? [])
         .filter((model) => model.enabled)
-        .map((model) => ({ value: model.alias, label: model.alias, hint: model.provider })),
+        .map((model) => ({
+          value: model.alias,
+          label: model.alias,
+          hint: model.provider,
+        })),
     [userModelsQuery.data],
   );
 
-  const [selectedModelAlias, setSelectedModelAlias] = useState<string | undefined>(undefined);
+  const [selectedModelAlias, setSelectedModelAlias] = useState<
+    string | undefined
+  >(undefined);
   useEffect(() => {
     if (!modelOptions.length) {
       setSelectedModelAlias(undefined);
       return;
     }
-    if (!selectedModelAlias || !modelOptions.find((option) => option.value === selectedModelAlias)) {
+    if (
+      !selectedModelAlias ||
+      !modelOptions.find((option) => option.value === selectedModelAlias)
+    ) {
       setSelectedModelAlias(modelOptions[0].value);
     }
   }, [modelOptions, selectedModelAlias]);
 
-  const selectedTenantOption = tenantOptions.find((option) => option.value === selectedTenantId);
-  const selectedModelOption = modelOptions.find((option) => option.value === selectedModelAlias);
+  const selectedTenantOption = tenantOptions.find(
+    (option) => option.value === selectedTenantId,
+  );
+  const selectedModelOption = modelOptions.find(
+    (option) => option.value === selectedModelAlias,
+  );
 
-  const globalRangeKey = activeRange ? `${activeRange.start}-${activeRange.end}` : "invalid";
+  const globalRangeKey = activeRange
+    ? `${activeRange.start}-${activeRange.end}`
+    : "invalid";
 
   const tenantDailyQuery = useQuery({
     queryKey: ["user-tenant-daily", selectedTenantId, globalRangeKey],
@@ -208,13 +232,23 @@ export function UserUsagePage() {
       </div>
 
       {rangeError ? (
-        <p className="text-sm text-destructive">Adjust the date range above to continue.</p>
+        <p className="text-sm text-destructive">
+          Adjust the date range above to continue.
+        </p>
       ) : null}
 
       {hasGlobalError ? (
         <div className="space-y-2">
-          <QueryAlert error={usageQuery.isError ? (usageQuery.error as Error) : null} onRetry={usageQuery.refetch} />
-          <QueryAlert error={userModelsQuery.isError ? (userModelsQuery.error as Error) : null} onRetry={userModelsQuery.refetch} />
+          <QueryAlert
+            error={usageQuery.isError ? (usageQuery.error as Error) : null}
+            onRetry={usageQuery.refetch}
+          />
+          <QueryAlert
+            error={
+              userModelsQuery.isError ? (userModelsQuery.error as Error) : null
+            }
+            onRetry={userModelsQuery.refetch}
+          />
         </div>
       ) : null}
 
@@ -235,7 +269,11 @@ export function UserUsagePage() {
             />
             <SummaryCard
               title="Total spend"
-              value={totals ? formatSpendValue(totals.cost_usd, totals.cost_cents) : "—"}
+              value={
+                totals
+                  ? formatSpendValue(totals.cost_usd, totals.cost_cents)
+                  : "—"
+              }
               description="Usage-based fees"
               loading={usageQuery.isLoading}
             />
@@ -262,7 +300,9 @@ export function UserUsagePage() {
                   <Skeleton className="h-12 w-full" />
                 </div>
               ) : dailyRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No usage recorded.</p>
+                <p className="text-sm text-muted-foreground">
+                  No usage recorded.
+                </p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -276,9 +316,15 @@ export function UserUsagePage() {
                   <TableBody>
                     {dailyRows.map((point) => (
                       <TableRow key={point.date}>
-                        <TableCell>{formatUsageDate(point.date, timezone)}</TableCell>
-                        <TableCell className="text-right">{point.requests.toLocaleString()}</TableCell>
-                        <TableCell className="text-right">{point.tokens.toLocaleString()}</TableCell>
+                        <TableCell>
+                          {formatUsageDate(point.date, timezone)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {point.requests.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {point.tokens.toLocaleString()}
+                        </TableCell>
                         <TableCell className="text-right">
                           {formatSpendValue(point.cost_usd, point.cost_cents)}
                         </TableCell>
@@ -296,13 +342,17 @@ export function UserUsagePage() {
             <CardHeader>
               <CardTitle>Tenant daily usage</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Inspect a specific tenant (personal or shared) with per-key breakdowns.
+                Inspect a specific tenant (personal or shared) with per-key
+                breakdowns.
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="max-w-sm space-y-2">
                 <Label>Tenant</Label>
-                <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
+                <Select
+                  value={selectedTenantId}
+                  onValueChange={setSelectedTenantId}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select tenant" />
                   </SelectTrigger>
@@ -312,7 +362,9 @@ export function UserUsagePage() {
                         <div className="flex items-center justify-between gap-2">
                           <span>{option.label}</span>
                           {option.hint ? (
-                            <span className="text-xs text-muted-foreground">{option.hint}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {option.hint}
+                            </span>
                           ) : null}
                         </div>
                       </SelectItem>
@@ -320,15 +372,23 @@ export function UserUsagePage() {
                   </SelectContent>
                 </Select>
                 {selectedTenantOption?.hint ? (
-                  <p className="text-xs text-muted-foreground">{selectedTenantOption.hint}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedTenantOption.hint}
+                  </p>
                 ) : null}
               </div>
               <QueryAlert
-                error={tenantDailyQuery.isError ? (tenantDailyQuery.error as Error) : null}
+                error={
+                  tenantDailyQuery.isError
+                    ? (tenantDailyQuery.error as Error)
+                    : null
+                }
                 onRetry={tenantDailyQuery.refetch}
               />
               {!selectedTenantId ? (
-                <p className="text-sm text-muted-foreground">Select a tenant to begin.</p>
+                <p className="text-sm text-muted-foreground">
+                  Select a tenant to begin.
+                </p>
               ) : rangeError ? (
                 <p className="text-sm text-muted-foreground">{rangeError}</p>
               ) : tenantDailyQuery.isLoading ? (
@@ -336,8 +396,8 @@ export function UserUsagePage() {
               ) : tenantDailyQuery.data && tenantDailyQuery.data.days.length ? (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Times shown in {tenantDailyQuery.data.timezone}. Daily totals include all of your keys
-                    for this tenant.
+                    Times shown in {tenantDailyQuery.data.timezone}. Daily
+                    totals include all of your keys for this tenant.
                   </p>
                   <TenantDailyList
                     days={tenantDailyQuery.data.days}
@@ -345,7 +405,9 @@ export function UserUsagePage() {
                   />
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">No activity in this range.</p>
+                <p className="text-sm text-muted-foreground">
+                  No activity in this range.
+                </p>
               )}
             </CardContent>
           </Card>
@@ -362,7 +424,10 @@ export function UserUsagePage() {
             <CardContent className="space-y-6">
               <div className="max-w-sm space-y-2">
                 <Label>Model</Label>
-                <Select value={selectedModelAlias} onValueChange={setSelectedModelAlias}>
+                <Select
+                  value={selectedModelAlias}
+                  onValueChange={setSelectedModelAlias}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
@@ -372,7 +437,9 @@ export function UserUsagePage() {
                         <div className="flex items-center justify-between gap-2">
                           <span>{option.label}</span>
                           {option.hint ? (
-                            <span className="text-xs text-muted-foreground">{option.hint}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {option.hint}
+                            </span>
                           ) : null}
                         </div>
                       </SelectItem>
@@ -380,15 +447,23 @@ export function UserUsagePage() {
                   </SelectContent>
                 </Select>
                 {selectedModelOption?.hint ? (
-                  <p className="text-xs text-muted-foreground">{selectedModelOption.hint}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedModelOption.hint}
+                  </p>
                 ) : null}
               </div>
               <QueryAlert
-                error={modelDailyQuery.isError ? (modelDailyQuery.error as Error) : null}
+                error={
+                  modelDailyQuery.isError
+                    ? (modelDailyQuery.error as Error)
+                    : null
+                }
                 onRetry={modelDailyQuery.refetch}
               />
               {!selectedModelAlias ? (
-                <p className="text-sm text-muted-foreground">Select a model to begin.</p>
+                <p className="text-sm text-muted-foreground">
+                  Select a model to begin.
+                </p>
               ) : rangeError ? (
                 <p className="text-sm text-muted-foreground">{rangeError}</p>
               ) : modelDailyQuery.isLoading ? (
@@ -396,8 +471,8 @@ export function UserUsagePage() {
               ) : modelDailyQuery.data && modelDailyQuery.data.days.length ? (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Times shown in {modelDailyQuery.data.timezone}. Daily totals only include tenants you
-                    belong to.
+                    Times shown in {modelDailyQuery.data.timezone}. Daily totals
+                    only include tenants you belong to.
                   </p>
                   <ModelDailyList
                     days={modelDailyQuery.data.days}
@@ -405,7 +480,9 @@ export function UserUsagePage() {
                   />
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">No activity in this range.</p>
+                <p className="text-sm text-muted-foreground">
+                  No activity in this range.
+                </p>
               )}
             </CardContent>
           </Card>
@@ -415,7 +492,13 @@ export function UserUsagePage() {
   );
 }
 
-function TenantDailyList({ days, timezone }: { days: TenantDailyUsageDay[]; timezone: string }) {
+function TenantDailyList({
+  days,
+  timezone,
+}: {
+  days: TenantDailyUsageDay[];
+  timezone: string;
+}) {
   return (
     <ExpandableDailyList<TenantDailyUsageKey, TenantDailyUsageDay>
       days={days}
@@ -424,12 +507,18 @@ function TenantDailyList({ days, timezone }: { days: TenantDailyUsageDay[]; time
       renderBreakdown={(key) => (
         <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 rounded border bg-background/80 px-3 py-2">
           <div>
-            <p className="font-medium">{key.api_key_name || key.api_key_prefix || "Unnamed key"}</p>
-            <p className="text-xs text-muted-foreground">{key.api_key_prefix || key.api_key_id}</p>
+            <p className="font-medium">
+              {key.api_key_name || key.api_key_prefix || "Unnamed key"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {key.api_key_prefix || key.api_key_id}
+            </p>
           </div>
           <span className="text-right">{key.requests.toLocaleString()}</span>
           <span className="text-right">{key.tokens.toLocaleString()}</span>
-          <span className="text-right">{formatSpendValue(key.cost_usd, key.cost_cents)}</span>
+          <span className="text-right">
+            {formatSpendValue(key.cost_usd, key.cost_cents)}
+          </span>
         </div>
       )}
       breakdownHeaders={["API key", "Requests", "Tokens", "Spend"]}
@@ -438,7 +527,13 @@ function TenantDailyList({ days, timezone }: { days: TenantDailyUsageDay[]; time
   );
 }
 
-function ModelDailyList({ days, timezone }: { days: ModelDailyUsageDay[]; timezone: string }) {
+function ModelDailyList({
+  days,
+  timezone,
+}: {
+  days: ModelDailyUsageDay[];
+  timezone: string;
+}) {
   return (
     <ExpandableDailyList<ModelDailyTenantUsage, ModelDailyUsageDay>
       days={days}
@@ -447,12 +542,16 @@ function ModelDailyList({ days, timezone }: { days: ModelDailyUsageDay[]; timezo
       renderBreakdown={(tenant) => (
         <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 rounded border bg-background/80 px-3 py-2">
           <div>
-            <p className="font-medium">{tenant.tenant_name || tenant.tenant_id || "Tenant"}</p>
+            <p className="font-medium">
+              {tenant.tenant_name || tenant.tenant_id || "Tenant"}
+            </p>
             <p className="text-xs text-muted-foreground">{tenant.tenant_id}</p>
           </div>
           <span className="text-right">{tenant.requests.toLocaleString()}</span>
           <span className="text-right">{tenant.tokens.toLocaleString()}</span>
-          <span className="text-right">{formatSpendValue(tenant.cost_usd, tenant.cost_cents)}</span>
+          <span className="text-right">
+            {formatSpendValue(tenant.cost_usd, tenant.cost_cents)}
+          </span>
         </div>
       )}
       breakdownHeaders={["Tenant", "Requests", "Tokens", "Spend"]}
@@ -508,17 +607,29 @@ function ExpandableDailyList<T, D extends DailySummary>({
               onClick={() => toggle(day.date)}
               className="flex w-full items-center gap-4 p-4 text-left"
             >
-              <ChevronDown className={`h-4 w-4 flex-none transition ${isOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`h-4 w-4 flex-none transition ${isOpen ? "rotate-180" : ""}`}
+              />
               <div className="flex flex-1 flex-col gap-1">
-                <p className="font-medium">{formatUsageDate(day.date, timezone)}</p>
+                <p className="font-medium">
+                  {formatUsageDate(day.date, timezone)}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  {breakdown.length ? `${breakdown.length} entries` : emptyMessage}
+                  {breakdown.length
+                    ? `${breakdown.length} entries`
+                    : emptyMessage}
                 </p>
               </div>
               <div className="flex flex-none gap-6 text-sm text-muted-foreground">
-                <span className="w-20 text-right">{day.requests.toLocaleString()} req</span>
-                <span className="w-24 text-right">{day.tokens.toLocaleString()} tokens</span>
-                <span className="w-20 text-right">{formatSpendValue(day.cost_usd, day.cost_cents)}</span>
+                <span className="w-20 text-right">
+                  {day.requests.toLocaleString()} req
+                </span>
+                <span className="w-24 text-right">
+                  {day.tokens.toLocaleString()} tokens
+                </span>
+                <span className="w-20 text-right">
+                  {formatSpendValue(day.cost_usd, day.cost_cents)}
+                </span>
               </div>
             </button>
             {isOpen ? (
@@ -535,7 +646,9 @@ function ExpandableDailyList<T, D extends DailySummary>({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">{emptyMessage}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {emptyMessage}
+                  </p>
                 )}
               </div>
             ) : null}

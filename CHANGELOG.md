@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [Unreleased]
+### Added
+- User portal model catalog now includes a tenant scope selector (Personal or any joined tenant) so users can quickly pivot between catalog views that apply to their current context.
+
+### Changed
+- `/user/models` validates the authenticated user and only returns aliases they’re entitled to (personal defaults plus tenant memberships). The endpoint now accepts an optional `scope` query (`personal`, tenant UUID, or `all`) so the UI can focus the list per tenant without leaking the entire global catalog.
+
 ## [v0.1.14] - 2025-11-19
 ### Added
 - Created a full `Code_Examples/` suite with shared README, curl/Python/TypeScript samples for chat, embeddings, images, files, and batches, plus reusable JSONL/data assets so operators can demo the OpenAI-compatible API surface instantly.

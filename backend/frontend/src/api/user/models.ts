@@ -13,7 +13,10 @@ export interface UserModel {
   status: string;
 }
 
-export async function listUserModels(): Promise<UserModel[]> {
-  const { data } = await userApi.get<{ models: UserModel[] }>("/models");
+export async function listUserModels(scope?: string): Promise<UserModel[]> {
+  const params = scope ? { scope } : undefined;
+  const { data } = await userApi.get<{ models: UserModel[] }>("/models", {
+    params,
+  });
   return data.models;
 }

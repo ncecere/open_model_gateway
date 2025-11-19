@@ -127,26 +127,29 @@ export function UserModelsPage() {
         </p>
       </div>
       <Card>
-        <CardHeader className="gap-4 md:flex md:items-end md:justify-between">
-          <div>
-            <CardTitle>Catalog overview</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Throughput and latency reflect activity over the past 24 hours.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Showing models available to: {selectedScopeLabel}.
-            </p>
-          </div>
-          <div className="w-full md:max-w-xs">
+        <CardHeader>
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <CardTitle>Catalog overview</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Throughput and latency reflect activity over the past 24 hours.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Showing models available to: {selectedScopeLabel}.
+              </p>
+            </div>
             <Select
               value={selectedScope}
               onValueChange={handleScopeChange}
               disabled={!scopeOptions.length}
             >
-              <SelectTrigger id="user-model-scope">
+              <SelectTrigger
+                id="user-model-scope"
+                className="w-full md:w-56 lg:w-64"
+              >
                 <SelectValue placeholder="Select tenant scope" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent align="end">
                 {scopeOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}

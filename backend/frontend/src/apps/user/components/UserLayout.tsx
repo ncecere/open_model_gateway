@@ -72,8 +72,8 @@ function UserShell({
   const sidebar = useSidebar();
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <Sidebar>
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <Sidebar className="h-full">
         <SidebarHeader className="justify-between">
           <Link
             to="/"
@@ -128,8 +128,8 @@ function UserShell({
           <p>&copy; {new Date().getFullYear()} Open Model Gateway</p>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset>
-        <header className="flex h-16 items-center justify-between gap-4 border-b bg-card px-4 md:px-6">
+      <SidebarInset className="flex h-full flex-1 flex-col overflow-hidden">
+        <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b bg-card px-4 md:px-6">
           <div className="flex items-center gap-2">
             <SidebarTrigger className="md:hidden">
               <Menu className="size-5" />

@@ -22,6 +22,7 @@ func registerAdminProviderHealthRoutes(router fiber.Router, container *app.Conta
 	group.Get("/degraded", handler.listDegraded)
 	group.Get("/slis", handler.listSLIs)
 	group.Get("/alerts", handler.listAlerts)
+	group.Post("/seed/clear", handler.clearSeed)
 }
 
 type providerHealthHandler struct {
@@ -278,4 +279,25 @@ func (h *providerHealthHandler) seedSampleIncident(ctx context.Context) error {
 		Metadata:        []byte(`{"seed":true}`),
 	})
 	return nil
+}
+
+func (h *providerHealthHandler) clearSeed(c *fiber.Ctx) error {
+	if h.container == nil {
+		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "container unavailable")
+	}
+	ctx := c.Context()
+	if h.container.DBPool != nil {
+		_, _ = h.container.DBPool.Exec(ctx, `delete from provider_incidents where provider='sample' or metadata @> '{"seed":true}'`)
+	}
+	if h.container.Redis != nil {
+		iter := h.container.Redis.Scan(ctx, 0, "telemetry:provider:sample*", 0).Iterator()
+		var keys []string
+		for iter.Next(ctx) {
+			keys = append(keys, iter.Val())
+		}
+		if len(keys) > 0 {
+			_, _ = h.container.Redis.Del(ctx, keys...).Result()
+		}
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }

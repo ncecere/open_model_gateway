@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { useProviderAlerts, useProviderIncidents, useProviderSLIs } from "@/api/hooks/useTelemetry";
 import {
+  clearTelemetrySeed,
   listProviderIncidents,
   listProviderSLIs,
   type ProviderIncident,
@@ -75,6 +76,7 @@ export function ProviderHealthPage() {
   const [searchRoute, setSearchRoute] = useState("");
   const [incidentStatus, setIncidentStatus] = useState<"all" | "open" | "resolved">("all");
   const [selectedIncident, setSelectedIncident] = useState<ProviderIncident | null>(null);
+  const [clearingSeed, setClearingSeed] = useState(false);
 
   const slisQuery = useProviderSLIs({
     provider: providerFilter || undefined,
@@ -130,19 +132,40 @@ export function ProviderHealthPage() {
     }
   };
 
+  const clearSeedData = async () => {
+    setClearingSeed(true);
+    try {
+      await clearTelemetrySeed();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["provider-slis"] }),
+        queryClient.invalidateQueries({ queryKey: ["provider-incidents"] }),
+        queryClient.invalidateQueries({ queryKey: ["provider-alerts"] }),
+      ]);
+    } catch (err) {
+      console.error("clear telemetry seed failed", err);
+    } finally {
+      setClearingSeed(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Provider Health</h1>
-          <p className="text-sm text-muted-foreground">
-            Live SLIs, degraded routes, and recent incidents across providers.
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold">Provider Health</h1>
+            <p className="text-sm text-muted-foreground">
+              Live SLIs, degraded routes, and recent incidents across providers.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => void clearSeedData()} disabled={clearingSeed}>
+              {clearingSeed ? "Clearing…" : "Clear seed data"}
+            </Button>
+            <Button variant="secondary" onClick={() => void seedSampleData()}>
+              Seed sample data
+            </Button>
+          </div>
         </div>
-        <Button variant="secondary" onClick={() => void seedSampleData()}>
-          Seed sample data
-        </Button>
-      </div>
 
       <Card>
         <CardContent className="flex flex-wrap gap-3 pt-6">

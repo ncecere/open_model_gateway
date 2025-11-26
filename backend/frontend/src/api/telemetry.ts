@@ -97,3 +97,7 @@ export async function listProviderAlerts(params?: ListAlertsParams) {
   });
   return data.alerts;
 }
+
+export async function clearTelemetrySeed() {
+  await api.post("/providers/seed/clear");
+}

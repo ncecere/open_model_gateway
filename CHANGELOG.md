@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [Unreleased]
+### Added
+- Provider telemetry/alerting pipeline: Redis sampler + SLI evaluator, provider incident persistence, admin APIs for SLIs/incidents/alerts with seed data hooks, and a provider alert email template.
+- Admin UI telemetry surfaces: Provider Health page with filters plus SLI/incident/alert tables and a seed-data action; telemetry client hooks for SLIs/incidents/alerts.
+- Telemetry docs and sample config (`telemetry.provider.*`) including per-provider override examples.
+- Unit tests for telemetry rollups (recorder/evaluator/dispatcher/service) and Provider Health component tests with mocked data.
+
+### Changed
+- Health monitor now records provider telemetry samples; routing can down-weight degraded routes when multiple deployments exist.
+- Admin Settings › Default models: selector moved inline with the heading, dropdown made scrollable, and add button aligned to the header.
+- Admin layout keeps sidebar/header fixed with the main content scrollable.
+
 ## [v0.1.16] - 2025-11-20
 ### Added
 - User portal model catalog now includes a tenant scope selector (Personal or any joined tenant) so users can quickly pivot between catalog views that apply to their current context.

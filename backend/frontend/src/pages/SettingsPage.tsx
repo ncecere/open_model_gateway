@@ -1100,12 +1100,51 @@ export function SettingsPage() {
 
         <TabsContent value="models" forceMount>
           <Card>
-            <CardHeader>
-              <CardTitle>Default models</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                These aliases are granted automatically to every personal tenant.
-                Remove access here to hide models from users unless a tenant override explicitly re-enables them.
-              </p>
+            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-2">
+                <CardTitle>Default models</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  These aliases are granted automatically to every personal tenant.
+                  Remove access here to hide models from users unless a tenant override explicitly re-enables them.
+                </p>
+              </div>
+              <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-3">
+                <div className="w-full md:w-80">
+                  <Select
+                    value={newDefaultModel}
+                    onValueChange={setNewDefaultModel}
+                    disabled={availableModelOptions.length === 0 || addModelMutation.isPending}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          availableModelOptions.length
+                            ? "Select model"
+                            : "All enabled models already granted"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72 overflow-y-auto">
+                      {availableModelOptions.map((entry) => (
+                        <SelectItem key={entry.alias} value={entry.alias}>
+                          <div className="flex flex-col text-left">
+                            <span className="font-medium">{entry.alias}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {entry.provider}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={handleAddModel}
+                  disabled={!newDefaultModel || addModelMutation.isPending}
+                >
+                  {addModelMutation.isPending ? "Adding…" : "Add model"}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
               {modelsLoading ? (
@@ -1172,49 +1211,6 @@ export function SettingsPage() {
                       No default models selected yet.
                     </p>
                   )}
-
-                  <div className="space-y-3">
-                    <Label>Add model</Label>
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                      <div className="md:w-80">
-                        <Select
-                          value={newDefaultModel}
-                          onValueChange={setNewDefaultModel}
-                          disabled={
-                            availableModelOptions.length === 0 || addModelMutation.isPending
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue
-                              placeholder={
-                                availableModelOptions.length
-                                  ? "Select model"
-                                  : "All enabled models already granted"
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableModelOptions.map((entry) => (
-                              <SelectItem key={entry.alias} value={entry.alias}>
-                                <div className="flex flex-col text-left">
-                                  <span className="font-medium">{entry.alias}</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {entry.provider}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <Button
-                        onClick={handleAddModel}
-                        disabled={!newDefaultModel || addModelMutation.isPending}
-                      >
-                        {addModelMutation.isPending ? "Adding…" : "Add model"}
-                      </Button>
-                    </div>
-                  </div>
                 </>
               )}
             </CardContent>

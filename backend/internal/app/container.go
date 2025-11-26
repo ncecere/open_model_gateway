@@ -43,46 +43,50 @@ import (
 	filesvc "github.com/ncecere/open_model_gateway/backend/internal/services/files"
 	tenantservice "github.com/ncecere/open_model_gateway/backend/internal/services/tenant"
 	usageService "github.com/ncecere/open_model_gateway/backend/internal/services/usage"
+	providermetrics "github.com/ncecere/open_model_gateway/backend/internal/telemetry/provider"
 )
 
 // Container aggregates runtime dependencies for handlers and services.
 type Container struct {
-	Config             *config.Config
-	DBPool             *pgxpool.Pool
-	Redis              *redis.Client
-	Queries            *db.Queries
-	Accounts           *accounts.PersonalService
-	AdminUsers         *adminusersvc.Service
-	AdminCatalog       *admincatalogsvc.Service
-	AdminBudgets       *adminbudgetsvc.Service
-	AdminRateLimits    *adminratelimitsvc.Service
-	AdminProviders     *adminprovidersvc.Service
-	AdminTenants       *admintenantsvc.Service
-	AdminRBAC          *adminrbacsvc.Service
-	AdminConfig        *adminconfigsvc.Service
-	AdminAudit         *adminauditsvc.Service
-	Batches            *batchsvc.Service
-	DefaultModels      *catalog.DefaultModelService
-	UsageService       *usageService.Service
-	TenantService      *tenantservice.Service
-	AdminAuth          *auth.AdminAuthService
-	Factory            *providers.Factory
-	Engine             *router.Engine
-	RateLimiter        *limits.RateLimiter
-	KeyRateLimits      map[string]limits.LimitConfig
-	TenantRateLimits   map[uuid.UUID]limits.LimitConfig
-	DefaultKeyLimit    limits.LimitConfig
-	DefaultTenantLimit limits.LimitConfig
-	rateStore          *runtimeratelimits.Store
-	UsageLogger        UsageLogger
-	Idempotency        *cache.IdempotencyCache
-	HealthMon          *health.Monitor
-	Observability      *observability.Provider
-	Files              *filesvc.Service
-	tenantModels       *runtimetype.AccessStore
-	tenantRateLimitMu  sync.RWMutex
-	keyRateLimitMu     sync.RWMutex
-	ReportingLocation  *time.Location
+	Config               *config.Config
+	DBPool               *pgxpool.Pool
+	Redis                *redis.Client
+	Queries              *db.Queries
+	Accounts             *accounts.PersonalService
+	AdminUsers           *adminusersvc.Service
+	AdminCatalog         *admincatalogsvc.Service
+	AdminBudgets         *adminbudgetsvc.Service
+	AdminRateLimits      *adminratelimitsvc.Service
+	AdminProviders       *adminprovidersvc.Service
+	AdminTenants         *admintenantsvc.Service
+	AdminRBAC            *adminrbacsvc.Service
+	AdminConfig          *adminconfigsvc.Service
+	AdminAudit           *adminauditsvc.Service
+	Batches              *batchsvc.Service
+	DefaultModels        *catalog.DefaultModelService
+	UsageService         *usageService.Service
+	TenantService        *tenantservice.Service
+	AdminAuth            *auth.AdminAuthService
+	Factory              *providers.Factory
+	Engine               *router.Engine
+	RateLimiter          *limits.RateLimiter
+	KeyRateLimits        map[string]limits.LimitConfig
+	TenantRateLimits     map[uuid.UUID]limits.LimitConfig
+	DefaultKeyLimit      limits.LimitConfig
+	DefaultTenantLimit   limits.LimitConfig
+	rateStore            *runtimeratelimits.Store
+	UsageLogger          UsageLogger
+	ProviderTelemetry    *providermetrics.Recorder
+	ProviderTelemetrySvc *providermetrics.Service
+	Idempotency          *cache.IdempotencyCache
+	HealthMon            *health.Monitor
+	Observability        *observability.Provider
+	Files                *filesvc.Service
+	TelemetryCancel      context.CancelFunc
+	tenantModels         *runtimetype.AccessStore
+	tenantRateLimitMu    sync.RWMutex
+	keyRateLimitMu       sync.RWMutex
+	ReportingLocation    *time.Location
 }
 
 // ContainerStages allows callers (e.g., runtime.Builder) to pre-build core stages
@@ -145,12 +149,13 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	engine := routing.Engine
 
 	var telemetry *Telemetry
+	var telemetryCancel context.CancelFunc
 	if stages != nil {
 		telemetry = stages.Telemetry
 	}
 	if telemetry == nil {
 		var err error
-		telemetry, err = BuildTelemetry(ctx, cfg, pool, queries, entries)
+		telemetry, telemetryCancel, err = BuildTelemetry(ctx, cfg, pool, queries, entries, redisClient)
 		if err != nil {
 			return nil, err
 		}
@@ -168,6 +173,11 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 		return nil, err
 	}
 
+	var telemetryGuard func(alias, routeKey string) bool
+	if telemetry != nil && telemetry.ProviderSvc != nil && cfg.Telemetry.Provider.DownweightWhenDegraded {
+		telemetryGuard = telemetry.ProviderSvc.IsDegraded
+	}
+
 	var rateGauge *promreg.GaugeVec
 	if telemetry != nil && telemetry.Observability != nil {
 		rateGauge = telemetry.Observability.RateLimiterGauge()
@@ -176,15 +186,35 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	idem := cache.NewIdempotencyCache(redisClient, 30*time.Minute)
 
 	monitor := health.NewMonitor(engine, cfg.Health)
+	if telemetry != nil {
+		rec := telemetry.ProviderRec
+		obs := telemetry.Observability
+		monitor.WithRecorder(func(sample providermetrics.Sample) {
+			if rec != nil {
+				_ = rec.RecordSample(context.Background(), sample)
+			}
+			if obs != nil {
+				obs.RecordProviderMetrics(sample)
+			}
+		})
+	}
 	monitor.Start(ctx, func() map[string][]providers.Route {
 		return engine.ListAliases()
 	})
+	if telemetryGuard != nil {
+		engine.SetTelemetryGuard(func(alias, routeKey string) bool {
+			// Only down-weight when multiple routes exist; engine enforces.
+			return telemetryGuard(alias, routeKey)
+		})
+	}
 
 	usageLogger := telemetry.UsageLogger
 	obsProvider := telemetry.Observability
 	filesService := telemetry.Files
 	batchesService := telemetry.Batches
 	adminConfigService := telemetry.AdminConfig
+	providerRec := telemetry.ProviderRec
+	providerTelemetrySvc := telemetry.ProviderSvc
 
 	defaultKeyLimit := limits.LimitConfig{
 		RequestsPerMinute: cfg.RateLimits.DefaultRequestsPerMinute,
@@ -205,33 +235,36 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	}
 
 	container := &Container{
-		Config:             cfg,
-		DBPool:             pool,
-		Redis:              redisClient,
-		Queries:            queries,
-		Accounts:           personalSvc,
-		AdminUsers:         adminUserSvc,
-		DefaultModels:      defaultModels,
-		AdminProviders:     providerSvc,
-		UsageService:       usageSvc,
-		TenantService:      tenantSvc,
-		AdminAuth:          adminAuth,
-		Factory:            factory,
-		Engine:             engine,
-		RateLimiter:        rateLimiter,
-		KeyRateLimits:      keyLimitOverrides,
-		TenantRateLimits:   tenantLimitOverrides,
-		DefaultKeyLimit:    defaultKeyLimit,
-		DefaultTenantLimit: defaultTenantLimit,
-		rateStore:          rateStore,
-		UsageLogger:        usageLogger,
-		Idempotency:        idem,
-		HealthMon:          monitor,
-		Observability:      obsProvider,
-		Files:              filesService,
-		AdminConfig:        adminConfigService,
-		Batches:            batchesService,
-		ReportingLocation:  reportingLoc,
+		Config:               cfg,
+		DBPool:               pool,
+		Redis:                redisClient,
+		Queries:              queries,
+		Accounts:             personalSvc,
+		AdminUsers:           adminUserSvc,
+		DefaultModels:        defaultModels,
+		AdminProviders:       providerSvc,
+		UsageService:         usageSvc,
+		TenantService:        tenantSvc,
+		AdminAuth:            adminAuth,
+		Factory:              factory,
+		Engine:               engine,
+		RateLimiter:          rateLimiter,
+		KeyRateLimits:        keyLimitOverrides,
+		TenantRateLimits:     tenantLimitOverrides,
+		DefaultKeyLimit:      defaultKeyLimit,
+		DefaultTenantLimit:   defaultTenantLimit,
+		rateStore:            rateStore,
+		UsageLogger:          usageLogger,
+		ProviderTelemetry:    providerRec,
+		ProviderTelemetrySvc: providerTelemetrySvc,
+		Idempotency:          idem,
+		HealthMon:            monitor,
+		Observability:        obsProvider,
+		Files:                filesService,
+		AdminConfig:          adminConfigService,
+		Batches:              batchesService,
+		TelemetryCancel:      telemetryCancel,
+		ReportingLocation:    reportingLoc,
 	}
 
 	personalSvc.SetTenantModelUpdater(func(id uuid.UUID, aliases []string) {
@@ -289,6 +322,19 @@ func (c *Container) loadTenantModelAccess(ctx context.Context) error {
 	}
 	c.tenantModels = store
 	return nil
+}
+
+// RecordProviderTelemetry fans out provider samples to metrics and Redis windows.
+func (c *Container) RecordProviderTelemetry(ctx context.Context, sample providermetrics.Sample) {
+	if c == nil {
+		return
+	}
+	if c.ProviderTelemetry != nil {
+		_ = c.ProviderTelemetry.RecordSample(ctx, sample)
+	}
+	if c.Observability != nil {
+		c.Observability.RecordProviderMetrics(sample)
+	}
 }
 
 // ReportingLoc returns the configured reporting timezone location (defaults to UTC).

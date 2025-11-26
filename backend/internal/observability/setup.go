@@ -19,6 +19,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
+	providermetrics "github.com/ncecere/open_model_gateway/backend/internal/telemetry/provider"
 )
 
 type Provider struct {
@@ -35,6 +36,11 @@ type Provider struct {
 	apiRetryCounter     *promreg.CounterVec
 	rateLimiterGauge    *promreg.GaugeVec
 	budgetEvalHistogram *promreg.HistogramVec
+	providerLatency     *promreg.HistogramVec
+	providerRequests    *promreg.CounterVec
+	providerTokens      *promreg.CounterVec
+	providerErrors      *promreg.CounterVec
+	providerStreams     *promreg.GaugeVec
 }
 
 func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, error) {
@@ -182,6 +188,62 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		if err := registry.Register(budgetEval); err != nil {
 			return nil, err
 		}
+		providerLatency := promreg.NewHistogramVec(
+			promreg.HistogramOpts{
+				Namespace: "gateway",
+				Name:      "provider_request_duration_seconds",
+				Help:      "Upstream provider latency by alias/provider/route.",
+				Buckets:   []float64{0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20},
+			},
+			[]string{"provider", "model_alias", "route", "result"},
+		)
+		providerRequests := promreg.NewCounterVec(
+			promreg.CounterOpts{
+				Namespace: "gateway",
+				Name:      "provider_requests_total",
+				Help:      "Total provider requests by outcome.",
+			},
+			[]string{"provider", "model_alias", "route", "result"},
+		)
+		providerTokens := promreg.NewCounterVec(
+			promreg.CounterOpts{
+				Namespace: "gateway",
+				Name:      "provider_tokens_total",
+				Help:      "Tokens per provider/model alias.",
+			},
+			[]string{"provider", "model_alias", "route", "direction"},
+		)
+		providerErrors := promreg.NewCounterVec(
+			promreg.CounterOpts{
+				Namespace: "gateway",
+				Name:      "provider_upstream_errors_total",
+				Help:      "Upstream provider errors by class.",
+			},
+			[]string{"provider", "model_alias", "route", "class"},
+		)
+		providerStreams := promreg.NewGaugeVec(
+			promreg.GaugeOpts{
+				Namespace: "gateway",
+				Name:      "provider_active_streams",
+				Help:      "In-flight provider streams by route.",
+			},
+			[]string{"provider", "model_alias", "route"},
+		)
+		if err := registry.Register(providerLatency); err != nil {
+			return nil, err
+		}
+		if err := registry.Register(providerRequests); err != nil {
+			return nil, err
+		}
+		if err := registry.Register(providerTokens); err != nil {
+			return nil, err
+		}
+		if err := registry.Register(providerErrors); err != nil {
+			return nil, err
+		}
+		if err := registry.Register(providerStreams); err != nil {
+			return nil, err
+		}
 		provider.httpRequestCounter = httpRequests
 		provider.httpRequestLatency = httpLatency
 		provider.apiLatencyHist = apiLatency
@@ -189,6 +251,11 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		provider.apiRetryCounter = retryCounter
 		provider.rateLimiterGauge = rateLimiterGauge
 		provider.budgetEvalHistogram = budgetEval
+		provider.providerLatency = providerLatency
+		provider.providerRequests = providerRequests
+		provider.providerTokens = providerTokens
+		provider.providerErrors = providerErrors
+		provider.providerStreams = providerStreams
 	}
 
 	return provider, nil
@@ -199,6 +266,44 @@ func (p *Provider) PrometheusHandler() http.Handler {
 		return nil
 	}
 	return p.promHandler
+}
+
+// RecordProviderMetrics updates provider-level Prometheus series using a sample.
+func (p *Provider) RecordProviderMetrics(sample providermetrics.Sample) {
+	if p == nil || p.providerRequests == nil {
+		return
+	}
+	provider := sample.Provider
+	alias := sample.ModelAlias
+	route := sample.Route
+	result := string(sample.Result)
+	p.providerRequests.WithLabelValues(provider, alias, route, result).Inc()
+	if sample.Latency > 0 {
+		p.providerLatency.WithLabelValues(provider, alias, route, result).Observe(sample.Latency.Seconds())
+	}
+	if sample.InputTokens > 0 {
+		p.providerTokens.WithLabelValues(provider, alias, route, "input").Add(float64(sample.InputTokens))
+	}
+	if sample.OutputTokens > 0 {
+		p.providerTokens.WithLabelValues(provider, alias, route, "output").Add(float64(sample.OutputTokens))
+	}
+	if sample.ErrorClass != "" {
+		p.providerErrors.WithLabelValues(provider, alias, route, sample.ErrorClass).Inc()
+	}
+}
+
+func (p *Provider) IncProviderStream(provider, alias, route string) {
+	if p == nil || p.providerStreams == nil {
+		return
+	}
+	p.providerStreams.WithLabelValues(provider, alias, route).Inc()
+}
+
+func (p *Provider) DecProviderStream(provider, alias, route string) {
+	if p == nil || p.providerStreams == nil {
+		return
+	}
+	p.providerStreams.WithLabelValues(provider, alias, route).Dec()
 }
 
 func (p *Provider) Shutdown(ctx context.Context) error {

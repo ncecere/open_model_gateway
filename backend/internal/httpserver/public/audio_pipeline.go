@@ -17,6 +17,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 	usagepipeline "github.com/ncecere/open_model_gateway/backend/internal/services/usagepipeline"
+	providermetrics "github.com/ncecere/open_model_gateway/backend/internal/telemetry/provider"
 )
 
 type audioPipeline struct {
@@ -25,6 +26,23 @@ type audioPipeline struct {
 
 func newAudioPipeline(container *app.Container) *audioPipeline {
 	return &audioPipeline{container: container}
+}
+
+func (p *audioPipeline) recordProviderSample(ctx context.Context, rc *requestctx.Context, alias string, route providers.Route, latency time.Duration, result providermetrics.Result, err error, usage models.Usage) {
+	if p == nil || p.container == nil {
+		return
+	}
+	p.container.RecordProviderTelemetry(ctx, providermetrics.Sample{
+		Provider:     route.Provider,
+		ModelAlias:   alias,
+		Route:        route.ResolveDeployment(),
+		Result:       result,
+		ErrorClass:   providermetrics.ClassifyError(err),
+		Latency:      latency,
+		InputTokens:  int64(usage.PromptTokens),
+		OutputTokens: int64(usage.CompletionTokens),
+		Timestamp:    time.Now().UTC(),
+	})
 }
 
 func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
@@ -110,6 +128,7 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 			lastLatency = time.Since(start)
 			lastErr = execErr
 			lastRoute = route
+			p.recordProviderSample(ctx, rc, inv.Model, route, lastLatency, providermetrics.ResultError, execErr, resp.Usage)
 			continue
 		}
 		lastRoute = route
@@ -142,6 +161,7 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 		if status, err := p.container.UsageLogger.Record(ctx, record); err == nil {
 			httputil.ApplyBudgetHeaders(c, status)
 		}
+		p.recordProviderSample(ctx, rc, inv.Model, route, time.Since(start), providermetrics.ResultSuccess, nil, resp.Usage)
 		return writeAudioTranscriptionResponse(c, resp)
 	}
 
@@ -168,6 +188,7 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 			Success:   false,
 		})
 	}
+	p.recordProviderSample(ctx, rc, inv.Model, lastRoute, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
 	return httputil.WriteError(c, fiber.StatusBadGateway, lastErr.Error())
 }
 
@@ -313,6 +334,11 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 				if status, err := p.container.UsageLogger.Record(ctx, record); err == nil {
 					httputil.ApplyBudgetHeaders(c, status)
 				}
+				result := providermetrics.ResultSuccess
+				if !record.Success {
+					result = providermetrics.ResultError
+				}
+				p.recordProviderSample(ctx, rc, inv.Model, route, latency, result, nil, streamUsage)
 			}
 
 			defer recordUsage()
@@ -467,6 +493,7 @@ func (p *audioPipeline) Speech(c *fiber.Ctx, req models.AudioSpeechRequest) erro
 			lastErr = synthErr
 			lastLatency = time.Since(start)
 			p.container.Engine.ReportFailure(alias, route)
+			p.recordProviderSample(ctx, rc, alias, route, lastLatency, providermetrics.ResultError, synthErr, resp.Usage)
 			continue
 		}
 		p.container.Engine.ReportSuccess(alias, route)
@@ -498,6 +525,7 @@ func (p *audioPipeline) Speech(c *fiber.Ctx, req models.AudioSpeechRequest) erro
 		if status, err := p.container.UsageLogger.Record(ctx, record); err == nil {
 			httputil.ApplyBudgetHeaders(c, status)
 		}
+		p.recordProviderSample(ctx, rc, alias, route, time.Since(start), providermetrics.ResultSuccess, nil, resp.Usage)
 
 		return writeAudioSpeechResponse(c, providerReq, resp)
 	}
@@ -518,5 +546,6 @@ func (p *audioPipeline) Speech(c *fiber.Ctx, req models.AudioSpeechRequest) erro
 			Success:   false,
 		})
 	}
+	p.recordProviderSample(ctx, rc, alias, lastRoute, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
 	return httputil.WriteError(c, fiber.StatusBadGateway, lastErr.Error())
 }

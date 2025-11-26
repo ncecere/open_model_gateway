@@ -47,6 +47,7 @@ type routingStage struct {
 // metadata soon to be wired during the telemetry/jobs phase.
 type telemetryStage struct {
 	telemetry *app.Telemetry
+	cancel    context.CancelFunc
 }
 
 // NewBuilder returns a build coordinator using the provided options.
@@ -191,11 +192,11 @@ func (b *Builder) buildTelemetry(ctx context.Context) error {
 	if b.routing == nil || b.routing.routing == nil {
 		return fmt.Errorf("routing stage required before telemetry")
 	}
-	telem, err := app.BuildTelemetry(ctx, b.config, b.datastores.DB, b.services.services.Queries, b.routing.routing.Entries)
+	telem, cancel, err := app.BuildTelemetry(ctx, b.config, b.datastores.DB, b.services.services.Queries, b.routing.routing.Entries, b.redis)
 	if err != nil {
 		return err
 	}
-	b.telemetry = &telemetryStage{telemetry: telem}
+	b.telemetry = &telemetryStage{telemetry: telem, cancel: cancel}
 	return nil
 }
 
@@ -210,6 +211,12 @@ func (b *Builder) buildJobs(container *app.Container) {
 		}
 		if container.Files != nil && b.config != nil {
 			startFileSweeper(ctx, container.Files, b.config.Files)
+		}
+		if container.TelemetryCancel != nil {
+			go func() {
+				<-ctx.Done()
+				container.TelemetryCancel()
+			}()
 		}
 	}
 	b.jobs = stage

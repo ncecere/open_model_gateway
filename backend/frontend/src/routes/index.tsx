@@ -5,6 +5,7 @@ import { DashboardPage } from "../pages/DashboardPage";
 import { KeysPage } from "../pages/KeysPage";
 import { LoginPage } from "../pages/LoginPage";
 import { ModelsPage } from "../pages/ModelsPage";
+import { ProviderHealthPage } from "../pages/ProviderHealthPage";
 import { TenantsPage } from "../pages/TenantsPage";
 import { UsersPage } from "../pages/UsersPage";
 import { UsagePage } from "../pages/UsagePage";
@@ -54,6 +55,7 @@ export function AppRoutes() {
         <Route path="users" element={<UsersPage />} />
         <Route path="keys" element={<KeysPage />} />
         <Route path="models" element={<ModelsPage />} />
+        <Route path="provider-health" element={<ProviderHealthPage />} />
         <Route path="usage" element={<UsagePage />} />
         <Route path="files" element={<FilesPage />} />
         <Route path="settings" element={<SettingsPage />} />

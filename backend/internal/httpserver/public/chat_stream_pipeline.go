@@ -17,6 +17,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 	usagepipeline "github.com/ncecere/open_model_gateway/backend/internal/services/usagepipeline"
+	providermetrics "github.com/ncecere/open_model_gateway/backend/internal/telemetry/provider"
 )
 
 type chatStreamPipeline struct {
@@ -101,6 +102,14 @@ func (p *chatStreamPipeline) streamChat(
 		if err != nil {
 			p.container.Engine.ReportFailure(alias, route)
 			lastErr = err
+			p.container.RecordProviderTelemetry(ctx, providermetrics.Sample{
+				Provider:   route.Provider,
+				ModelAlias: alias,
+				Route:      route.ResolveDeployment(),
+				Result:     providermetrics.ResultError,
+				ErrorClass: providermetrics.ClassifyError(err),
+				Timestamp:  time.Now().UTC(),
+			})
 			continue
 		}
 		lastRoute = route
@@ -112,16 +121,25 @@ func (p *chatStreamPipeline) streamChat(
 		streamStart := time.Now()
 		var firstTokenLatency time.Duration
 		var firstTokenMeasured bool
+		if p.container.Observability != nil {
+			p.container.Observability.IncProviderStream(route.Provider, alias, route.ResolveDeployment())
+		}
 
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 			defer cancel()
 			defer release()
+			defer func() {
+				if p.container.Observability != nil {
+					p.container.Observability.DecProviderStream(route.Provider, alias, route.ResolveDeployment())
+				}
+			}()
 
 			recordStatus := fiber.StatusOK
 			recordSuccess := false
 			reported := false
 			var streamUsage models.Usage
 			usageCaptured := false
+			var recordErr error
 
 			recordUsage := func() {
 				tokensUsed := int(streamUsage.TotalTokens)
@@ -148,6 +166,10 @@ func (p *chatStreamPipeline) streamChat(
 				if firstTokenMeasured && firstTokenLatency > 0 {
 					latency = firstTokenLatency
 				}
+				result := providermetrics.ResultSuccess
+				if recordStatus != fiber.StatusOK || !recordSuccess {
+					result = providermetrics.ResultError
+				}
 				record := usagepipeline.Record{
 					Context:        rc,
 					Alias:          alias,
@@ -164,6 +186,17 @@ func (p *chatStreamPipeline) streamChat(
 				if _, err := p.container.UsageLogger.Record(ctx, record); err != nil {
 					slog.Error("record stream usage", slog.String("alias", alias), slog.String("error", err.Error()))
 				}
+				p.container.RecordProviderTelemetry(ctx, providermetrics.Sample{
+					Provider:     route.Provider,
+					ModelAlias:   alias,
+					Route:        route.ResolveDeployment(),
+					Result:       result,
+					ErrorClass:   providermetrics.ClassifyError(recordErr),
+					Latency:      latency,
+					InputTokens:  int64(streamUsage.PromptTokens),
+					OutputTokens: int64(streamUsage.CompletionTokens),
+					Timestamp:    time.Now().UTC(),
+				})
 			}
 
 			defer recordUsage()
@@ -191,22 +224,27 @@ func (p *chatStreamPipeline) streamChat(
 				data, err := json.Marshal(payload)
 				if err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					recordErr = err
 					return
 				}
 				if _, err = w.WriteString("data: "); err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					recordErr = err
 					return
 				}
 				if _, err = w.Write(data); err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					recordErr = err
 					return
 				}
 				if _, err = w.WriteString("\n\n"); err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					recordErr = err
 					return
 				}
 				if err = w.Flush(); err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					recordErr = err
 					return
 				}
 
@@ -220,10 +258,12 @@ func (p *chatStreamPipeline) streamChat(
 
 			if _, err := w.WriteString("data: [DONE]\n\n"); err != nil {
 				recordStatus = fiber.StatusInternalServerError
+				recordErr = err
 				return
 			}
 			if err := w.Flush(); err != nil {
 				recordStatus = fiber.StatusInternalServerError
+				recordErr = err
 				return
 			}
 

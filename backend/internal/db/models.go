@@ -333,6 +333,25 @@ type ModelCatalog struct {
 	Weight             int32              `json:"weight"`
 }
 
+type ProviderIncident struct {
+	ID              pgtype.UUID        `json:"id"`
+	Provider        string             `json:"provider"`
+	ModelAlias      string             `json:"model_alias"`
+	IncidentType    string             `json:"incident_type"`
+	Status          string             `json:"status"`
+	WindowSeconds   int32              `json:"window_seconds"`
+	OpenedAt        pgtype.Timestamptz `json:"opened_at"`
+	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
+	WindowStartedAt pgtype.Timestamptz `json:"window_started_at"`
+	WindowEndedAt   pgtype.Timestamptz `json:"window_ended_at"`
+	SampleError     pgtype.Text        `json:"sample_error"`
+	RequestCount    int32              `json:"request_count"`
+	ErrorCount      int32              `json:"error_count"`
+	TimeoutCount    int32              `json:"timeout_count"`
+	LatencyP95Ms    pgtype.Int4        `json:"latency_p95_ms"`
+	Metadata        []byte             `json:"metadata"`
+}
+
 type RateLimitDefault struct {
 	ID                     bool               `json:"id"`
 	RequestsPerMinute      int32              `json:"requests_per_minute"`

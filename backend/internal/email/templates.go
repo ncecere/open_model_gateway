@@ -15,6 +15,7 @@ var (
 
 const (
 	budgetAlertTemplateName = "budget_alert.html"
+	providerAlertTemplateName = "provider_alert.html"
 	adminInviteTemplateName = "admin_invite.html"
 	testEmailTemplateName   = "test_email.html"
 )
@@ -28,6 +29,20 @@ type BudgetAlertTemplateData struct {
 	BudgetLimit      string
 	WarningThreshold string
 	BudgetReset      string
+	ManageLink       string
+}
+
+type ProviderAlertTemplateData struct {
+	Provider         string
+	Alias            string
+	IncidentType     string
+	IncidentTypeLabel string
+	Timestamp        string
+	RequestCount     string
+	WindowLabel      string
+	ObservedValue    string
+	ThresholdValue   string
+	SampleError      string
 	ManageLink       string
 }
 
@@ -51,6 +66,10 @@ func renderTemplate(name string, data interface{}) (string, error) {
 
 func RenderBudgetAlertTemplate(data BudgetAlertTemplateData) (string, error) {
 	return renderTemplate(budgetAlertTemplateName, data)
+}
+
+func RenderProviderAlertTemplate(data ProviderAlertTemplateData) (string, error) {
+	return renderTemplate(providerAlertTemplateName, data)
 }
 
 func RenderAdminInviteTemplate(data AdminInviteTemplateData) (string, error) {

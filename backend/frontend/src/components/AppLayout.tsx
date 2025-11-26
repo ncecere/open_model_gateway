@@ -34,6 +34,7 @@ const navItems = [
   { path: "/tenants", label: "Tenants" },
   { path: "/users", label: "Users" },
   { path: "/keys", label: "API Keys" },
+  { path: "/provider-health", label: "Provider Health" },
   { path: "/usage", label: "Usage" },
   { path: "/files", label: "Files" },
   { path: "/batches", label: "Batches" },

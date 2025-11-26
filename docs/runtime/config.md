@@ -50,6 +50,51 @@ Used for rate limiting and idempotency caches.
 
 Set `ROUTER_OBSERVABILITY_ENABLE_OTLP=false` to disable tracing locally.
 
+## Telemetry (`telemetry.provider.*`)
+
+Provider telemetry/SLI evaluator settings. Env overrides follow `ROUTER_TELEMETRY_PROVIDER_*` (or the shorter `DEFAULT_PROVIDER_TELEMETRY_*` helpers).
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `true` | Toggle the provider telemetry pipeline. |
+| `evaluation_interval` | `1m` | How often to roll up SLI windows. |
+| `window_size` | `5m` | Sliding window duration for SLI calculations; must be ≥ `evaluation_interval`. |
+| `incident_retention_days` | `30` | How long to retain provider incidents; also configurable via admin settings. |
+| `downweight_when_degraded` | `true` | When multiple catalog entries back the same alias, automatically down-weight unhealthy instances until they recover. |
+| `defaults.latency_p95_ms` | `5000` | Default p95 latency SLI threshold (ms). |
+| `defaults.error_rate_threshold` | `0.1` | Default error-rate threshold (0–1). |
+| `defaults.timeout_rate_threshold` | `0.05` | Default timeout-rate threshold (0–1). |
+| `defaults.min_samples` | `50` | Minimum samples before SLI checks fire. |
+| `overrides.{provider}.latency_p95_ms` | | Optional per-provider override (e.g., `overrides.openai.latency_p95_ms: 3000`). |
+| `overrides.{provider}.error_rate_threshold` | | Optional per-provider override (e.g., `overrides.azure.error_rate_threshold: 0.03`). |
+| `overrides.{provider}.timeout_rate_threshold` | | Optional per-provider override (e.g., `overrides.azure.timeout_rate_threshold: 0.02`). |
+| `overrides.{provider}.min_samples` | | Optional per-provider override (e.g., `overrides.openrouter.min_samples: 20`). |
+
+Example:
+
+```yaml
+telemetry:
+  provider:
+    enabled: true
+    evaluation_interval: 1m
+    window_size: 5m
+    incident_retention_days: 30
+    downweight_when_degraded: true
+    defaults:
+      latency_p95_ms: 5000
+      error_rate_threshold: 0.1
+      timeout_rate_threshold: 0.05
+      min_samples: 50
+    overrides:
+      openai:
+        latency_p95_ms: 3000
+        error_rate_threshold: 0.05
+        timeout_rate_threshold: 0.02
+        min_samples: 20
+      azure:
+        latency_p95_ms: 3500
+```
+
 ## Health Checks (`health.*`)
 
 Controls the background provider health monitor.

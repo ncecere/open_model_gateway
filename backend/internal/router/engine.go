@@ -16,9 +16,10 @@ import (
 )
 
 type Engine struct {
-	mu     sync.RWMutex
-	routes map[string][]providers.Route
-	state  map[string]*routeState
+	mu             sync.RWMutex
+	routes         map[string][]providers.Route
+	state          map[string]*routeState
+	telemetryGuard func(alias, routeKey string) bool
 }
 
 // RouteHealth describes the current health for an alias.
@@ -79,7 +80,8 @@ func (e *Engine) SelectRoutes(alias string) []providers.Route {
 	defer e.mu.RUnlock()
 	healthy := make([]providers.Route, 0)
 	now := time.Now()
-	for _, route := range e.routes[alias] {
+	routes := e.routes[alias]
+	for _, route := range routes {
 		st := e.state[routeKey(alias, route)]
 		if st == nil || st.openUntil.Before(now) {
 			healthy = append(healthy, route)
@@ -87,6 +89,19 @@ func (e *Engine) SelectRoutes(alias string) []providers.Route {
 	}
 	if len(healthy) <= 1 {
 		return healthy
+	}
+	// Down-weight degraded routes when multiple options exist.
+	if e.telemetryGuard != nil {
+		filtered := healthy[:0]
+		for _, r := range healthy {
+			if e.telemetryGuard(alias, routeKey(alias, r)) {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		if len(filtered) > 0 {
+			healthy = filtered
+		}
 	}
 	idx := weightedSelect(healthy)
 	if idx != 0 {
@@ -150,6 +165,13 @@ func routeKey(alias string, route providers.Route) string {
 		deployment = route.Model
 	}
 	return alias + "::" + deployment
+}
+
+// SetTelemetryGuard registers an advisory guard to skip degraded routes when multiple instances exist.
+func (e *Engine) SetTelemetryGuard(fn func(alias, routeKey string) bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.telemetryGuard = fn
 }
 
 // ListAliases returns the set of configured aliases and their routes.

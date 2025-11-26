@@ -19,6 +19,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 	usagepipeline "github.com/ncecere/open_model_gateway/backend/internal/services/usagepipeline"
+	providermetrics "github.com/ncecere/open_model_gateway/backend/internal/telemetry/provider"
 )
 
 var execTracer = otel.Tracer("open-model-gateway/executor")
@@ -209,6 +210,7 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 			}
 
 			span.SetStatus(codes.Ok, "")
+			e.recordProviderSample(ctx, rc, route, alias, elapsed, providermetrics.ResultSuccess, nil, resp.Usage)
 			return ChatResult{
 				Response:     resp,
 				BudgetStatus: budgetStatus,
@@ -233,6 +235,7 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 			Success:   false,
 		})
 	}
+	e.recordProviderSample(ctx, rc, lastRoute, alias, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
 
 	return ChatResult{}, NewAPIError(fiber.StatusBadGateway, lastErr.Error())
 }
@@ -363,6 +366,7 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 				return ImageResult{}, err
 			}
 
+			e.recordProviderSample(ctx, rc, route, alias, elapsed, providermetrics.ResultSuccess, nil, resp.Usage)
 			span.SetStatus(codes.Ok, "")
 			return ImageResult{
 				Response:     resp,
@@ -388,6 +392,7 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 			Success:   false,
 		})
 	}
+	e.recordProviderSample(ctx, rc, lastRoute, alias, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
 
 	return ImageResult{}, NewAPIError(fiber.StatusBadGateway, lastErr.Error())
 }
@@ -507,6 +512,7 @@ func (e *Executor) Embed(ctx context.Context, rc *requestctx.Context, alias stri
 				return EmbeddingsResult{}, err
 			}
 
+			e.recordProviderSample(ctx, rc, route, alias, elapsed, providermetrics.ResultSuccess, nil, resp.Usage)
 			span.SetStatus(codes.Ok, "")
 			return EmbeddingsResult{
 				Response:     resp,
@@ -532,6 +538,7 @@ func (e *Executor) Embed(ctx context.Context, rc *requestctx.Context, alias stri
 			Success:   false,
 		})
 	}
+	e.recordProviderSample(ctx, rc, lastRoute, alias, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
 
 	return EmbeddingsResult{}, NewAPIError(fiber.StatusBadGateway, lastErr.Error())
 }
@@ -654,6 +661,7 @@ func (e *Executor) Moderate(ctx context.Context, rc *requestctx.Context, alias s
 				return ModerationResult{}, err
 			}
 
+			e.recordProviderSample(ctx, rc, route, alias, elapsed, providermetrics.ResultSuccess, nil, resp.Usage)
 			span.SetStatus(codes.Ok, "")
 			return ModerationResult{
 				Response:     resp,
@@ -679,6 +687,7 @@ func (e *Executor) Moderate(ctx context.Context, rc *requestctx.Context, alias s
 			Success:   false,
 		})
 	}
+	e.recordProviderSample(ctx, rc, lastRoute, alias, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
 
 	return ModerationResult{}, NewAPIError(fiber.StatusBadGateway, lastErr.Error())
 }
@@ -719,6 +728,27 @@ func (e *Executor) recordRetry(rc *requestctx.Context, alias, provider, reason s
 		reason = "provider_error"
 	}
 	e.container.Observability.RecordRetry(tenant, alias, provider, reason)
+}
+
+func (e *Executor) recordProviderSample(ctx context.Context, rc *requestctx.Context, route providers.Route, alias string, latency time.Duration, result providermetrics.Result, err error, usage models.Usage) {
+	if e == nil || e.container == nil {
+		return
+	}
+	if route.Provider == "" {
+		return
+	}
+	sample := providermetrics.Sample{
+		Provider:     route.Provider,
+		ModelAlias:   alias,
+		Route:        route.ResolveDeployment(),
+		Result:       result,
+		ErrorClass:   providermetrics.ClassifyError(err),
+		Latency:      latency,
+		InputTokens:  int64(usage.PromptTokens),
+		OutputTokens: int64(usage.CompletionTokens),
+		Timestamp:    time.Now().UTC(),
+	}
+	e.container.RecordProviderTelemetry(ctx, sample)
 }
 
 func retryReason(err error) string {

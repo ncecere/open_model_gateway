@@ -30,6 +30,7 @@ type Config struct {
 	Batches       BatchesConfig       `mapstructure:"batches"`
 	Retention     RetentionConfig     `mapstructure:"retention"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
+	Telemetry     TelemetryConfig     `mapstructure:"telemetry"`
 	Health        HealthConfig        `mapstructure:"health"`
 	Admin         AdminConfig         `mapstructure:"admin"`
 	ModelCatalog  []ModelCatalogEntry `mapstructure:"model_catalog"`
@@ -233,6 +234,27 @@ type ObservabilityConfig struct {
 	EnableMetrics bool   `mapstructure:"enable_metrics"`
 }
 
+type TelemetryConfig struct {
+	Provider ProviderTelemetryConfig `mapstructure:"provider"`
+}
+
+type ProviderTelemetryConfig struct {
+	Enabled                bool                           `mapstructure:"enabled"`
+	EvaluationInterval     time.Duration                  `mapstructure:"evaluation_interval"`
+	WindowSize             time.Duration                  `mapstructure:"window_size"`
+	IncidentRetentionDays  int                            `mapstructure:"incident_retention_days"`
+	DownweightWhenDegraded bool                           `mapstructure:"downweight_when_degraded"`
+	Defaults               ProviderSLIDefaults            `mapstructure:"defaults"`
+	Overrides              map[string]ProviderSLIDefaults `mapstructure:"overrides"`
+}
+
+type ProviderSLIDefaults struct {
+	LatencyP95Ms         int     `mapstructure:"latency_p95_ms"`
+	ErrorRateThreshold   float64 `mapstructure:"error_rate_threshold"`
+	TimeoutRateThreshold float64 `mapstructure:"timeout_rate_threshold"`
+	MinSamples           int     `mapstructure:"min_samples"`
+}
+
 type HealthConfig struct {
 	CheckInterval time.Duration `mapstructure:"check_interval"`
 	RollingWindow int           `mapstructure:"rolling_window"`
@@ -346,6 +368,7 @@ func Load(opts Options) (*Config, error) {
 	v.SetEnvPrefix("ROUTER")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+	applyLegacyTelemetryEnv(v)
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg, viper.DecodeHook(timeStringToDurationHook())); err != nil {
@@ -458,6 +481,9 @@ func (c *Config) Validate() error {
 	}
 
 	if err := c.Admin.validate(); err != nil {
+		return err
+	}
+	if err := c.Telemetry.validate(); err != nil {
 		return err
 	}
 
@@ -586,6 +612,41 @@ func (b *BatchesConfig) validate() error {
 	return nil
 }
 
+func (t *TelemetryConfig) validate() error {
+	if err := t.Provider.validate(); err != nil {
+		return fmt.Errorf("telemetry.provider: %w", err)
+	}
+	return nil
+}
+
+func (p *ProviderTelemetryConfig) validate() error {
+	if p.EvaluationInterval <= 0 {
+		return fmt.Errorf("telemetry.provider.evaluation_interval must be > 0")
+	}
+	if p.WindowSize <= 0 {
+		return fmt.Errorf("telemetry.provider.window_size must be > 0")
+	}
+	if p.WindowSize < p.EvaluationInterval {
+		return fmt.Errorf("telemetry.provider.window_size must be >= evaluation_interval")
+	}
+	if p.IncidentRetentionDays <= 0 {
+		return fmt.Errorf("telemetry.provider.incident_retention_days must be > 0")
+	}
+	if p.Defaults.LatencyP95Ms <= 0 {
+		return fmt.Errorf("telemetry.provider.defaults.latency_p95_ms must be > 0")
+	}
+	if p.Defaults.ErrorRateThreshold < 0 || p.Defaults.ErrorRateThreshold > 1 {
+		return fmt.Errorf("telemetry.provider.defaults.error_rate_threshold must be between 0 and 1")
+	}
+	if p.Defaults.TimeoutRateThreshold < 0 || p.Defaults.TimeoutRateThreshold > 1 {
+		return fmt.Errorf("telemetry.provider.defaults.timeout_rate_threshold must be between 0 and 1")
+	}
+	if p.Defaults.MinSamples <= 0 {
+		return fmt.Errorf("telemetry.provider.defaults.min_samples must be > 0")
+	}
+	return nil
+}
+
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.listen_addr", ":8080")
 	v.SetDefault("server.body_limit_mb", 20)
@@ -622,6 +683,17 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("observability.enable_otlp", true)
 	v.SetDefault("observability.enable_metrics", true)
 	v.SetDefault("observability.otlp_endpoint", "http://localhost:4317")
+
+	v.SetDefault("telemetry.provider.enabled", true)
+	v.SetDefault("telemetry.provider.evaluation_interval", "1m")
+	v.SetDefault("telemetry.provider.window_size", "5m")
+	v.SetDefault("telemetry.provider.incident_retention_days", 30)
+	v.SetDefault("telemetry.provider.downweight_when_degraded", true)
+	v.SetDefault("telemetry.provider.defaults.latency_p95_ms", 5000)
+	v.SetDefault("telemetry.provider.defaults.error_rate_threshold", 0.1)
+	v.SetDefault("telemetry.provider.defaults.timeout_rate_threshold", 0.05)
+	v.SetDefault("telemetry.provider.defaults.min_samples", 50)
+	v.SetDefault("telemetry.provider.overrides", map[string]ProviderSLIDefaults{})
 
 	v.SetDefault("reporting.timezone", "UTC")
 
@@ -663,6 +735,55 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("admin.oidc.http_timeout", "5s")
 	v.SetDefault("providers.azure_openai_version", "2024-07-01-preview")
 	v.SetDefault("providers.openrouter.base_url", "https://openrouter.ai/api/v1")
+}
+
+func applyLegacyTelemetryEnv(v *viper.Viper) {
+	setDuration := func(envKey, viperKey string) {
+		val := strings.TrimSpace(os.Getenv(envKey))
+		if val == "" {
+			return
+		}
+		if parsed, err := time.ParseDuration(val); err == nil {
+			v.Set(viperKey, parsed)
+		}
+	}
+	setInt := func(envKey, viperKey string) {
+		val := strings.TrimSpace(os.Getenv(envKey))
+		if val == "" {
+			return
+		}
+		if parsed, err := strconv.Atoi(val); err == nil {
+			v.Set(viperKey, parsed)
+		}
+	}
+	setFloat := func(envKey, viperKey string) {
+		val := strings.TrimSpace(os.Getenv(envKey))
+		if val == "" {
+			return
+		}
+		if parsed, err := strconv.ParseFloat(val, 64); err == nil {
+			v.Set(viperKey, parsed)
+		}
+	}
+	setBool := func(envKey, viperKey string) {
+		val := strings.TrimSpace(os.Getenv(envKey))
+		if val == "" {
+			return
+		}
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			v.Set(viperKey, parsed)
+		}
+	}
+
+	setBool("DEFAULT_PROVIDER_TELEMETRY_ENABLED", "telemetry.provider.enabled")
+	setDuration("DEFAULT_PROVIDER_TELEMETRY_EVALUATION_INTERVAL", "telemetry.provider.evaluation_interval")
+	setDuration("DEFAULT_PROVIDER_TELEMETRY_WINDOW", "telemetry.provider.window_size")
+	setInt("DEFAULT_PROVIDER_TELEMETRY_RETENTION_DAYS", "telemetry.provider.incident_retention_days")
+	setBool("DEFAULT_PROVIDER_TELEMETRY_DOWNWEIGHT", "telemetry.provider.downweight_when_degraded")
+	setInt("DEFAULT_PROVIDER_TELEMETRY_LATENCY_P95_MS", "telemetry.provider.defaults.latency_p95_ms")
+	setFloat("DEFAULT_PROVIDER_TELEMETRY_ERROR_RATE", "telemetry.provider.defaults.error_rate_threshold")
+	setFloat("DEFAULT_PROVIDER_TELEMETRY_TIMEOUT_RATE", "telemetry.provider.defaults.timeout_rate_threshold")
+	setInt("DEFAULT_PROVIDER_TELEMETRY_MIN_SAMPLES", "telemetry.provider.defaults.min_samples")
 }
 
 func (b *BootstrapConfig) validate() error {

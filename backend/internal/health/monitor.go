@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	providermetrics "github.com/ncecere/open_model_gateway/backend/internal/telemetry/provider"
+
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/router"
@@ -17,6 +19,7 @@ type Monitor struct {
 	timeout   time.Duration
 	getRoutes func() map[string][]providers.Route
 	startOnce sync.Once
+	record    func(sample providermetrics.Sample)
 }
 
 // NewMonitor constructs a monitor using the health configuration.
@@ -86,12 +89,38 @@ func (m *Monitor) checkRoutes(ctx context.Context) {
 				defer cancel()
 
 				if err := route.Health.Check(timeoutCtx); err != nil {
-					m.engine.ReportFailure(alias, route)
+					if m.engine != nil {
+						m.engine.ReportFailure(alias, route)
+					}
+					m.recordSample(alias, route, providermetrics.ResultError, err, 0)
 					return
 				}
-				m.engine.ReportSuccess(alias, route)
+				if m.engine != nil {
+					m.engine.ReportSuccess(alias, route)
+				}
+				m.recordSample(alias, route, providermetrics.ResultSuccess, nil, 0)
 			}(alias, route)
 		}
 	}
 	wg.Wait()
+}
+
+// WithRecorder wires a provider telemetry recorder callback.
+func (m *Monitor) WithRecorder(fn func(sample providermetrics.Sample)) {
+	m.record = fn
+}
+
+func (m *Monitor) recordSample(alias string, route providers.Route, result providermetrics.Result, err error, latency time.Duration) {
+	if m == nil || m.record == nil {
+		return
+	}
+	m.record(providermetrics.Sample{
+		Provider:   route.Provider,
+		ModelAlias: alias,
+		Route:      route.ResolveDeployment(),
+		Result:     result,
+		ErrorClass: providermetrics.ClassifyError(err),
+		Latency:    latency,
+		Timestamp:  time.Now().UTC(),
+	})
 }

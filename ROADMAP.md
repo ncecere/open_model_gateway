@@ -2,15 +2,14 @@
 
 This roadmap highlights upcoming initiatives that build on the existing routing, budget, and portal foundations. Each section summarizes the goal, suggested implementation steps, and expected benefits.
 
-## Provider Telemetry & Alerting
+## Provider Telemetry & Alerting — ✅ Completed
 
-**Goal**: Detect upstream degradation (latency spikes, error storms, saturation) before it impacts tenants.
+Shipped an end-to-end telemetry pipeline that records provider samples, evaluates SLIs, persists incidents, dispatches alerts, and surfaces health in the admin UI.
 
-**Implementation ideas**
-- Extend the provider registry to emit structured metrics per request (latency, tokens, upstream error codes) into OTEL/Prometheus.
-- Add configurable Service Level Indicators (SLIs) with thresholds for each adapter; store recent windows in Redis/Postgres.
-- Reuse the existing alert channels (email/webhook) to fire incidents when thresholds are breached.
-- Surface live provider health charts and incident history in the admin dashboard.
+- Provider registry now emits structured metrics and writes rolling windows to Redis; evaluator opens/resolves incidents in Postgres with retention/overrides.
+- Admin APIs expose SLIs/incidents/alerts (with seed + clear-seed helpers); health monitor records results and can down-weight degraded routes.
+- Alerts reuse email/webhook sinks with cooldowns; new provider alert email template added.
+- Admin Provider Health page lists SLIs/incidents/alerts with filters, seed/clear seed controls; telemetry docs/config examples updated.
 
 **Benefits**
 - Faster incident detection for noisy providers.

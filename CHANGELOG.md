@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.17] - 2025-11-27
 ### Added
 - Provider telemetry/alerting pipeline: Redis sampler + SLI evaluator, provider incident persistence, admin APIs for SLIs/incidents/alerts with seed data hooks, and a provider alert email template.
 - Admin UI telemetry surfaces: Provider Health page with filters plus SLI/incident/alert tables and a seed-data action; telemetry client hooks for SLIs/incidents/alerts.

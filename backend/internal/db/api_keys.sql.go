@@ -387,6 +387,40 @@ func (q *Queries) RevokeAPIKey(ctx context.Context, id pgtype.UUID) (ApiKey, err
 	return i, err
 }
 
+const rotateAPIKey = `-- name: RotateAPIKey :one
+UPDATE api_keys
+SET prefix = $2,
+    secret_hash = $3
+WHERE id = $1
+RETURNING id, tenant_id, prefix, secret_hash, name, scopes_json, quota_json, kind, owner_user_id, created_at, revoked_at, last_used_at
+`
+
+type RotateAPIKeyParams struct {
+	ID         pgtype.UUID `json:"id"`
+	Prefix     string      `json:"prefix"`
+	SecretHash string      `json:"secret_hash"`
+}
+
+func (q *Queries) RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, rotateAPIKey, arg.ID, arg.Prefix, arg.SecretHash)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Prefix,
+		&i.SecretHash,
+		&i.Name,
+		&i.ScopesJson,
+		&i.QuotaJson,
+		&i.Kind,
+		&i.OwnerUserID,
+		&i.CreatedAt,
+		&i.RevokedAt,
+		&i.LastUsedAt,
+	)
+	return i, err
+}
+
 const updateAPIKeyLastUsed = `-- name: UpdateAPIKeyLastUsed :exec
 UPDATE api_keys
 SET last_used_at = NOW()

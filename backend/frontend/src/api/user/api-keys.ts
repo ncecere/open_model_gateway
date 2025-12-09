@@ -76,6 +76,13 @@ export async function revokeUserAPIKey(apiKeyId: string) {
   return data;
 }
 
+export async function rotateUserAPIKey(apiKeyId: string) {
+  const { data } = await userApi.post<CreateUserAPIKeyResponse>(
+    `/api-keys/${apiKeyId}/rotate`,
+  );
+  return data;
+}
+
 export type APIKeyUsageSummary = {
   api_key_id: string;
   period: string;
@@ -123,6 +130,16 @@ export async function createTenantAPIKey(
 export async function revokeTenantAPIKey(tenantId: string, apiKeyId: string) {
   const { data } = await userApi.post<UserAPIKey>(
     `/tenants/${tenantId}/api-keys/${apiKeyId}/revoke`,
+  );
+  return data;
+}
+
+export async function rotateTenantAPIKey(
+  tenantId: string,
+  apiKeyId: string,
+) {
+  const { data } = await userApi.post<CreateUserAPIKeyResponse>(
+    `/tenants/${tenantId}/api-keys/${apiKeyId}/rotate`,
   );
   return data;
 }

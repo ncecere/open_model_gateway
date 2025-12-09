@@ -13,9 +13,9 @@ import (
 
 const countProviderIncidents = `-- name: CountProviderIncidents :one
 SELECT count(*) FROM provider_incidents
-WHERE ($1 = '' OR provider = $1)
-  AND ($2 = '' OR model_alias = $2)
-  AND ($3 = '' OR status = $3)
+WHERE ($1::text = '' OR provider = $1::text)
+  AND ($2::text = '' OR model_alias = $2::text)
+  AND ($3::text = '' OR status = $3::text)
 `
 
 type CountProviderIncidentsParams struct {
@@ -34,19 +34,19 @@ func (q *Queries) CountProviderIncidents(ctx context.Context, arg CountProviderI
 const listProviderIncidents = `-- name: ListProviderIncidents :many
 SELECT id, provider, model_alias, incident_type, status, window_seconds, opened_at, resolved_at, window_started_at, window_ended_at, sample_error, request_count, error_count, timeout_count, latency_p95_ms, metadata
 FROM provider_incidents
-WHERE ($1 = '' OR provider = $1)
-  AND ($2 = '' OR model_alias = $2)
-  AND ($3 = '' OR status = $3)
+WHERE ($1::text = '' OR provider = $1::text)
+  AND ($2::text = '' OR model_alias = $2::text)
+  AND ($3::text = '' OR status = $3::text)
 ORDER BY opened_at DESC
-LIMIT $4 OFFSET $5
+LIMIT $5 OFFSET $4
 `
 
 type ListProviderIncidentsParams struct {
 	Provider   string `json:"provider"`
 	ModelAlias string `json:"model_alias"`
 	Status     string `json:"status"`
-	Limit      int32  `json:"limit"`
-	Offset     int32  `json:"offset"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 func (q *Queries) ListProviderIncidents(ctx context.Context, arg ListProviderIncidentsParams) ([]ProviderIncident, error) {
@@ -54,8 +54,8 @@ func (q *Queries) ListProviderIncidents(ctx context.Context, arg ListProviderInc
 		arg.Provider,
 		arg.ModelAlias,
 		arg.Status,
-		arg.Limit,
-		arg.Offset,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err

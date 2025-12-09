@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/auth"
@@ -75,11 +76,13 @@ type createUserAPIKeyResponse struct {
 func (h *userHandler) registerAPIKeyRoutes(group fiber.Router) {
 	group.Get("/api-keys", h.listAPIKeys)
 	group.Post("/api-keys", h.createAPIKey)
+	group.Post("/api-keys/:apiKeyID/rotate", h.rotateAPIKey)
 	group.Post("/api-keys/:apiKeyID/revoke", h.revokeAPIKey)
 	group.Get("/api-keys/:apiKeyID/usage", h.getAPIKeyUsage)
 
 	group.Get("/tenants/:tenantID/api-keys", h.listTenantAPIKeys)
 	group.Post("/tenants/:tenantID/api-keys", h.createTenantAPIKey)
+	group.Post("/tenants/:tenantID/api-keys/:apiKeyID/rotate", h.rotateTenantAPIKey)
 	group.Post("/tenants/:tenantID/api-keys/:apiKeyID/revoke", h.revokeTenantAPIKey)
 	group.Get("/tenants/:tenantID/api-keys/:apiKeyID/usage", h.getTenantAPIKeyUsage)
 }
@@ -237,6 +240,56 @@ func (h *userHandler) revokeAPIKey(c *fiber.Ctx) error {
 	resp.Revoked = true
 
 	return c.JSON(resp)
+}
+
+func (h *userHandler) rotateAPIKey(c *fiber.Ctx) error {
+	user, ok := userFromContext(c.UserContext())
+	if !ok {
+		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
+	}
+	if h.container == nil || h.container.Queries == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "api key service unavailable")
+	}
+
+	rawID := strings.TrimSpace(c.Params("apiKeyID"))
+	if rawID == "" {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "api key id required")
+	}
+	apiKeyUUID, err := uuid.Parse(rawID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid api key id")
+	}
+
+	record, err := h.container.Queries.GetAPIKeyByID(c.Context(), toPgUUID(apiKeyUUID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return httputil.WriteError(c, fiber.StatusNotFound, "api key not found")
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+
+	if !record.OwnerUserID.Valid || record.OwnerUserID != user.ID {
+		return httputil.WriteError(c, fiber.StatusForbidden, "cannot modify this api key")
+	}
+	if record.RevokedAt.Valid {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "api key revoked")
+	}
+
+	rotated, secret, token, err := h.rotateAPIKeyRecord(c.Context(), record)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+
+	resp, err := h.buildUserAPIKeyResponse(c.Context(), rotated)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(createUserAPIKeyResponse{
+		APIKey: resp,
+		Secret: secret,
+		Token:  token,
+	})
 }
 
 func (h *userHandler) getAPIKeyUsage(c *fiber.Ctx) error {
@@ -446,6 +499,67 @@ func (h *userHandler) revokeTenantAPIKey(c *fiber.Ctx) error {
 	}
 	resp.Revoked = true
 	return c.JSON(resp)
+}
+
+func (h *userHandler) rotateTenantAPIKey(c *fiber.Ctx) error {
+	user, ok := userFromContext(c.UserContext())
+	if !ok {
+		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
+	}
+	if h.container == nil || h.container.Queries == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "api key service unavailable")
+	}
+	tenantUUID, err := uuid.Parse(strings.TrimSpace(c.Params("tenantID")))
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
+	}
+	role, err := h.lookupTenantRole(c.Context(), user, tenantUUID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if !canManageTenantKeys(role) {
+		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient role")
+	}
+	keyUUID, err := uuid.Parse(strings.TrimSpace(c.Params("apiKeyID")))
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid api key id")
+	}
+	record, err := h.container.Queries.GetAPIKeyByID(c.Context(), toPgUUID(keyUUID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return httputil.WriteError(c, fiber.StatusNotFound, "api key not found")
+		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	recTenant, err := uuidFromPg(record.TenantID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if recTenant != tenantUUID {
+		return httputil.WriteError(c, fiber.StatusForbidden, "cannot modify this api key")
+	}
+	if record.RevokedAt.Valid {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "api key revoked")
+	}
+
+	rotated, secret, token, err := h.rotateAPIKeyRecord(c.Context(), record)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+
+	resp, err := h.buildUserAPIKeyResponse(c.Context(), rotated)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(createUserAPIKeyResponse{
+		APIKey: resp,
+		Secret: secret,
+		Token:  token,
+	})
 }
 
 func (h *userHandler) getTenantAPIKeyUsage(c *fiber.Ctx) error {
@@ -752,4 +866,48 @@ func validateQuotaForLimit(quota *quotaPayload, limit float64) error {
 		return fmt.Errorf("warning threshold must be between 0 and 1")
 	}
 	return nil
+}
+
+func (h *userHandler) rotateAPIKeyRecord(ctx context.Context, record db.ApiKey) (db.ApiKey, string, string, error) {
+	if h.container == nil || h.container.Queries == nil {
+		return db.ApiKey{}, "", "", fmt.Errorf("api key service unavailable")
+	}
+	newPrefix, secret, token, err := auth.GenerateAPIKey()
+	if err != nil {
+		return db.ApiKey{}, "", "", fmt.Errorf("failed to generate api key: %w", err)
+	}
+	hash, err := auth.HashPassword(secret)
+	if err != nil {
+		return db.ApiKey{}, "", "", fmt.Errorf("failed to hash api key: %w", err)
+	}
+
+	rotated, err := h.container.Queries.RotateAPIKey(ctx, db.RotateAPIKeyParams{
+		ID:         record.ID,
+		Prefix:     newPrefix,
+		SecretHash: hash,
+	})
+	if err != nil {
+		return db.ApiKey{}, "", "", err
+	}
+
+	h.refreshAPIKeyRateLimit(ctx, record.Prefix, newPrefix, record.ID)
+
+	return rotated, secret, token, nil
+}
+
+func (h *userHandler) refreshAPIKeyRateLimit(ctx context.Context, oldPrefix, newPrefix string, apiKeyID pgtype.UUID) {
+	if h.container == nil || h.container.Queries == nil {
+		return
+	}
+	h.container.UpdateAPIKeyRateLimit(oldPrefix, nil)
+	override, err := h.container.Queries.GetAPIKeyRateLimit(ctx, apiKeyID)
+	if err != nil {
+		return
+	}
+	cfg := &limits.LimitConfig{
+		RequestsPerMinute: int(override.RequestsPerMinute),
+		TokensPerMinute:   int(override.TokensPerMinute),
+		ParallelRequests:  int(override.ParallelRequests),
+	}
+	h.container.UpdateAPIKeyRateLimit(newPrefix, cfg)
 }

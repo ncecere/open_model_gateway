@@ -46,8 +46,8 @@ func (h *providerHealthHandler) listIncidents(c *fiber.Ctx) error {
 		Provider:   provider,
 		ModelAlias: alias,
 		Status:     status,
-		Limit:      int32(limit),
-		Offset:     int32(offset),
+		PageLimit:  int32(limit),
+		PageOffset: int32(offset),
 	}
 	rows, err := h.container.Queries.ListProviderIncidents(c.Context(), params)
 	if err != nil {
@@ -207,8 +207,8 @@ func (h *providerHealthHandler) listAlerts(c *fiber.Ctx) error {
 		Provider:   providerFilter,
 		ModelAlias: alias,
 		Status:     string(provider.IncidentOpen),
-		Limit:      int32(limit),
-		Offset:     int32(offset),
+		PageLimit:  int32(limit),
+		PageOffset: int32(offset),
 	}
 	rows, err := h.container.Queries.ListProviderIncidents(c.Context(), params)
 	if err != nil {

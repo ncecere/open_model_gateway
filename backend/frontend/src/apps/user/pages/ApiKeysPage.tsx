@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
-import { Copy, Key, Trash2 } from "lucide-react";
+import { Copy, Key, RefreshCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,8 @@ import {
   useCreateTenantAPIKeyMutation,
   useRevokeUserAPIKeyMutation,
   useRevokeTenantAPIKeyMutation,
+  useRotateUserAPIKeyMutation,
+  useRotateTenantAPIKeyMutation,
   useTenantAPIKeysQuery,
   useUserAPIKeysQuery,
   useUserTenantsQuery,
@@ -146,8 +148,10 @@ export function UserApiKeysPage() {
 
   const createMutation = useCreateUserAPIKeyMutation();
   const revokeMutation = useRevokeUserAPIKeyMutation();
+  const rotateMutation = useRotateUserAPIKeyMutation();
   const tenantCreateMutation = useCreateTenantAPIKeyMutation();
   const tenantRevokeMutation = useRevokeTenantAPIKeyMutation();
+  const tenantRotateMutation = useRotateTenantAPIKeyMutation();
   const { toast } = useToast();
 
   const [name, setName] = useState("");
@@ -435,6 +439,55 @@ export function UserApiKeysPage() {
     }
   };
 
+  const handleRotate = async (key: UserAPIKey) => {
+    try {
+      const result = await rotateMutation.mutateAsync(key.id);
+      setIssuedSecret({
+        scope: "personal",
+        name: result.api_key.name,
+        prefix: result.api_key.prefix,
+        secret: result.secret,
+        token: result.token,
+      });
+      toast({ title: "API key rotated", description: "Copy the new secret now." });
+    } catch (error) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Failed to rotate key" });
+    }
+  };
+
+  const handleTenantRotate = async (key: UserAPIKey) => {
+    const tenantId = key.tenant_id;
+    if (!tenantId) {
+      toast({ variant: "destructive", title: "Missing tenant for this key" });
+      return;
+    }
+    try {
+      const result = await tenantRotateMutation.mutateAsync({
+        tenantId,
+        apiKeyId: key.id,
+      });
+      const tenantName =
+        tenantOptions.find((tenant) => tenant.tenant_id === tenantId)?.name ??
+        selectedTenant?.name;
+      setIssuedSecret({
+        scope: "tenant",
+        tenantName,
+        name: result.api_key.name,
+        prefix: result.api_key.prefix,
+        secret: result.secret,
+        token: result.token,
+      });
+      toast({
+        title: "Tenant API key rotated",
+        description: "Copy the new secret now.",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Failed to rotate tenant key" });
+    }
+  };
+
   const keys = personalKeys ?? [];
   const activeKeys = keys.filter((key) => !key.revoked);
   const revokedKeys = keys.filter((key) => key.revoked);
@@ -648,7 +701,9 @@ export function UserApiKeysPage() {
               keys={activeKeys}
               variant="active"
               onRevoke={handleRevoke}
+              onRotate={handleRotate}
               allowRevoke
+              allowRotate
               getBudgetMeta={resolveBudgetMeta}
               formatResetValue={formatResetValue}
             />
@@ -809,7 +864,9 @@ export function UserApiKeysPage() {
                   keys={tenantActiveKeys}
                   variant="active"
                   allowRevoke={canManageTenant}
+                  allowRotate={canManageTenant}
                   onRevoke={handleTenantRevoke}
+                  onRotate={handleTenantRotate}
                   getBudgetMeta={resolveBudgetMeta}
                   formatResetValue={formatResetValue}
                 />
@@ -874,7 +931,9 @@ type KeyTableProps = {
   keys: UserAPIKey[];
   variant: "active" | "revoked";
   allowRevoke?: boolean;
+  allowRotate?: boolean;
   onRevoke?: (id: string) => void;
+  onRotate?: (key: UserAPIKey) => void;
   getBudgetMeta: (key: UserAPIKey) => BudgetMeta;
   formatResetValue: (key: UserAPIKey) => string;
 };
@@ -885,12 +944,14 @@ function KeyTable({
   keys,
   variant,
   allowRevoke = false,
+  allowRotate = false,
   onRevoke,
+  onRotate,
   getBudgetMeta,
   formatResetValue,
 }: KeyTableProps) {
   const hasKeys = keys.length > 0;
-  const showActions = variant === "active" && allowRevoke;
+  const showActions = variant === "active" && (allowRevoke || allowRotate);
   const showBudgetColumns = variant === "active";
 
   return (
@@ -957,36 +1018,48 @@ function KeyTable({
                         </TableCell>
                       </>
                     ) : null}
-                    {variant === "active" && showActions && onRevoke ? (
+                    {variant === "active" && showActions ? (
                       <TableCell className="flex justify-end gap-2">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-destructive"
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Revoke API key</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This action cannot be undone. Requests using this
-                                key will immediately fail.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => onRevoke(key.id)}
+                        {allowRotate && onRotate ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onRotate(key)}
+                            title="Rotate API key"
+                          >
+                            <RefreshCcw className="size-4" />
+                          </Button>
+                        ) : null}
+                        {allowRevoke && onRevoke ? (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive"
                               >
-                                Revoke
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Revoke API key</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This action cannot be undone. Requests using this
+                                  key will immediately fail.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => onRevoke(key.id)}
+                                >
+                                  Revoke
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        ) : null}
                       </TableCell>
                     ) : null}
                     {variant === "revoked" ? (

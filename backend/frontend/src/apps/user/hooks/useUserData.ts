@@ -15,6 +15,8 @@ import {
   listTenantAPIKeys,
   revokeUserAPIKey,
   revokeTenantAPIKey,
+  rotateUserAPIKey,
+  rotateTenantAPIKey,
   type CreateUserAPIKeyRequest,
 } from "../../../api/user/api-keys";
 import {
@@ -109,6 +111,16 @@ export function useRevokeUserAPIKeyMutation() {
   });
 }
 
+export function useRotateUserAPIKeyMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => rotateUserAPIKey(id),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["user-api-keys"] });
+    },
+  });
+}
+
 export function useUserAPIKeyUsageQuery(apiKeyId?: string, period = "30d") {
   return useQuery({
     queryKey: ["user-api-key-usage", apiKeyId, period],
@@ -160,6 +172,19 @@ export function useRevokeTenantAPIKeyMutation() {
   return useMutation({
     mutationFn: (input: { tenantId: string; apiKeyId: string }) =>
       revokeTenantAPIKey(input.tenantId, input.apiKeyId),
+    onSuccess: (_data, variables) => {
+      client.invalidateQueries({
+        queryKey: ["tenant-api-keys", variables.tenantId],
+      });
+    },
+  });
+}
+
+export function useRotateTenantAPIKeyMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { tenantId: string; apiKeyId: string }) =>
+      rotateTenantAPIKey(input.tenantId, input.apiKeyId),
     onSuccess: (_data, variables) => {
       client.invalidateQueries({
         queryKey: ["tenant-api-keys", variables.tenantId],

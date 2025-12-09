@@ -60,14 +60,16 @@ Shipped an end-to-end telemetry pipeline that records provider samples, evaluate
 - Enables data-driven tuning of weights/cost heuristics.
 - Helps tenants justify spend on premium models.
 
-## Self-Service API Key Rotation for Users
+## Self-Service API Key Rotation for Users — ✅ Completed
 
 **Goal**: Empower end users to manage their personal API keys without admin intervention.
 
 **Implementation ideas**
-- Expose a `/user/api-keys` CRUD API backed by the existing key service, scoped to the user’s personal tenant.
-- Allow per-key rate limit overrides or expiration dates.
-- Update the user portal to show key health, last-used timestamps, and one-click rotation.
+- Expose `/user/api-keys` CRUD endpoints (list/create/rotate/revoke) that reuse the key service but are scoped to the caller’s personal tenant + membership; return last-used timestamp, expiry, and rate-limit overrides for each key.
+- Add a rotate action that issues a new secret while preserving key metadata and revocation auditing; enforce configurable TTLs + optional rotation reminders in the auth bootstrap/defaults.
+- Update the user portal with a keys tab that shows status/health, last-used, expiry/limits, and a one-click rotate + copy flow (one-time reveal), including inline validation and optimistic UI updates.
+- Wire audit logging and budget/rate-limit enforcement to the new endpoints; surface rotation/revocation events in the audit feed for admins and a lightweight “recent activity” widget for users.
+- Add contract tests for `/user/api-keys` parity with admin flows, plus UI tests for rotation/revoke to ensure secrets are not re-exposed after creation.
 
 **Benefits**
 - Reduces the operational load on admins.

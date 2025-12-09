@@ -12,6 +12,13 @@ INSERT INTO api_keys (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
+-- name: RotateAPIKey :one
+UPDATE api_keys
+SET prefix = $2,
+    secret_hash = $3
+WHERE id = $1
+RETURNING *;
+
 -- name: GetAPIKeyByPrefix :one
 SELECT *
 FROM api_keys

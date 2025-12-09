@@ -48,14 +48,14 @@ WHERE opened_at < NOW() - ($1 * INTERVAL '1 day');
 -- name: ListProviderIncidents :many
 SELECT id, provider, model_alias, incident_type, status, window_seconds, opened_at, resolved_at, window_started_at, window_ended_at, sample_error, request_count, error_count, timeout_count, latency_p95_ms, metadata
 FROM provider_incidents
-WHERE ($1 = '' OR provider = $1)
-  AND ($2 = '' OR model_alias = $2)
-  AND ($3 = '' OR status = $3)
+WHERE (sqlc.arg(provider)::text = '' OR provider = sqlc.arg(provider)::text)
+  AND (sqlc.arg(model_alias)::text = '' OR model_alias = sqlc.arg(model_alias)::text)
+  AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
 ORDER BY opened_at DESC
-LIMIT $4 OFFSET $5;
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: CountProviderIncidents :one
 SELECT count(*) FROM provider_incidents
-WHERE ($1 = '' OR provider = $1)
-  AND ($2 = '' OR model_alias = $2)
-  AND ($3 = '' OR status = $3);
+WHERE (sqlc.arg(provider)::text = '' OR provider = sqlc.arg(provider)::text)
+  AND (sqlc.arg(model_alias)::text = '' OR model_alias = sqlc.arg(model_alias)::text)
+  AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text);

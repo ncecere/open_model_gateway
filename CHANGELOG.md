@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.18] - 2025-12-09
+### Added
+- User-facing API key rotation: added `/user/api-keys/:id/rotate` and `/user/tenants/:id/api-keys/:keyId/rotate` endpoints that reissue secrets while preserving rate/budget settings; user portal now exposes rotate actions and one-time secret reveal for personal and tenant keys.
+
 ## [v0.1.17] - 2025-11-27
 ### Added
 - Provider telemetry/alerting pipeline: Redis sampler + SLI evaluator, provider incident persistence, admin APIs for SLIs/incidents/alerts with seed data hooks, and a provider alert email template.

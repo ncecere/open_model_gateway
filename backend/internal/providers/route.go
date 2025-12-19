@@ -17,6 +17,7 @@ type Route struct {
 	Model                 string
 	Weight                int
 	Metadata              map[string]string
+	Capabilities          RouteCapabilities
 	Chat                  ChatCompletions
 	ChatStream            ChatStreaming
 	Embedding             EmbeddingsProvider
@@ -31,6 +32,12 @@ type Route struct {
 	Health                HealthChecker
 	Retry                 RetryConfig
 	Tokenizer             string
+}
+
+type RouteCapabilities struct {
+	ImageInput bool
+	AudioInput bool
+	VideoInput bool
 }
 
 // HealthChecker defines provider health probes consumed by the monitor.
@@ -141,5 +148,24 @@ func (r Route) ToModel() models.Model {
 		ProviderModel:   r.Model,
 		ContextWindow:   0,
 		MaxOutputTokens: 0,
+		Capabilities: models.ModelCapabilities{
+			ImageInput: r.Capabilities.ImageInput,
+			AudioInput: r.Capabilities.AudioInput,
+			VideoInput: r.Capabilities.VideoInput,
+		},
 	}
+}
+
+// SupportsCapabilities reports whether the route can satisfy the requested multimodal inputs.
+func (r Route) SupportsCapabilities(req models.CapabilityRequirements) bool {
+	if req.NeedsImage && !r.Capabilities.ImageInput {
+		return false
+	}
+	if req.NeedsAudio && !r.Capabilities.AudioInput {
+		return false
+	}
+	if req.NeedsVideo && !r.Capabilities.VideoInput {
+		return false
+	}
+	return true
 }

@@ -403,15 +403,24 @@ func (w *Worker) runChatItem(ctx context.Context, rc *requestctx.Context, traceI
 	}
 
 	messages := make([]models.ChatMessage, 0, len(body.Messages))
-	for _, msg := range body.Messages {
+	for idx, msg := range body.Messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
 		if role == "" {
 			role = "user"
 		}
+		textContent, parts, err := models.ParseMessageContent(msg.Content)
+		if err != nil {
+			return itemOutcome{
+				statusCode: fiber.StatusBadRequest,
+				requestID:  traceID,
+				errPayload: encodeErrorPayload("invalid_request_error", fmt.Sprintf("invalid content for message %d: %v", idx, err)),
+			}
+		}
 		messages = append(messages, models.ChatMessage{
-			Role:    role,
-			Content: msg.Content,
-			Name:    msg.Name,
+			Role:         role,
+			Content:      textContent,
+			ContentParts: parts,
+			Name:         msg.Name,
 		})
 	}
 	if len(messages) == 0 {
@@ -814,9 +823,9 @@ type chatBody struct {
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Name    string `json:"name,omitempty"`
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+	Name    string          `json:"name,omitempty"`
 }
 
 type openAIEmbeddingRequest struct {
@@ -1062,7 +1071,7 @@ func convertChatResponse(resp models.ChatResponse, alias string) openAIChatRespo
 	for _, choice := range resp.Choices {
 		msg := openAIChatMessage{
 			Role:      choice.Message.Role,
-			Content:   fallbackContent(choice.Message.Content, choice.Message.ReasoningContent),
+			Content:   models.MarshalMessageContent(choice.Message),
 			Reasoning: choice.Message.Reasoning,
 		}
 		choices = append(choices, openAIChatChoice{
@@ -1104,13 +1113,6 @@ func convertEmbeddingResponse(resp models.EmbeddingsResponse, alias string) open
 			TotalTokens:  resp.Usage.TotalTokens,
 		},
 	}
-}
-
-func fallbackContent(content, reasoning string) string {
-	if strings.TrimSpace(content) == "" && strings.TrimSpace(reasoning) != "" {
-		return reasoning
-	}
-	return content
 }
 
 func convertModerationResponse(resp models.ModerationResponse, alias string) openAIModerationResponse {
@@ -1328,9 +1330,9 @@ type openAIChatChoice struct {
 }
 
 type openAIChatMessage struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	Reasoning string `json:"reasoning,omitempty"`
+	Role      string          `json:"role"`
+	Content   json.RawMessage `json:"content"`
+	Reasoning string          `json:"reasoning,omitempty"`
 }
 
 type openAIUsage struct {

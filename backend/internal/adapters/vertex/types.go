@@ -9,7 +9,19 @@ import (
 )
 
 type vertexPart struct {
-	Text string `json:"text,omitempty"`
+	Text       string            `json:"text,omitempty"`
+	InlineData *vertexInlineData `json:"inlineData,omitempty"`
+	FileData   *vertexFileData   `json:"fileData,omitempty"`
+}
+
+type vertexInlineData struct {
+	MimeType string `json:"mimeType,omitempty"`
+	Data     string `json:"data,omitempty"`
+}
+
+type vertexFileData struct {
+	FileURI  string `json:"fileUri,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 }
 
 type vertexContent struct {

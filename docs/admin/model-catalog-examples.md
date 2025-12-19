@@ -12,6 +12,24 @@ Use this reference when adding models through the Admin UI (“Add model”) or 
 
 ---
 
+## Multimodal Capabilities & Overrides
+Each catalog entry already lists its `modalities` (e.g. `"text"`, `"image"`, `"audio"`). The router now publishes those capabilities back through `/v1/models` under the `capabilities` field (boolean flags for `image_input`, `audio_input`, and `video_input`) and enforces them at runtime:
+
+- If a chat request contains an image/audio/video block but the selected alias does not support that modality, the gateway immediately returns `400` instead of forwarding an invalid payload to the provider.
+- When multiple routes back an alias, only the ones that can satisfy the requested modalities are tried.
+
+You can explicitly override the inferred capabilities by adding metadata flags to any catalog entry:
+
+| Metadata Key        | Description                                      |
+| ------------------- | ------------------------------------------------ |
+| `cap_image_input`   | Set to `"true"` or `"false"` to force-enable/disable image inputs.
+| `cap_audio_input`   | Same for audio inputs (speech-to-text, etc.).    |
+| `cap_video_input`   | Reserve for providers that accept video frames.  |
+
+Use these overrides when a provider adapter supports additional modalities (e.g. OpenAI vision) or when you want to block multimodal requests for a specific deployment even though the upstream model technically allows them.
+
+---
+
 ## OpenAI (LLM)
 ```yaml
 - alias: "gpt-4o-mini"

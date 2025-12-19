@@ -175,6 +175,7 @@ func buildVertexRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 		Metadata: md,
 		Health:   WrapHealth(adapter.HealthCheck),
 	}
+	route.Capabilities = deriveCapabilities(entry.Modalities, route.Metadata)
 	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 300 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
 	route.Tokenizer = selectTokenizer("vertex", entry.ProviderOverrides.Tokenizer, route.Metadata)
 

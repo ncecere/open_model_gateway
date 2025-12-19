@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -222,7 +223,7 @@ func buildChatRequest(req models.ChatRequest, streaming bool) chatCompletionRequ
 	for _, msg := range req.Messages {
 		messages = append(messages, chatMessage{
 			Role:    msg.Role,
-			Content: msg.Content,
+			Content: models.MarshalMessageContent(msg),
 		})
 	}
 	payload := chatCompletionRequest{
@@ -252,11 +253,13 @@ func buildChatRequest(req models.ChatRequest, streaming bool) chatCompletionRequ
 func convertChatResponse(resp chatCompletionResponse) models.ChatResponse {
 	choices := make([]models.ChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
+		content, parts := openaihelper.ExtractMessageContent(string(choice.Message.Content), "")
 		choices = append(choices, models.ChatChoice{
 			Index: choice.Index,
 			Message: models.ChatMessage{
-				Role:    choice.Message.Role,
-				Content: choice.Message.Content,
+				Role:         choice.Message.Role,
+				Content:      content,
+				ContentParts: parts,
 			},
 			FinishReason: choice.FinishReason,
 		})
@@ -273,9 +276,11 @@ func convertChatResponse(resp chatCompletionResponse) models.ChatResponse {
 func convertChatChunk(chunk chatCompletionChunk) models.ChatChunk {
 	choices := make([]models.ChunkDelta, 0, len(chunk.Choices))
 	for _, choice := range chunk.Choices {
+		content, parts := openaihelper.ExtractMessageContent(string(choice.Delta.Content), "")
 		msg := models.ChatMessage{
-			Role:    choice.Delta.Role,
-			Content: choice.Delta.Content,
+			Role:         choice.Delta.Role,
+			Content:      content,
+			ContentParts: parts,
 		}
 		choices = append(choices, models.ChunkDelta{
 			Index:        choice.Index,
@@ -339,8 +344,8 @@ type chatCompletionRequest struct {
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
 }
 
 type streamOptions struct {

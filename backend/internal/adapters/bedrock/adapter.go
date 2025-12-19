@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +28,8 @@ const (
 	ChatFormatAnthropicMessages = "anthropic_messages"
 
 	EmbeddingFormatTitanText = "titan_text"
+
+	bedrockMaxInlineDataBytes = 20 * 1024 * 1024
 )
 
 // Options controls how the Bedrock adapter is initialised.
@@ -46,7 +51,8 @@ type Options struct {
 	EmbedDimensions  int32
 	EmbedNormalize   bool
 
-	Metadata map[string]string
+	Metadata        map[string]string
+	AssetHTTPClient *http.Client
 }
 
 type stableDiffusionRequest struct {
@@ -77,10 +83,11 @@ type stableDiffusionResponse struct {
 
 // Adapter implements the provider interfaces backed by Amazon Bedrock.
 type Adapter struct {
-	client    *bedrockruntime.Client
-	stsClient *sts.Client
-	awsCfg    aws.Config
-	opts      Options
+	client      *bedrockruntime.Client
+	stsClient   *sts.Client
+	awsCfg      aws.Config
+	assetClient *http.Client
+	opts        Options
 }
 
 // New creates a Bedrock adapter using the provided credentials/region.
@@ -120,12 +127,16 @@ func New(ctx context.Context, opts Options) (*Adapter, error) {
 	if opts.Metadata == nil {
 		opts.Metadata = map[string]string{}
 	}
+	if opts.AssetHTTPClient == nil {
+		opts.AssetHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	}
 
 	return &Adapter{
-		client:    client,
-		stsClient: stsClient,
-		awsCfg:    awsCfg,
-		opts:      opts,
+		client:      client,
+		stsClient:   stsClient,
+		awsCfg:      awsCfg,
+		assetClient: opts.AssetHTTPClient,
+		opts:        opts,
 	}, nil
 }
 
@@ -410,7 +421,7 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 		return nil, nil, errors.New("streaming not supported for this bedrock route")
 	}
 
-	body, err := a.buildAnthropicBody(req)
+	body, err := a.buildAnthropicBody(ctx, req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -470,6 +481,10 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 					if text == "" {
 						continue
 					}
+					parts := []models.MessageContentPart{{
+						Type: models.MessageContentPartTypeText,
+						Text: text,
+					}}
 					chunk := models.ChatChunk{
 						ID:      messageID,
 						Model:   modelName,
@@ -477,11 +492,13 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 						Choices: []models.ChunkDelta{{
 							Index: payload.Index,
 							Delta: models.ChatMessage{
-								Role:    "assistant",
-								Content: text,
+								Role:         "assistant",
+								Content:      text,
+								ContentParts: parts,
 							},
 						}},
 					}
+
 					if !yield(chunk) {
 						return
 					}
@@ -613,7 +630,7 @@ func (a *Adapter) chatAnthropic(ctx context.Context, req models.ChatRequest) (mo
 		return models.ChatResponse{}, errors.New("at least one message is required")
 	}
 
-	body, err := a.buildAnthropicBody(req)
+	body, err := a.buildAnthropicBody(ctx, req)
 	if err != nil {
 		return models.ChatResponse{}, err
 	}
@@ -635,18 +652,15 @@ func (a *Adapter) chatAnthropic(ctx context.Context, req models.ChatRequest) (mo
 		return models.ChatResponse{}, fmt.Errorf("decode bedrock response: %w", err)
 	}
 
-	content := parsed.JoinText()
+	message := bedrockAnthropicContentsToMessage(parsed.Role, parsed.Content)
 	resp := models.ChatResponse{
 		ID:      parsed.ID,
 		Created: time.Now().UTC(),
 		Model:   req.Model,
 		Choices: []models.ChatChoice{
 			{
-				Index: 0,
-				Message: models.ChatMessage{
-					Role:    "assistant",
-					Content: content,
-				},
+				Index:        0,
+				Message:      message,
 				FinishReason: mapAnthropicStopReason(parsed.StopReason),
 			},
 		},
@@ -721,29 +735,36 @@ func (a *Adapter) embedTitan(ctx context.Context, req models.EmbeddingsRequest) 
 	}, nil
 }
 
-func (a *Adapter) buildAnthropicBody(req models.ChatRequest) ([]byte, error) {
+func (a *Adapter) buildAnthropicBody(ctx context.Context, req models.ChatRequest) ([]byte, error) {
 	var systemPrompts []string
 	messages := make([]anthropicMessage, 0, len(req.Messages))
 
-	for _, msg := range req.Messages {
-		switch strings.ToLower(msg.Role) {
-		case "system":
-			systemPrompts = append(systemPrompts, msg.Content)
-		case "assistant":
-			messages = append(messages, anthropicMessage{
-				Role: "assistant",
-				Content: []anthropicContent{
-					{Type: "text", Text: msg.Content},
-				},
-			})
-		default:
-			messages = append(messages, anthropicMessage{
-				Role: "user",
-				Content: []anthropicContent{
-					{Type: "text", Text: msg.Content},
-				},
-			})
+	for idx, msg := range req.Messages {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		allowNonText := role != "system" && role != "developer"
+		parts, err := a.convertAnthropicMessageParts(ctx, idx, msg, allowNonText)
+		if err != nil {
+			return nil, err
 		}
+		if len(parts) == 0 {
+			continue
+		}
+		switch role {
+		case "system", "developer":
+			for _, part := range parts {
+				if strings.TrimSpace(part.Text) != "" {
+					systemPrompts = append(systemPrompts, part.Text)
+				}
+			}
+		case "assistant":
+			messages = append(messages, anthropicMessage{Role: "assistant", Content: parts})
+		default:
+			messages = append(messages, anthropicMessage{Role: "user", Content: parts})
+		}
+	}
+
+	if len(messages) == 0 {
+		return nil, errors.New("bedrock: no user/assistant messages provided")
 	}
 
 	body := anthropicRequest{
@@ -795,8 +816,15 @@ type anthropicMessage struct {
 }
 
 type anthropicContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type   string                `json:"type"`
+	Text   string                `json:"text,omitempty"`
+	Source *anthropicImageSource `json:"source,omitempty"`
+}
+
+type anthropicImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type anthropicUsage struct {
@@ -855,6 +883,227 @@ func (e anthropicStreamEvent) StopReason() string {
 		return ""
 	}
 	return e.Delta.StopReason
+}
+
+func (a *Adapter) convertAnthropicMessageParts(ctx context.Context, msgIndex int, msg models.ChatMessage, allowNonText bool) ([]anthropicContent, error) {
+	parts := msg.ContentParts
+	if len(parts) == 0 {
+		text := strings.TrimSpace(msg.Text())
+		if text == "" {
+			return nil, nil
+		}
+		parts = []models.MessageContentPart{{Type: models.MessageContentPartTypeText, Text: text}}
+	}
+
+	converted := make([]anthropicContent, 0, len(parts))
+	for partIdx, part := range parts {
+		if part.IsTextual() {
+			text := strings.TrimSpace(part.Text)
+			if text != "" {
+				converted = append(converted, anthropicContent{Type: "text", Text: text})
+			}
+			continue
+		}
+
+		if !allowNonText {
+			partType := strings.TrimSpace(part.Type)
+			if partType == "" {
+				partType = "non-text"
+			}
+			return nil, fmt.Errorf("bedrock: message %d does not support %s content", msgIndex, partType)
+		}
+
+		switch strings.ToLower(strings.TrimSpace(part.Type)) {
+		case models.MessageContentPartTypeImageURL:
+			content, err := a.anthropicImageContentFromURL(ctx, part.ImageURL)
+			if err != nil {
+				return nil, fmt.Errorf("bedrock: message %d image_url: %w", msgIndex, err)
+			}
+			converted = append(converted, content)
+		case models.MessageContentPartTypeImageFile:
+			return nil, fmt.Errorf("bedrock: message %d image_file content is not supported yet", msgIndex)
+		case models.MessageContentPartTypeInputAudio:
+			return nil, fmt.Errorf("bedrock: message %d input_audio content is not supported", msgIndex)
+		case "input_image":
+			content, err := anthropicImageContentFromInline(part.InputImage)
+			if err != nil {
+				return nil, fmt.Errorf("bedrock: message %d input_image: %w", msgIndex, err)
+			}
+			converted = append(converted, content)
+		default:
+			return nil, fmt.Errorf("bedrock: message %d unsupported content part %q (index %d)", msgIndex, part.Type, partIdx)
+		}
+	}
+
+	return converted, nil
+}
+
+func (a *Adapter) anthropicImageContentFromURL(ctx context.Context, image *models.MessageContentImageURL) (anthropicContent, error) {
+	if image == nil || strings.TrimSpace(image.URL) == "" {
+		return anthropicContent{}, errors.New("image_url missing url")
+	}
+	urlValue := strings.TrimSpace(image.URL)
+	var mime string
+	var data []byte
+	var err error
+	if strings.HasPrefix(strings.ToLower(urlValue), "data:") {
+		mime, data, err = decodeDataURL(urlValue)
+	} else {
+		mime, data, err = a.fetchAsset(ctx, urlValue)
+	}
+	if err != nil {
+		return anthropicContent{}, err
+	}
+	return bedrockInlineImageContent(mime, data)
+}
+
+func anthropicImageContentFromInline(image *models.MessageContentImageObject) (anthropicContent, error) {
+	if image == nil {
+		return anthropicContent{}, errors.New("image payload missing")
+	}
+	encoded := strings.TrimSpace(image.Data)
+	if encoded == "" {
+		return anthropicContent{}, errors.New("image data missing")
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return anthropicContent{}, fmt.Errorf("decode inline image: %w", err)
+	}
+	return bedrockInlineImageContent(image.Format, data)
+}
+
+func bedrockInlineImageContent(format string, data []byte) (anthropicContent, error) {
+	if len(data) > bedrockMaxInlineDataBytes {
+		return anthropicContent{}, fmt.Errorf("asset exceeds %d bytes", bedrockMaxInlineDataBytes)
+	}
+	mime := normalizeAnthropicMime(format)
+	return anthropicContent{
+		Type: "image",
+		Source: &anthropicImageSource{
+			Type:      "base64",
+			MediaType: mime,
+			Data:      base64.StdEncoding.EncodeToString(data),
+		},
+	}, nil
+}
+
+func normalizeAnthropicMime(format string) string {
+	format = strings.TrimSpace(format)
+	if format == "" {
+		return "image/png"
+	}
+	if strings.Contains(format, "/") {
+		return format
+	}
+	if strings.HasPrefix(format, "image") {
+		return format
+	}
+	return "image/" + format
+}
+
+func (a *Adapter) fetchAsset(ctx context.Context, raw string) (string, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	resp, err := a.assetClient.Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return "", nil, fmt.Errorf("remote asset status %d", resp.StatusCode)
+	}
+	reader := io.LimitReader(resp.Body, bedrockMaxInlineDataBytes+1)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", nil, fmt.Errorf("read remote asset: %w", err)
+	}
+	if len(data) > bedrockMaxInlineDataBytes {
+		return "", nil, fmt.Errorf("remote asset exceeds %d bytes", bedrockMaxInlineDataBytes)
+	}
+	mime := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	if mime == "" {
+		mime = http.DetectContentType(data)
+	}
+	return mime, data, nil
+}
+
+func decodeDataURL(raw string) (string, []byte, error) {
+	payload := strings.TrimPrefix(raw, "data:")
+	parts := strings.SplitN(payload, ",", 2)
+	if len(parts) != 2 {
+		return "", nil, fmt.Errorf("invalid data url")
+	}
+	meta := parts[0]
+	dataPart := parts[1]
+	segments := strings.Split(meta, ";")
+	mime := strings.TrimSpace(segments[0])
+	base64Encoded := false
+	for _, seg := range segments[1:] {
+		if strings.EqualFold(strings.TrimSpace(seg), "base64") {
+			base64Encoded = true
+		}
+	}
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	var decoded []byte
+	var err error
+	if base64Encoded {
+		decoded, err = base64.StdEncoding.DecodeString(dataPart)
+	} else {
+		decodedString, decodeErr := url.QueryUnescape(dataPart)
+		if decodeErr != nil {
+			err = decodeErr
+		} else {
+			decoded = []byte(decodedString)
+		}
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("decode data url: %w", err)
+	}
+	if len(decoded) > bedrockMaxInlineDataBytes {
+		return "", nil, fmt.Errorf("data url exceeds %d bytes", bedrockMaxInlineDataBytes)
+	}
+	return mime, decoded, nil
+}
+
+func bedrockAnthropicContentsToMessage(role string, content []anthropicContent) models.ChatMessage {
+	parts := make([]models.MessageContentPart, 0, len(content))
+	for _, block := range content {
+		switch strings.ToLower(block.Type) {
+		case "text":
+			if strings.TrimSpace(block.Text) != "" {
+				parts = append(parts, models.MessageContentPart{
+					Type: models.MessageContentPartTypeText,
+					Text: block.Text,
+				})
+			}
+		case "image":
+			if block.Source != nil && strings.TrimSpace(block.Source.Data) != "" {
+				media := block.Source.MediaType
+				if strings.TrimSpace(media) == "" {
+					media = "image/png"
+				}
+				parts = append(parts, models.MessageContentPart{
+					Type: models.MessageContentPartTypeImageURL,
+					ImageURL: &models.MessageContentImageURL{
+						URL: fmt.Sprintf("data:%s;base64,%s", media, block.Source.Data),
+					},
+				})
+			}
+		}
+	}
+	text := models.TextFromContentParts(parts)
+	if strings.TrimSpace(role) == "" {
+		role = "assistant"
+	}
+	return models.ChatMessage{
+		Role:         role,
+		Content:      text,
+		ContentParts: parts,
+	}
 }
 
 func mapAnthropicStopReason(reason string) string {

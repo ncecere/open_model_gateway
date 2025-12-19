@@ -234,6 +234,7 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 		Metadata: metadata,
 		Health:   WrapHealth(adapter.HealthCheck),
 	}
+	route.Capabilities = deriveCapabilities(entry.Modalities, route.Metadata)
 	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 300 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
 	route.Tokenizer = selectTokenizer("anthropic", entry.ProviderOverrides.Tokenizer, route.Metadata)
 

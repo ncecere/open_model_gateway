@@ -100,6 +100,22 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 		return ChatResult{}, err
 	}
 
+	reqCaps := req.CapabilityRequirements()
+	if reqCaps.HasRequirements() {
+		eligible := make([]providers.Route, 0, len(routes))
+		for _, route := range routes {
+			if route.SupportsCapabilities(reqCaps) {
+				eligible = append(eligible, route)
+			}
+		}
+		if len(eligible) == 0 {
+			err := NewAPIError(fiber.StatusBadRequest, fmt.Sprintf("model does not support %s input", reqCaps.Describe()))
+			e.spanError(span, err)
+			return ChatResult{}, err
+		}
+		routes = eligible
+	}
+
 	budgetStatus, err := e.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
 	if err != nil {
 		e.spanError(span, err)

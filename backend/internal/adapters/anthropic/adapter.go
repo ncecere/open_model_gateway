@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,8 +18,11 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
 
-const defaultBaseURL = "https://api.anthropic.com"
-const defaultVersion = "2023-06-01"
+const (
+	defaultBaseURL              = "https://api.anthropic.com"
+	defaultVersion              = "2023-06-01"
+	anthropicMaxInlineDataBytes = 20 * 1024 * 1024
+)
 
 // Options configures the native Anthropic adapter.
 type Options struct {
@@ -26,12 +31,14 @@ type Options struct {
 	Version          string
 	DefaultMaxTokens int32
 	HTTPClient       *http.Client
+	AssetHTTPClient  *http.Client
 }
 
 type Adapter struct {
-	client  *http.Client
-	baseURL string
-	opts    Options
+	client      *http.Client
+	assetClient *http.Client
+	baseURL     string
+	opts        Options
 }
 
 func New(opts Options) (*Adapter, error) {
@@ -47,15 +54,19 @@ func New(opts Options) (*Adapter, error) {
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{Timeout: 60 * time.Second}
 	}
+	if opts.AssetHTTPClient == nil {
+		opts.AssetHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &Adapter{
-		client:  opts.HTTPClient,
-		baseURL: strings.TrimRight(opts.BaseURL, "/"),
-		opts:    opts,
+		client:      opts.HTTPClient,
+		assetClient: opts.AssetHTTPClient,
+		baseURL:     strings.TrimRight(opts.BaseURL, "/"),
+		opts:        opts,
 	}, nil
 }
 
 func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.ChatResponse, error) {
-	payload, err := buildAnthropicMessageRequest(req, a.opts.DefaultMaxTokens, false)
+	payload, err := a.buildMessageRequest(ctx, req, a.opts.DefaultMaxTokens, false)
 	if err != nil {
 		return models.ChatResponse{}, err
 	}
@@ -67,7 +78,7 @@ func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.Chat
 }
 
 func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-chan models.ChatChunk, func() error, error) {
-	payload, err := buildAnthropicMessageRequest(req, a.opts.DefaultMaxTokens, true)
+	payload, err := a.buildMessageRequest(ctx, req, a.opts.DefaultMaxTokens, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -158,13 +169,17 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 				if text == "" {
 					continue
 				}
+				parts := []models.MessageContentPart{{
+					Type: models.MessageContentPartTypeText,
+					Text: text,
+				}}
 				chunk := models.ChatChunk{
 					ID:      messageID,
 					Model:   model,
 					Created: created,
 					Choices: []models.ChunkDelta{{
 						Index: evt.Index,
-						Delta: models.ChatMessage{Role: "assistant", Content: text},
+						Delta: models.ChatMessage{Role: "assistant", Content: text, ContentParts: parts},
 					}},
 				}
 				if !yield(chunk) {
@@ -262,25 +277,42 @@ func (a *Adapter) postJSON(ctx context.Context, path string, payload anthropicRe
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func buildAnthropicMessageRequest(req models.ChatRequest, defaultMax int32, stream bool) (anthropicRequestBody, error) {
+func (a *Adapter) buildMessageRequest(ctx context.Context, req models.ChatRequest, defaultMax int32, stream bool) (anthropicRequestBody, error) {
 	var systemPrompts []string
 	messages := make([]anthropicMessage, 0, len(req.Messages))
 
-	for _, msg := range req.Messages {
-		switch strings.ToLower(msg.Role) {
-		case "system":
-			systemPrompts = append(systemPrompts, msg.Content)
+	for idx, msg := range req.Messages {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		allowNonText := role != "system" && role != "developer"
+		parts, err := a.convertMessageParts(ctx, idx, msg, allowNonText)
+		if err != nil {
+			return anthropicRequestBody{}, err
+		}
+		if len(parts) == 0 {
+			continue
+		}
+		switch role {
+		case "system", "developer":
+			for _, part := range parts {
+				if strings.TrimSpace(part.Text) != "" {
+					systemPrompts = append(systemPrompts, part.Text)
+				}
+			}
 		case "assistant":
 			messages = append(messages, anthropicMessage{
 				Role:    "assistant",
-				Content: []anthropicContent{{Type: "text", Text: msg.Content}},
+				Content: parts,
 			})
 		default:
 			messages = append(messages, anthropicMessage{
 				Role:    "user",
-				Content: []anthropicContent{{Type: "text", Text: msg.Content}},
+				Content: parts,
 			})
 		}
+	}
+
+	if len(messages) == 0 {
+		return anthropicRequestBody{}, errors.New("anthropic: no user/assistant messages provided")
 	}
 
 	maxTokens := int32(0)
@@ -333,8 +365,15 @@ type anthropicMessage struct {
 }
 
 type anthropicContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type   string                `json:"type"`
+	Text   string                `json:"text,omitempty"`
+	Source *anthropicImageSource `json:"source,omitempty"`
+}
+
+type anthropicImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type anthropicResponse struct {
@@ -394,8 +433,229 @@ func (e anthropicStreamEvent) StopReason() string {
 	return e.Delta.StopReason
 }
 
+func (a *Adapter) convertMessageParts(ctx context.Context, msgIndex int, msg models.ChatMessage, allowNonText bool) ([]anthropicContent, error) {
+	parts := msg.ContentParts
+	if len(parts) == 0 {
+		text := strings.TrimSpace(msg.Text())
+		if text == "" {
+			return nil, nil
+		}
+		parts = []models.MessageContentPart{{Type: models.MessageContentPartTypeText, Text: text}}
+	}
+
+	converted := make([]anthropicContent, 0, len(parts))
+	for partIdx, part := range parts {
+		if part.IsTextual() {
+			text := strings.TrimSpace(part.Text)
+			if text != "" {
+				converted = append(converted, anthropicContent{Type: "text", Text: text})
+			}
+			continue
+		}
+
+		if !allowNonText {
+			partType := strings.TrimSpace(part.Type)
+			if partType == "" {
+				partType = "non-text"
+			}
+			return nil, fmt.Errorf("anthropic: message %d does not support %s content", msgIndex, partType)
+		}
+
+		switch strings.ToLower(strings.TrimSpace(part.Type)) {
+		case models.MessageContentPartTypeImageURL:
+			content, err := a.imageContentFromURL(ctx, part.ImageURL)
+			if err != nil {
+				return nil, fmt.Errorf("anthropic: message %d image_url: %w", msgIndex, err)
+			}
+			converted = append(converted, content)
+		case models.MessageContentPartTypeImageFile:
+			return nil, fmt.Errorf("anthropic: message %d image_file content is not supported yet", msgIndex)
+		case models.MessageContentPartTypeInputAudio:
+			return nil, fmt.Errorf("anthropic: message %d input_audio content is not supported", msgIndex)
+		case "input_image":
+			content, err := imageContentFromInline(part.InputImage)
+			if err != nil {
+				return nil, fmt.Errorf("anthropic: message %d input_image: %w", msgIndex, err)
+			}
+			converted = append(converted, content)
+		default:
+			return nil, fmt.Errorf("anthropic: message %d unsupported content part %q (index %d)", msgIndex, part.Type, partIdx)
+		}
+	}
+
+	return converted, nil
+}
+
+func (a *Adapter) imageContentFromURL(ctx context.Context, image *models.MessageContentImageURL) (anthropicContent, error) {
+	if image == nil || strings.TrimSpace(image.URL) == "" {
+		return anthropicContent{}, errors.New("image_url missing url")
+	}
+	urlValue := strings.TrimSpace(image.URL)
+	var mime string
+	var data []byte
+	var err error
+	if strings.HasPrefix(strings.ToLower(urlValue), "data:") {
+		mime, data, err = decodeDataURL(urlValue)
+	} else {
+		mime, data, err = a.fetchExternalAsset(ctx, urlValue)
+	}
+	if err != nil {
+		return anthropicContent{}, err
+	}
+	return inlineImageContent(mime, data)
+}
+
+func imageContentFromInline(image *models.MessageContentImageObject) (anthropicContent, error) {
+	if image == nil {
+		return anthropicContent{}, errors.New("image payload missing")
+	}
+	encoded := strings.TrimSpace(image.Data)
+	if encoded == "" {
+		return anthropicContent{}, errors.New("image data missing")
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return anthropicContent{}, fmt.Errorf("decode inline image: %w", err)
+	}
+	return inlineImageContent(image.Format, data)
+}
+
+func inlineImageContent(format string, data []byte) (anthropicContent, error) {
+	if len(data) > anthropicMaxInlineDataBytes {
+		return anthropicContent{}, fmt.Errorf("asset exceeds %d bytes", anthropicMaxInlineDataBytes)
+	}
+	mime := normalizeAnthropicMime(format)
+	return anthropicContent{
+		Type: "image",
+		Source: &anthropicImageSource{
+			Type:      "base64",
+			MediaType: mime,
+			Data:      base64.StdEncoding.EncodeToString(data),
+		},
+	}, nil
+}
+
+func normalizeAnthropicMime(format string) string {
+	format = strings.TrimSpace(format)
+	if format == "" {
+		return "image/png"
+	}
+	if strings.Contains(format, "/") {
+		return format
+	}
+	if strings.HasPrefix(format, "image") {
+		return format
+	}
+	return "image/" + format
+}
+
+func (a *Adapter) fetchExternalAsset(ctx context.Context, raw string) (string, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	resp, err := a.assetClient.Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return "", nil, fmt.Errorf("remote asset status %d", resp.StatusCode)
+	}
+	reader := io.LimitReader(resp.Body, anthropicMaxInlineDataBytes+1)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", nil, fmt.Errorf("read remote asset: %w", err)
+	}
+	if len(data) > anthropicMaxInlineDataBytes {
+		return "", nil, fmt.Errorf("remote asset exceeds %d bytes", anthropicMaxInlineDataBytes)
+	}
+	mime := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	if mime == "" {
+		mime = http.DetectContentType(data)
+	}
+	return mime, data, nil
+}
+
+func decodeDataURL(raw string) (string, []byte, error) {
+	payload := strings.TrimPrefix(raw, "data:")
+	parts := strings.SplitN(payload, ",", 2)
+	if len(parts) != 2 {
+		return "", nil, fmt.Errorf("invalid data url")
+	}
+	meta := parts[0]
+	dataPart := parts[1]
+	segments := strings.Split(meta, ";")
+	mime := strings.TrimSpace(segments[0])
+	base64Encoded := false
+	for _, seg := range segments[1:] {
+		if strings.EqualFold(strings.TrimSpace(seg), "base64") {
+			base64Encoded = true
+		}
+	}
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	var decoded []byte
+	var err error
+	if base64Encoded {
+		decoded, err = base64.StdEncoding.DecodeString(dataPart)
+	} else {
+		decodedString, decodeErr := url.QueryUnescape(dataPart)
+		if decodeErr != nil {
+			err = decodeErr
+		} else {
+			decoded = []byte(decodedString)
+		}
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("decode data url: %w", err)
+	}
+	if len(decoded) > anthropicMaxInlineDataBytes {
+		return "", nil, fmt.Errorf("data url exceeds %d bytes", anthropicMaxInlineDataBytes)
+	}
+	return mime, decoded, nil
+}
+
+func anthropicContentsToMessage(role string, content []anthropicContent) models.ChatMessage {
+	parts := make([]models.MessageContentPart, 0, len(content))
+	for _, block := range content {
+		switch strings.ToLower(block.Type) {
+		case "text":
+			if strings.TrimSpace(block.Text) != "" {
+				parts = append(parts, models.MessageContentPart{
+					Type: models.MessageContentPartTypeText,
+					Text: block.Text,
+				})
+			}
+		case "image":
+			if block.Source != nil && strings.TrimSpace(block.Source.Data) != "" {
+				media := block.Source.MediaType
+				if strings.TrimSpace(media) == "" {
+					media = "image/png"
+				}
+				parts = append(parts, models.MessageContentPart{
+					Type: models.MessageContentPartTypeImageURL,
+					ImageURL: &models.MessageContentImageURL{
+						URL: fmt.Sprintf("data:%s;base64,%s", media, block.Source.Data),
+					},
+				})
+			}
+		}
+	}
+	text := models.TextFromContentParts(parts)
+	if strings.TrimSpace(role) == "" {
+		role = "assistant"
+	}
+	return models.ChatMessage{
+		Role:         role,
+		Content:      text,
+		ContentParts: parts,
+	}
+}
+
 func convertAnthropicResponse(resp anthropicResponse, model string) models.ChatResponse {
-	message := models.ChatMessage{Role: "assistant", Content: resp.JoinText()}
+	message := anthropicContentsToMessage(resp.Role, resp.Content)
 	return models.ChatResponse{
 		ID:      resp.ID,
 		Model:   model,

@@ -15,6 +15,7 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/packages/respjson"
 
+	openaihelper "github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -56,7 +57,10 @@ func New(opts Options) (*Adapter, error) {
 
 // Chat performs a non-streaming chat completion request.
 func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.ChatResponse, error) {
-	params := buildChatParams(req)
+	params, err := openaihelper.BuildChatParams(req)
+	if err != nil {
+		return models.ChatResponse{}, err
+	}
 	resp, err := a.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return models.ChatResponse{}, err
@@ -66,7 +70,10 @@ func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.Chat
 
 // ChatStream performs a streaming chat completion request.
 func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-chan models.ChatChunk, func() error, error) {
-	params := buildChatParams(req)
+	params, err := openaihelper.BuildChatParams(req)
+	if err != nil {
+		return nil, nil, err
+	}
 	params.StreamOptions.IncludeUsage = param.NewOpt(true)
 	stream := a.client.Chat.Completions.NewStreaming(ctx, params)
 	if err := stream.Err(); err != nil {
@@ -537,59 +544,20 @@ func convertStreamUsage(usage openai.TranscriptionTextDoneEventUsage) models.Usa
 	}
 }
 
-func buildChatParams(req models.ChatRequest) openai.ChatCompletionNewParams {
-	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(req.Messages))
-	for _, msg := range req.Messages {
-		switch strings.ToLower(msg.Role) {
-		case "system":
-			messages = append(messages, openai.SystemMessage(msg.Content))
-		case "assistant":
-			choice := openai.ChatCompletionMessageParamOfAssistant(msg.Content)
-			messages = append(messages, choice)
-		case "tool":
-			fallthrough
-		default:
-			union := openai.UserMessage(msg.Content)
-			if name := strings.TrimSpace(msg.Name); name != "" && union.OfUser != nil {
-				union.OfUser.Name = param.NewOpt(name)
-			}
-			messages = append(messages, union)
-		}
-	}
-
-	params := openai.ChatCompletionNewParams{
-		Model:    openai.ChatModel(req.Model),
-		Messages: messages,
-	}
-	if req.Temperature != nil {
-		params.Temperature = param.NewOpt(float64(*req.Temperature))
-	}
-	if req.TopP != nil {
-		params.TopP = param.NewOpt(float64(*req.TopP))
-	}
-	if req.MaxTokens != nil {
-		params.MaxTokens = param.NewOpt(int64(*req.MaxTokens))
-	}
-	if len(req.Stop) == 1 {
-		params.Stop.OfString = param.NewOpt(req.Stop[0])
-	} else if len(req.Stop) > 1 {
-		params.Stop.OfStringArray = append(params.Stop.OfStringArray, req.Stop...)
-	}
-	return params
-}
-
 func convertChatResponse(resp openai.ChatCompletion) models.ChatResponse {
 	choices := make([]models.ChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
 		reasoning, reasoningContent := extractReasoning(choice.Message.JSON.ExtraFields, choice.Message.RawJSON())
+		content, parts := openaihelper.ExtractMessageContent(choice.Message.RawJSON(), choice.Message.Content)
 		message := models.ChatMessage{
 			Role:             string(choice.Message.Role),
-			Content:          choice.Message.Content,
+			Content:          content,
+			ContentParts:     parts,
 			Reasoning:        reasoning,
 			ReasoningContent: reasoningContent,
 		}
 
-		if message.Content == "" && message.ReasoningContent != "" {
+		if strings.TrimSpace(message.Content) == "" && message.ReasoningContent != "" {
 			message.Content = message.ReasoningContent
 		}
 		choices = append(choices, models.ChatChoice{
@@ -619,13 +587,15 @@ func convertChatChunk(chunk openai.ChatCompletionChunk) models.ChatChunk {
 	choices := make([]models.ChunkDelta, 0, len(chunk.Choices))
 	for _, choice := range chunk.Choices {
 		reasoning, reasoningContent := extractReasoning(choice.Delta.JSON.ExtraFields, choice.Delta.RawJSON())
+		content, parts := openaihelper.ExtractMessageContent(choice.Delta.RawJSON(), choice.Delta.Content)
 		msg := models.ChatMessage{
 			Role:             choice.Delta.Role,
-			Content:          choice.Delta.Content,
+			Content:          content,
+			ContentParts:     parts,
 			Reasoning:        reasoning,
 			ReasoningContent: reasoningContent,
 		}
-		if msg.Content == "" && msg.ReasoningContent != "" {
+		if strings.TrimSpace(msg.Content) == "" && msg.ReasoningContent != "" {
 			msg.Content = msg.ReasoningContent
 		}
 		choices = append(choices, models.ChunkDelta{

@@ -140,12 +140,14 @@ func buildOpenAIRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 		Models:                adapter,
 		Health:                WrapHealth(adapter.HealthCheck),
 	}
+	route.Capabilities = deriveCapabilities(entry.Modalities, route.Metadata)
 	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
 	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil
 }
 
 func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry config.ModelCatalogEntry) (Route, error) {
+
 	cfg = EnsureConfig(cfg)
 	md := cloneMetadata(entry.Metadata)
 	override := entry.ProviderOverrides.OpenAICompatible
@@ -227,6 +229,7 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 		TextToSpeech:          adapter,
 		Health:                WrapHealth(adapter.HealthCheck),
 	}
+	route.Capabilities = deriveCapabilities(entry.Modalities, route.Metadata)
 	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
 	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil

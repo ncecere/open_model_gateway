@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -40,6 +41,20 @@ func (p *chatStreamPipeline) Stream(
 	routes := p.container.Engine.SelectRoutes(alias)
 	if len(routes) == 0 {
 		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
+	}
+
+	reqCaps := req.CapabilityRequirements()
+	if reqCaps.HasRequirements() {
+		eligible := make([]providers.Route, 0, len(routes))
+		for _, route := range routes {
+			if route.SupportsCapabilities(reqCaps) {
+				eligible = append(eligible, route)
+			}
+		}
+		if len(eligible) == 0 {
+			return httputil.WriteError(c, fiber.StatusBadRequest, fmt.Sprintf("model does not support %s input", reqCaps.Describe()))
+		}
+		routes = eligible
 	}
 
 	initialBudget, err := p.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())

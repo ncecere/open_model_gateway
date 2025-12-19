@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -261,9 +262,11 @@ func buildChatRequest(req models.ChatRequest, streaming bool) chatCompletionRequ
 	messages := make([]chatMessage, 0, len(req.Messages))
 	for _, msg := range req.Messages {
 		messages = append(messages, chatMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-			Name:    msg.Name,
+			Role:             msg.Role,
+			Content:          models.MarshalMessageContent(msg),
+			Name:             msg.Name,
+			Reasoning:        msg.Reasoning,
+			ReasoningContent: msg.ReasoningContent,
 		})
 	}
 	payload := chatCompletionRequest{
@@ -292,7 +295,7 @@ func buildChatRequest(req models.ChatRequest, streaming bool) chatCompletionRequ
 func convertChatResponse(resp chatCompletionResponse) models.ChatResponse {
 	choices := make([]models.ChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
-		content := choice.Message.Content
+		content, parts := openaihelper.ExtractMessageContent(string(choice.Message.Content), choice.Message.ReasoningContent)
 		if strings.TrimSpace(content) == "" && strings.TrimSpace(choice.Message.ReasoningContent) != "" {
 			content = choice.Message.ReasoningContent
 		}
@@ -301,6 +304,7 @@ func convertChatResponse(resp chatCompletionResponse) models.ChatResponse {
 			Message: models.ChatMessage{
 				Role:             choice.Message.Role,
 				Content:          content,
+				ContentParts:     parts,
 				Reasoning:        choice.Message.Reasoning,
 				ReasoningContent: choice.Message.ReasoningContent,
 			},
@@ -319,13 +323,14 @@ func convertChatResponse(resp chatCompletionResponse) models.ChatResponse {
 func convertChatChunk(chunk chatCompletionChunk) models.ChatChunk {
 	choices := make([]models.ChunkDelta, 0, len(chunk.Choices))
 	for _, choice := range chunk.Choices {
-		content := choice.Delta.Content
+		content, parts := openaihelper.ExtractMessageContent(string(choice.Delta.Content), choice.Delta.ReasoningContent)
 		if strings.TrimSpace(content) == "" && strings.TrimSpace(choice.Delta.ReasoningContent) != "" {
 			content = choice.Delta.ReasoningContent
 		}
 		msg := models.ChatMessage{
 			Role:             choice.Delta.Role,
 			Content:          content,
+			ContentParts:     parts,
 			Reasoning:        choice.Delta.Reasoning,
 			ReasoningContent: choice.Delta.ReasoningContent,
 		}
@@ -460,11 +465,11 @@ type chatCompletionRequest struct {
 }
 
 type chatMessage struct {
-	Role             string `json:"role"`
-	Content          string `json:"content"`
-	Name             string `json:"name,omitempty"`
-	Reasoning        string `json:"reasoning,omitempty"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
+	Role             string          `json:"role"`
+	Content          json.RawMessage `json:"content"`
+	Name             string          `json:"name,omitempty"`
+	Reasoning        string          `json:"reasoning,omitempty"`
+	ReasoningContent string          `json:"reasoning_content,omitempty"`
 }
 
 type streamOptions struct {

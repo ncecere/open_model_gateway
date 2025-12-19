@@ -1,6 +1,9 @@
 package providers
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 func supportsModality(modalities []string, target string) bool {
 	for _, m := range modalities {
@@ -52,4 +55,31 @@ func setDefaultAudioMetadata(md map[string]string, enableStreaming bool, include
 			md["audio_streaming"] = "false"
 		}
 	}
+}
+
+func deriveCapabilities(modalities []string, md map[string]string) RouteCapabilities {
+	caps := RouteCapabilities{
+		ImageInput: supportsModality(modalities, "image"),
+		AudioInput: supportsModality(modalities, "audio"),
+		VideoInput: supportsModality(modalities, "video"),
+	}
+	caps.ImageInput = capabilityOverride(md, "cap_image_input", caps.ImageInput)
+	caps.AudioInput = capabilityOverride(md, "cap_audio_input", caps.AudioInput)
+	caps.VideoInput = capabilityOverride(md, "cap_video_input", caps.VideoInput)
+	return caps
+}
+
+func capabilityOverride(md map[string]string, key string, base bool) bool {
+	if md == nil {
+		return base
+	}
+	value, ok := md[key]
+	if !ok {
+		return base
+	}
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		return base
+	}
+	return parsed
 }

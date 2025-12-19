@@ -161,6 +161,35 @@ Sample response:
 
 Use the returned `last_id` as the next `after` cursor while `has_more` is `true`. Download file contents through `GET /v1/files/{id}/content`—the router streams the persisted blob with the original `Content-Type`.
 
+### Using File IDs in Chat Requests
+
+Uploaded files plug directly into OpenAI-style content arrays. After the upload step, reference the `file_id` inside a `"type": "image_file"` block:
+
+```bash
+FILE_ID=$(curl -s http://localhost:8090/v1/files \
+  -H "Authorization: Bearer $API_KEY" \
+  -F "file=@./diagram.png" \
+  -F "purpose=vision" | jq -r '.id')
+
+curl http://localhost:8090/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{
+        \"model\": \"gpt-4o-mini\",
+        \"messages\": [
+          {
+            \"role\": \"user\",
+            \"content\": [
+              {\"type\": \"input_text\", \"text\": \"Describe this diagram.\"},
+              {\"type\": \"image_file\", \"image_file\": {\"file_id\": \"${FILE_ID}\"}}
+            ]
+          }
+        ]
+      }"
+```
+
+The gateway verifies the `file_id` belongs to the caller’s tenant, loads the blob from the configured storage backend, and forwards it to the provider using the OpenAI `image_file` schema. This works for any alias whose model listing advertises `"capabilities": {"image_input": true}`. If you try to attach an image/audio/video file to a model that lacks those capabilities, `/v1/chat/completions` responds with `400` and an explanatory error so you can choose a different alias.
+
 ### Image Edit Example
 
 ```bash

@@ -34,19 +34,21 @@ type Options struct {
 	Endpoint        string
 	CredentialsJSON []byte
 	HTTPClient      *http.Client
+	AssetClient     *http.Client
 	Metadata        map[string]string
 }
 
 // Adapter implements chat + embeddings via Vertex AI.
 type Adapter struct {
-	client    *http.Client
-	model     string
-	chatURL   string
-	streamURL string
-	embedURL  string
-	imageURL  string
-	baseURL   string
-	metadata  map[string]string
+	client      *http.Client
+	assetClient *http.Client
+	model       string
+	chatURL     string
+	streamURL   string
+	embedURL    string
+	imageURL    string
+	baseURL     string
+	metadata    map[string]string
 }
 
 // New creates a Vertex adapter using service-account credentials.
@@ -87,19 +89,24 @@ func New(ctx context.Context, opts Options) (*Adapter, error) {
 		}
 		httpClient = oauth2.NewClient(ctx, creds.TokenSource)
 	}
+	assetClient := opts.AssetClient
+	if assetClient == nil {
+		assetClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	if opts.Metadata == nil {
 		opts.Metadata = map[string]string{}
 	}
 
 	return &Adapter{
-		client:    httpClient,
-		model:     opts.Model,
-		baseURL:   base,
-		chatURL:   base + ":generateContent",
-		streamURL: base + ":streamGenerateContent",
-		embedURL:  base + ":predict",
-		imageURL:  base + ":predict",
-		metadata:  opts.Metadata,
+		client:      httpClient,
+		assetClient: assetClient,
+		model:       opts.Model,
+		baseURL:     base,
+		chatURL:     base + ":generateContent",
+		streamURL:   base + ":streamGenerateContent",
+		embedURL:    base + ":predict",
+		imageURL:    base + ":predict",
+		metadata:    opts.Metadata,
 	}, nil
 }
 
@@ -107,7 +114,7 @@ func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.Chat
 	if a.chatURL == "" {
 		return models.ChatResponse{}, errors.New("vertex chat disabled for this model")
 	}
-	payload, err := buildGenerateContentRequest(req)
+	payload, err := a.buildGenerateContentRequest(ctx, req)
 	if err != nil {
 		return models.ChatResponse{}, err
 	}
@@ -126,7 +133,7 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 	if a.streamURL == "" {
 		return nil, nil, errors.New("vertex streaming disabled for this model")
 	}
-	payload, err := buildGenerateContentRequest(req)
+	payload, err := a.buildGenerateContentRequest(ctx, req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -403,20 +410,27 @@ func (a *Adapter) post(ctx context.Context, url string, payload any) (*http.Resp
 }
 
 func convertChatResponse(v vertexGenerateResponse, model string) (models.ChatResponse, error) {
-	candidate := v.FirstCandidate()
-	if candidate == nil {
+	choices := make([]models.ChatChoice, 0, len(v.Candidates))
+	for idx, candidate := range v.Candidates {
+		msg := vertexContentToMessage(candidate.Content)
+		finish := strings.ToLower(strings.TrimSpace(candidate.FinishReason))
+		if finish == "" {
+			finish = "stop"
+		}
+		choices = append(choices, models.ChatChoice{
+			Index:        idx,
+			Message:      msg,
+			FinishReason: finish,
+		})
+	}
+	if len(choices) == 0 {
 		return models.ChatResponse{}, errors.New("vertex response missing candidates")
 	}
-	message := models.ChatMessage{Role: "assistant", Content: candidate.Content.Text()}
 	resp := models.ChatResponse{
 		ID:      uuid.NewString(),
 		Created: time.Now().UTC(),
 		Model:   model,
-		Choices: []models.ChatChoice{{
-			Index:        0,
-			Message:      message,
-			FinishReason: strings.ToLower(candidate.FinishReason),
-		}},
+		Choices: choices,
 	}
 	if usage := v.Usage(); usage != nil {
 		resp.Usage = convertUsageMetadata(*usage)
@@ -427,19 +441,18 @@ func convertChatResponse(v vertexGenerateResponse, model string) (models.ChatRes
 func convertStreamChunk(v vertexGenerateResponse, model string) []models.ChatChunk {
 	chunks := make([]models.ChatChunk, 0, 2)
 	if candidate := v.FirstCandidate(); candidate != nil {
-		text := candidate.Content.Text()
-		if text != "" {
-			chunks = append(chunks, models.ChatChunk{
-				ID:      uuid.NewString(),
-				Model:   model,
-				Created: time.Now().UTC(),
-				Choices: []models.ChunkDelta{{
-					Index:        0,
-					Delta:        models.ChatMessage{Role: "assistant", Content: text},
-					FinishReason: strings.ToLower(candidate.FinishReason),
-				}},
-			})
-		}
+		msg := vertexContentToMessage(candidate.Content)
+		finish := strings.ToLower(strings.TrimSpace(candidate.FinishReason))
+		chunks = append(chunks, models.ChatChunk{
+			ID:      uuid.NewString(),
+			Model:   model,
+			Created: time.Now().UTC(),
+			Choices: []models.ChunkDelta{{
+				Index:        0,
+				Delta:        msg,
+				FinishReason: finish,
+			}},
+		})
 	}
 	if usage := v.Usage(); usage != nil && (usage.PromptTokens > 0 || usage.CandidatesTokens > 0 || usage.TotalTokens > 0) {
 		usageCopy := convertUsageMetadata(*usage)

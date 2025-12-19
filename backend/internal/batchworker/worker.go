@@ -336,8 +336,11 @@ func (w *Worker) executeItem(ctx context.Context, batch batchsvc.Batch, rc *requ
 	switch batch.Endpoint {
 	case "/v1/chat/completions":
 		return w.runChatItem(ctx, rc, traceID, item)
+	case "/v1/responses":
+		return w.runResponsesItem(ctx, rc, traceID, item)
 	case "/v1/embeddings":
 		return w.runEmbeddingItem(ctx, rc, traceID, item)
+
 	case "/v1/moderations":
 		return w.runModerationItem(ctx, rc, traceID, item)
 	case "/v1/images/generations":
@@ -431,6 +434,77 @@ func (w *Worker) runChatItem(ctx context.Context, rc *requestctx.Context, traceI
 		}
 	}
 
+	req := models.ChatRequest{
+		Messages:    messages,
+		Temperature: body.Temperature,
+		TopP:        body.TopP,
+		MaxTokens:   body.MaxTokens,
+		Stop:        stop,
+	}
+
+	return w.executeChatItem(ctx, rc, traceID, alias, req)
+}
+
+func (w *Worker) runResponsesItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
+	input, errPayload := decodeBatchRequest(item, "/v1/responses")
+	if errPayload != nil {
+		return itemOutcome{statusCode: fiber.StatusBadRequest, requestID: traceID, errPayload: errPayload}
+	}
+
+	var body responsesBody
+	if err := json.Unmarshal(input.Body, &body); err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", fmt.Sprintf("invalid responses body: %v", err)),
+		}
+	}
+	alias := strings.TrimSpace(body.Model)
+	if alias == "" {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "model is required"),
+		}
+	}
+	if body.Stream {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "streaming is not supported in batches"),
+		}
+	}
+	if len(body.Input) == 0 {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "input is required"),
+		}
+	}
+	if len(body.Tools) > 0 || len(body.ToolChoice) > 0 || len(body.ResponseFormat) > 0 || len(body.Conversation) > 0 || strings.TrimSpace(body.PreviousResponseID) != "" {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "tools, conversations, and response_format are not supported in batches"),
+		}
+	}
+	if err := validateResponsesMetadata(body.Metadata); err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", err.Error()),
+		}
+	}
+
+	messages, err := buildResponsesMessages(body.Instructions, body.Input)
+	if err != nil {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", err.Error()),
+		}
+	}
+
 	if !w.container.IsModelAllowed(rc.TenantID, alias) {
 		return itemOutcome{
 			statusCode: fiber.StatusForbidden,
@@ -443,11 +517,34 @@ func (w *Worker) runChatItem(ctx context.Context, rc *requestctx.Context, traceI
 		Messages:    messages,
 		Temperature: body.Temperature,
 		TopP:        body.TopP,
-		MaxTokens:   body.MaxTokens,
-		Stop:        stop,
+		MaxTokens:   body.MaxOutputTokens,
 	}
 
-	return w.executeChatItem(ctx, rc, traceID, alias, req)
+	options := responsesOptions{
+		Instructions:      strings.TrimSpace(body.Instructions),
+		Metadata:          body.Metadata,
+		ParallelToolCalls: true,
+	}
+	if body.ParallelToolCalls != nil {
+		options.ParallelToolCalls = *body.ParallelToolCalls
+	}
+
+	callCtx := requestctx.WithContext(ctx, rc)
+	result, err := w.executor.Chat(callCtx, rc, alias, req, traceID, "")
+	if err != nil {
+		return mapExecutorError(traceID, err)
+	}
+
+	payload := convertResponsesPayload(result.Response, alias, options)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return newSerializationOutcome(traceID, err)
+	}
+	requestID := payload.ID
+	if requestID == "" {
+		requestID = traceID
+	}
+	return itemOutcome{statusCode: fiber.StatusOK, requestID: requestID, response: data}
 }
 
 func (w *Worker) runEmbeddingItem(ctx context.Context, rc *requestctx.Context, traceID string, item batchItem) itemOutcome {
@@ -822,6 +919,23 @@ type chatBody struct {
 	Stop        json.RawMessage `json:"stop"`
 }
 
+type responsesBody struct {
+	Model              string            `json:"model"`
+	Input              json.RawMessage   `json:"input"`
+	Instructions       string            `json:"instructions"`
+	Temperature        *float32          `json:"temperature,omitempty"`
+	TopP               *float32          `json:"top_p,omitempty"`
+	MaxOutputTokens    *int32            `json:"max_output_tokens,omitempty"`
+	Stream             bool              `json:"stream,omitempty"`
+	Metadata           map[string]string `json:"metadata"`
+	Tools              json.RawMessage   `json:"tools"`
+	ToolChoice         json.RawMessage   `json:"tool_choice"`
+	ResponseFormat     json.RawMessage   `json:"response_format"`
+	Conversation       json.RawMessage   `json:"conversation"`
+	PreviousResponseID string            `json:"previous_response_id"`
+	ParallelToolCalls  *bool             `json:"parallel_tool_calls,omitempty"`
+}
+
 type chatMessage struct {
 	Role    string          `json:"role"`
 	Content json.RawMessage `json:"content"`
@@ -1129,6 +1243,179 @@ func convertModerationResponse(resp models.ModerationResponse, alias string) ope
 		ID:      resp.ID,
 		Model:   alias,
 		Results: results,
+	}
+}
+
+func validateResponsesMetadata(meta map[string]string) error {
+	if len(meta) > 16 {
+		return fmt.Errorf("metadata cannot exceed 16 entries")
+	}
+	for k, v := range meta {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			return fmt.Errorf("metadata keys cannot be empty")
+		}
+		if len(key) > 64 {
+			return fmt.Errorf("metadata key %q exceeds 64 characters", key)
+		}
+		if len(v) > 512 {
+			return fmt.Errorf("metadata value for %q exceeds 512 characters", key)
+		}
+	}
+	return nil
+}
+
+func buildResponsesMessages(instructions string, input json.RawMessage) ([]models.ChatMessage, error) {
+	messages := make([]models.ChatMessage, 0, 1)
+	if instr := strings.TrimSpace(instructions); instr != "" {
+		messages = append(messages, models.ChatMessage{Role: "system", Content: instr})
+	}
+	inputMessages, err := parseResponsesInputItems(input)
+	if err != nil {
+		return nil, err
+	}
+	messages = append(messages, inputMessages...)
+	return messages, nil
+}
+
+func parseResponsesInputItems(raw json.RawMessage) ([]models.ChatMessage, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("input is required")
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return []models.ChatMessage{{Role: "user", Content: text}}, nil
+	}
+	var items []chatMessage
+	if err := json.Unmarshal(raw, &items); err == nil {
+		if len(items) == 0 {
+			return nil, errors.New("input array must contain at least one item")
+		}
+		messages := make([]models.ChatMessage, 0, len(items))
+		for idx, item := range items {
+			role := strings.ToLower(strings.TrimSpace(item.Role))
+			if role == "" {
+				role = "user"
+			}
+			textContent, parts, err := models.ParseMessageContent(item.Content)
+			if err != nil {
+				return nil, fmt.Errorf("invalid content for input item %d: %v", idx, err)
+			}
+			messages = append(messages, models.ChatMessage{
+				Role:         role,
+				Content:      textContent,
+				ContentParts: parts,
+			})
+		}
+		return messages, nil
+	}
+	return nil, errors.New("input must be a string or array of message objects")
+}
+
+type responsesOptions struct {
+	Instructions      string
+	Metadata          map[string]string
+	ParallelToolCalls bool
+}
+
+type openAIResponsesPayload struct {
+	ID                string                  `json:"id"`
+	Object            string                  `json:"object"`
+	CreatedAt         int64                   `json:"created_at"`
+	Status            string                  `json:"status"`
+	Model             string                  `json:"model"`
+	Output            []openAIResponsesOutput `json:"output"`
+	ParallelToolCalls bool                    `json:"parallel_tool_calls"`
+	ToolChoice        string                  `json:"tool_choice"`
+	Tools             []interface{}           `json:"tools"`
+	Usage             openAIResponsesUsage    `json:"usage"`
+	Instructions      string                  `json:"instructions,omitempty"`
+	Metadata          map[string]string       `json:"metadata,omitempty"`
+}
+
+type openAIResponsesOutput struct {
+	Type    string                         `json:"type"`
+	ID      string                         `json:"id"`
+	Status  string                         `json:"status"`
+	Role    string                         `json:"role"`
+	Content []openAIResponsesOutputContent `json:"content"`
+}
+
+type openAIResponsesOutputContent struct {
+	Type        string        `json:"type"`
+	Text        string        `json:"text,omitempty"`
+	Annotations []interface{} `json:"annotations"`
+}
+
+type openAIResponsesUsage struct {
+	InputTokens         int32                             `json:"input_tokens"`
+	OutputTokens        int32                             `json:"output_tokens"`
+	TotalTokens         int32                             `json:"total_tokens"`
+	OutputTokensDetails openAIResponsesUsageOutputDetails `json:"output_tokens_details"`
+}
+
+type openAIResponsesUsageOutputDetails struct {
+	ReasoningTokens int32 `json:"reasoning_tokens"`
+}
+
+func convertResponsesPayload(resp models.ChatResponse, alias string, opts responsesOptions) openAIResponsesPayload {
+	outputs := make([]openAIResponsesOutput, 0, len(resp.Choices))
+	status := "completed"
+	for _, choice := range resp.Choices {
+		finish := mapResponseStatus(choice.FinishReason)
+		if finish != "completed" {
+			status = finish
+		}
+		outputs = append(outputs, openAIResponsesOutput{
+			Type:   "message",
+			ID:     fmt.Sprintf("%s-%d", resp.ID, choice.Index),
+			Status: finish,
+			Role:   choice.Message.Role,
+			Content: []openAIResponsesOutputContent{
+				{
+					Type: "output_text",
+					Text: choice.Message.Text(),
+				},
+			},
+		})
+	}
+	usage := openAIResponsesUsage{
+		InputTokens:  resp.Usage.PromptTokens,
+		OutputTokens: resp.Usage.CompletionTokens,
+		TotalTokens:  resp.Usage.TotalTokens,
+		OutputTokensDetails: openAIResponsesUsageOutputDetails{
+			ReasoningTokens: resp.Usage.ReasoningTokens,
+		},
+	}
+	payload := openAIResponsesPayload{
+		ID:                resp.ID,
+		Object:            "response",
+		CreatedAt:         resp.Created.Unix(),
+		Status:            status,
+		Model:             alias,
+		Output:            outputs,
+		ParallelToolCalls: opts.ParallelToolCalls,
+		ToolChoice:        "auto",
+		Tools:             []interface{}{},
+		Usage:             usage,
+	}
+	if strings.TrimSpace(opts.Instructions) != "" {
+		payload.Instructions = opts.Instructions
+	}
+	if len(opts.Metadata) > 0 {
+		payload.Metadata = opts.Metadata
+	}
+	return payload
+}
+
+func mapResponseStatus(reason string) string {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "length", "content_filter":
+		return "incomplete"
+	case "":
+		return "completed"
+	default:
+		return "completed"
 	}
 }
 

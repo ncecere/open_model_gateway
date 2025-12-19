@@ -85,6 +85,7 @@ All requests use the standard OpenAI headers (`Authorization: Bearer <api-key>`,
 | Path | Notes |
 | --- | --- |
 | `POST /v1/chat/completions` | Streaming + non-streaming chat. |
+| `POST /v1/responses` | Mirrors OpenAI’s Responses API. Accepts `instructions`, mixed `input` arrays, and streaming events (`response.output_text.delta`, etc.). Tools/file search aren’t wired yet, so omit those fields. |
 | `POST /v1/embeddings` | Text embeddings. |
 | `POST /v1/images/generations` | Image generation (models must expose image capabilities). |
 | `POST /v1/images/edits` | Supply images + optional mask for edit/extension (OpenAI/OpenAI-compatible adapters today). |
@@ -112,6 +113,31 @@ curl http://localhost:8090/v1/chat/completions \
 ```
 
 For streaming responses, set `"stream": true` and read the SSE frames exactly like OpenAI’s API.
+
+### Responses Example
+
+Use `/v1/responses` when you want to pass OpenAI’s new `instructions` + structured `input` array while receiving the richer Responses schema. Tools/file search aren’t wired yet, so omit those fields for now.
+
+```bash
+curl http://localhost:8090/v1/responses \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "ministral-3-3b",
+        "instructions": "You are concise.",
+        "input": [
+          {
+            "role": "user",
+            "content": [
+              {"type": "input_text", "text": "Summarize Open Model Gateway in one sentence."}
+            ]
+          }
+        ],
+        "max_output_tokens": 200
+      }'
+```
+
+Streaming works by setting `"stream": true` and consuming the SSE events (`response.created`, `response.output_text.delta`, `response.completed`, `data: [DONE]`). The payloads match OpenAI’s Responses streaming guide, so SDKs that already support Responses can point at the gateway without changes.
 
 ### Files API Examples
 

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.21] - 2025-12-21
+### Added
+- Multimodal content support across the entire chat pipeline: `models.ChatMessage` now carries structured `content_parts`, the OpenAI-compatible handler/batch worker stream back those arrays, and the adapter layer forwards mixed text/image/audio inputs when providers support them (OpenAI/Azure/OpenAI-compatible, OpenRouter, Groq, Vertex, Anthropic, Bedrock).
+- Vertex Gemini adapter can now ingest inline image/audio payloads by translating OpenAI-style content parts into Vertex `Parts` (with remote fetches + size guards). Anthropic and Bedrock adapters gained parallel support for the Claude Messages schema.
+- User docs and code examples show how to upload files and reference them in chat requests (new “Using File IDs in Chat Requests” section plus curl/Python/TS snippets driven by the `VISION_IMAGE_PATH` env var).
+
+### Changed
+- `/user/models` now returns the full `pricing_tiers` map, and when legacy `price_input`/`price_output` fields are zero the API surfaces the first tier price instead. The user portal consumes the extra data so tenants see accurate pricing even when admin-only tiers are configured.
+- Streaming + non-streaming OpenAI-compatible responses only emit array-based `message.content` when a model actually returns non-text parts; purely textual responses now produce the same string payloads as OpenAI.
+
+### Fixed
+- Capability gating now enforces multimodal requirements per alias. Routes advertize `capabilities.image_input/audio_input/video_input`, the executor filters out text-only deployments automatically, and helpful `400` errors are returned when a client tries to send images/audio/video to an unsupported model.
+
 ## [v0.1.20] - 2025-12-20
 ### Added
 - Dedicated pricing documentation (`docs/runtime/pricing.md`) detailing tier schema, supported units, metadata semantics, admin/API workflows, and copy/paste YAML samples for LLM/image/audio/video aliases.

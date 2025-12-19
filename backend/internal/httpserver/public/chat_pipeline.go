@@ -33,6 +33,20 @@ func (p *chatPipeline) Execute(
 	idempotencyKey string,
 	req models.ChatRequest,
 ) error {
+	return p.ExecuteWithConverter(c, rc, alias, traceID, idempotencyKey, req, func(resp models.ChatResponse, alias string) (interface{}, error) {
+		return convertChatResponse(resp, alias), nil
+	})
+}
+
+func (p *chatPipeline) ExecuteWithConverter(
+	c *fiber.Ctx,
+	rc *requestctx.Context,
+	alias string,
+	traceID string,
+	idempotencyKey string,
+	req models.ChatRequest,
+	convert func(models.ChatResponse, string) (interface{}, error),
+) error {
 	ctx := c.UserContext()
 	if idempotencyKey != "" {
 		if data, ok := p.container.Idempotency.Get(ctx, idempotencyKey); ok {
@@ -50,8 +64,11 @@ func (p *chatPipeline) Execute(
 	}
 	httputil.ApplyBudgetHeaders(c, result.BudgetStatus)
 
-	resp := convertChatResponse(result.Response, alias)
-	payload, err := json.Marshal(resp)
+	respBody, err := convert(result.Response, alias)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	payload, err := json.Marshal(respBody)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to encode response")
 	}

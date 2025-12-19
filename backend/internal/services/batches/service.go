@@ -383,7 +383,7 @@ func sanitizeEndpoint(endpoint string) string {
 		endpoint = "/" + endpoint
 	}
 	switch endpoint {
-	case "/v1/chat/completions", "/v1/embeddings", "/v1/images/generations":
+	case "/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/images/generations":
 		return endpoint
 	default:
 		return ""

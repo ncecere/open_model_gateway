@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,46 @@ type chatStreamPipeline struct {
 	container *app.Container
 }
 
+type streamRenderer interface {
+	ContentType() string
+	Init(w *bufio.Writer) error
+	HandleChunk(chunk models.ChatChunk, w *bufio.Writer) error
+	Done(w *bufio.Writer, usage *models.Usage) error
+}
+
+type chatCompletionStreamRenderer struct {
+	alias string
+}
+
+func (r *chatCompletionStreamRenderer) ContentType() string { return "text/event-stream" }
+
+func (r *chatCompletionStreamRenderer) Init(*bufio.Writer) error { return nil }
+
+func (r *chatCompletionStreamRenderer) HandleChunk(chunk models.ChatChunk, w *bufio.Writer) error {
+	payload := convertStreamChunk(chunk, r.alias)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err = w.WriteString("data: "); err != nil {
+		return err
+	}
+	if _, err = w.Write(data); err != nil {
+		return err
+	}
+	if _, err = w.WriteString("\n\n"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *chatCompletionStreamRenderer) Done(w *bufio.Writer, _ *models.Usage) error {
+	if _, err := w.WriteString("data: [DONE]\n\n"); err != nil {
+		return err
+	}
+	return w.Flush()
+}
+
 func newChatStreamPipeline(container *app.Container) *chatStreamPipeline {
 	return &chatStreamPipeline{container: container}
 }
@@ -36,6 +77,32 @@ func (p *chatStreamPipeline) Stream(
 	traceID string,
 	idempotencyKey string,
 	req models.ChatRequest,
+) error {
+	renderer := &chatCompletionStreamRenderer{alias: alias}
+	return p.streamWithRenderer(c, rc, alias, traceID, idempotencyKey, req, renderer)
+}
+
+func (p *chatStreamPipeline) StreamResponses(
+	c *fiber.Ctx,
+	rc *requestctx.Context,
+	alias string,
+	traceID string,
+	idempotencyKey string,
+	req models.ChatRequest,
+	opts openAIResponseOptions,
+) error {
+	renderer := newResponsesStreamRenderer(alias, opts)
+	return p.streamWithRenderer(c, rc, alias, traceID, idempotencyKey, req, renderer)
+}
+
+func (p *chatStreamPipeline) streamWithRenderer(
+	c *fiber.Ctx,
+	rc *requestctx.Context,
+	alias string,
+	traceID string,
+	idempotencyKey string,
+	req models.ChatRequest,
+	renderer streamRenderer,
 ) error {
 	ctx := c.UserContext()
 	routes := p.container.Engine.SelectRoutes(alias)
@@ -87,7 +154,7 @@ func (p *chatStreamPipeline) Stream(
 	var once sync.Once
 	releaseOnce := func() { once.Do(release) }
 
-	return p.streamChat(c, alias, rc, traceID, idempotencyKey, req, routes, keyKey, keyCfg, tenantKey, tenantCfg, releaseOnce)
+	return p.streamChat(c, alias, rc, traceID, idempotencyKey, req, routes, keyKey, keyCfg, tenantKey, tenantCfg, releaseOnce, renderer)
 }
 
 func (p *chatStreamPipeline) streamChat(
@@ -102,8 +169,12 @@ func (p *chatStreamPipeline) streamChat(
 	tenantKey string,
 	tenantCfg limits.LimitConfig,
 	release func(),
+	renderer streamRenderer,
 ) error {
 	ctx := c.UserContext()
+	if renderer == nil {
+		renderer = &chatCompletionStreamRenderer{alias: alias}
+	}
 
 	var lastErr error
 	var lastRoute providers.Route
@@ -129,7 +200,11 @@ func (p *chatStreamPipeline) streamChat(
 		}
 		lastRoute = route
 
-		c.Set("Content-Type", "text/event-stream")
+		contentType := renderer.ContentType()
+		if strings.TrimSpace(contentType) == "" {
+			contentType = "text/event-stream"
+		}
+		c.Set("Content-Type", contentType)
 		c.Set("Cache-Control", "no-cache")
 		c.Set("Connection", "keep-alive")
 
@@ -155,6 +230,12 @@ func (p *chatStreamPipeline) streamChat(
 			var streamUsage models.Usage
 			usageCaptured := false
 			var recordErr error
+
+			if err := renderer.Init(w); err != nil {
+				recordStatus = fiber.StatusInternalServerError
+				recordErr = err
+				return
+			}
 
 			recordUsage := func() {
 				tokensUsed := int(streamUsage.TotalTokens)
@@ -235,29 +316,12 @@ func (p *chatStreamPipeline) streamChat(
 					firstTokenMeasured = true
 				}
 
-				payload := convertStreamChunk(chunk, alias)
-				data, err := json.Marshal(payload)
-				if err != nil {
+				if err := renderer.HandleChunk(chunk, w); err != nil {
 					recordStatus = fiber.StatusInternalServerError
 					recordErr = err
 					return
 				}
-				if _, err = w.WriteString("data: "); err != nil {
-					recordStatus = fiber.StatusInternalServerError
-					recordErr = err
-					return
-				}
-				if _, err = w.Write(data); err != nil {
-					recordStatus = fiber.StatusInternalServerError
-					recordErr = err
-					return
-				}
-				if _, err = w.WriteString("\n\n"); err != nil {
-					recordStatus = fiber.StatusInternalServerError
-					recordErr = err
-					return
-				}
-				if err = w.Flush(); err != nil {
+				if err := w.Flush(); err != nil {
 					recordStatus = fiber.StatusInternalServerError
 					recordErr = err
 					return
@@ -271,12 +335,12 @@ func (p *chatStreamPipeline) streamChat(
 				recordSuccess = true
 			}
 
-			if _, err := w.WriteString("data: [DONE]\n\n"); err != nil {
-				recordStatus = fiber.StatusInternalServerError
-				recordErr = err
-				return
+			var usagePtr *models.Usage
+			if usageCaptured {
+				usageCopy := streamUsage
+				usagePtr = &usageCopy
 			}
-			if err := w.Flush(); err != nil {
+			if err := renderer.Done(w, usagePtr); err != nil {
 				recordStatus = fiber.StatusInternalServerError
 				recordErr = err
 				return

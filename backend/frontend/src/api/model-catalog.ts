@@ -9,6 +9,7 @@ interface ModelCatalogDTO {
   max_output_tokens: number;
   modalities_json: string;
   supports_tools: boolean;
+  pricing_tiers_json?: string;
   price_input: string;
   price_output: string;
   currency: string;
@@ -97,6 +98,15 @@ export interface AnthropicProviderConfig {
   version?: string;
 }
 
+export interface PricingTier {
+  unit: string;
+  max_units?: number;
+  price_per_unit: number;
+  metadata?: Record<string, string>;
+}
+
+export type PricingTierMap = Record<string, PricingTier[]>;
+
 export interface ModelCatalogEntry {
   alias: string;
   provider: string;
@@ -119,6 +129,7 @@ export interface ModelCatalogEntry {
   metadata: Record<string, string>;
   weight: number;
   provider_overrides: ProviderOverrides;
+  pricing_tiers: PricingTierMap;
 }
 
 export interface ModelStatus {
@@ -147,6 +158,7 @@ export interface ModelCatalogUpsertRequest {
   metadata: Record<string, string>;
   weight: number;
   provider_overrides?: ProviderOverrides;
+  pricing_tiers?: PricingTierMap;
 }
 
 export function normalizeProviderSlug(value: string): string {
@@ -218,6 +230,10 @@ function mapCatalogEntry(entry: ModelCatalogDTO): ModelCatalogEntry {
       entry.provider_config_json,
       {},
     ),
+    pricing_tiers: decodeBase64Json<PricingTierMap>(
+      entry.pricing_tiers_json,
+      {},
+    ),
   };
 }
 
@@ -234,7 +250,7 @@ export async function listModelStatuses() {
 }
 
 export async function upsertModel(payload: ModelCatalogUpsertRequest) {
-  const { provider_overrides, ...rest } = payload;
+  const { provider_overrides, pricing_tiers, ...rest } = payload;
   const body: Record<string, unknown> = { ...rest };
   if (provider_overrides?.azure) {
     body.azure = provider_overrides.azure;
@@ -259,6 +275,9 @@ export async function upsertModel(payload: ModelCatalogUpsertRequest) {
   }
   if (provider_overrides?.groq) {
     body.groq = provider_overrides.groq;
+  }
+  if (pricing_tiers) {
+    body.pricing_tiers = pricing_tiers;
   }
 
   const { data } = await api.post<ModelCatalogDTO>("/model-catalog", body);

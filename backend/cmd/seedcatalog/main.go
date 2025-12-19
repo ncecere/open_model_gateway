@@ -39,6 +39,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("marshal metadata for %s: %v", entry.Alias, err)
 		}
+		pricingTiers := entry.PricingTiers
+		if pricingTiers == nil {
+			pricingTiers = config.PricingTiers{}
+		}
+		pricingJSON, err := json.Marshal(pricingTiers)
+		if err != nil {
+			log.Fatalf("marshal pricing tiers for %s: %v", entry.Alias, err)
+		}
 		providerCfgJSON, err := json.Marshal(entry.ProviderOverrides)
 		if err != nil {
 			log.Fatalf("marshal provider overrides for %s: %v", entry.Alias, err)
@@ -66,6 +74,7 @@ func main() {
 			MaxOutputTokens:    entry.MaxOutputTokens,
 			ModalitiesJson:     modalitiesJSON,
 			SupportsTools:      entry.SupportsTools,
+			PricingTiersJson:   pricingJSON,
 			PriceInput:         priceInput,
 			PriceOutput:        priceOutput,
 			Currency:           currency,

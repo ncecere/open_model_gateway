@@ -201,6 +201,16 @@ type BatchesConfig struct {
 	MaxTTL         time.Duration `mapstructure:"max_ttl"`
 }
 
+type PricingTier struct {
+	Unit         string            `mapstructure:"unit" json:"unit"`
+	MaxUnits     *float64          `mapstructure:"max_units" json:"max_units,omitempty"`
+	PricePerUnit float64           `mapstructure:"price_per_unit" json:"price_per_unit"`
+	Metadata     map[string]string `mapstructure:"metadata" json:"metadata"`
+}
+
+// PricingTiers maps modality buckets (input/output/audio/image/etc.) to ordered tier slices.
+type PricingTiers map[string][]PricingTier
+
 type ModelCatalogEntry struct {
 	Alias             string            `mapstructure:"alias"`
 	Provider          string            `mapstructure:"provider"`
@@ -218,6 +228,7 @@ type ModelCatalogEntry struct {
 	Region            string            `mapstructure:"region"`
 	Weight            int               `mapstructure:"weight"`
 	Metadata          map[string]string `mapstructure:"metadata"`
+	PricingTiers      PricingTiers      `mapstructure:"pricing_tiers"`
 	ProviderOverrides `mapstructure:",squash"`
 	PriceInput        float64 `mapstructure:"price_input"`
 	PriceOutput       float64 `mapstructure:"price_output"`
@@ -519,6 +530,12 @@ func (c *Config) Validate() error {
 		}
 		if entry.Currency == "" {
 			c.ModelCatalog[i].Currency = "USD"
+		}
+		if entry.Metadata == nil {
+			c.ModelCatalog[i].Metadata = map[string]string{}
+		}
+		if entry.PricingTiers == nil {
+			c.ModelCatalog[i].PricingTiers = PricingTiers{}
 		}
 	}
 

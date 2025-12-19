@@ -292,11 +292,17 @@ func buildChatRequest(req models.ChatRequest, streaming bool) chatCompletionRequ
 func convertChatResponse(resp chatCompletionResponse) models.ChatResponse {
 	choices := make([]models.ChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
+		content := choice.Message.Content
+		if strings.TrimSpace(content) == "" && strings.TrimSpace(choice.Message.ReasoningContent) != "" {
+			content = choice.Message.ReasoningContent
+		}
 		choices = append(choices, models.ChatChoice{
 			Index: choice.Index,
 			Message: models.ChatMessage{
-				Role:    choice.Message.Role,
-				Content: choice.Message.Content,
+				Role:             choice.Message.Role,
+				Content:          content,
+				Reasoning:        choice.Message.Reasoning,
+				ReasoningContent: choice.Message.ReasoningContent,
 			},
 			FinishReason: choice.FinishReason,
 		})
@@ -313,9 +319,15 @@ func convertChatResponse(resp chatCompletionResponse) models.ChatResponse {
 func convertChatChunk(chunk chatCompletionChunk) models.ChatChunk {
 	choices := make([]models.ChunkDelta, 0, len(chunk.Choices))
 	for _, choice := range chunk.Choices {
+		content := choice.Delta.Content
+		if strings.TrimSpace(content) == "" && strings.TrimSpace(choice.Delta.ReasoningContent) != "" {
+			content = choice.Delta.ReasoningContent
+		}
 		msg := models.ChatMessage{
-			Role:    choice.Delta.Role,
-			Content: choice.Delta.Content,
+			Role:             choice.Delta.Role,
+			Content:          content,
+			Reasoning:        choice.Delta.Reasoning,
+			ReasoningContent: choice.Delta.ReasoningContent,
 		}
 		choices = append(choices, models.ChunkDelta{
 			Index:        choice.Index,
@@ -399,6 +411,7 @@ func convertUsage(u usagePayload) models.Usage {
 	usage := models.Usage{
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
+		ReasoningTokens:  u.ReasoningTokens,
 		TotalTokens:      u.TotalTokens,
 	}
 	if usage.TotalTokens == 0 {
@@ -447,9 +460,11 @@ type chatCompletionRequest struct {
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Name    string `json:"name,omitempty"`
+	Role             string `json:"role"`
+	Content          string `json:"content"`
+	Name             string `json:"name,omitempty"`
+	Reasoning        string `json:"reasoning,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type streamOptions struct {
@@ -496,6 +511,7 @@ type completionError struct {
 type usagePayload struct {
 	PromptTokens     int32 `json:"prompt_tokens"`
 	CompletionTokens int32 `json:"completion_tokens"`
+	ReasoningTokens  int32 `json:"reasoning_tokens,omitempty"`
 	TotalTokens      int32 `json:"total_tokens"`
 }
 

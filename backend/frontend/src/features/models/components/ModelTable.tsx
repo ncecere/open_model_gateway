@@ -18,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pencil, Trash2, MoreHorizontal } from "lucide-react";
-import type { ModelCatalogEntry } from "@/api/model-catalog";
+import type { ModelCatalogEntry, PricingTier } from "@/api/model-catalog";
 import { formatModelTypeLabel } from "../types";
 import { getProviderIcon } from "@/features/models/provider-icons";
 import { statusToneClass, toneFromStatus } from "@/ui/kit/status";
@@ -93,6 +93,8 @@ export function ModelTable({
           const status = statuses?.[model.alias]
             ?? (model.enabled ? "unknown" : "disabled");
           const icon = getProviderIcon(model.provider, theme);
+          const tierBuckets = summarizePricingBuckets(model.pricing_tiers);
+          const tiersToShow = tierBuckets.slice(0, 3);
           return (
             <TableRow key={model.alias}>
               <TableCell className="font-medium">
@@ -129,14 +131,25 @@ export function ModelTable({
               </div>
             </TableCell>
             <TableCell className="text-sm">
-              <div className="flex flex-col">
-                <span>
-                  {currency.format(model.price_input)} input
-                </span>
-                <span>
-                  {currency.format(model.price_output)} output
-                </span>
-              </div>
+              {tiersToShow.length > 0 ? (
+                <div className="flex flex-col gap-1">
+                  {tiersToShow.map(({ bucket, tiers }) => (
+                    <span key={`${model.alias}-${bucket}`}>
+                      {formatBucketSummary(bucket, tiers)}
+                    </span>
+                  ))}
+                  {tierBuckets.length > tiersToShow.length ? (
+                    <span className="text-xs text-muted-foreground">
+                      +{tierBuckets.length - tiersToShow.length} more bucket
+                      {tierBuckets.length - tiersToShow.length === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  No pricing tiers configured
+                </div>
+              )}
             </TableCell>
             <TableCell className="text-sm">
               <div className="flex flex-wrap items-center gap-2">
@@ -203,5 +216,58 @@ function audioChipForType(modelType?: string | null) {
       return "Audio · TTS";
     default:
       return null;
+  }
+}
+
+function summarizePricingBuckets(
+  pricing?: Record<string, PricingTier[]>,
+) {
+  if (!pricing) {
+    return [] as { bucket: string; tiers: PricingTier[] }[];
+  }
+  return Object.entries(pricing)
+    .map(([bucket, tiers]) => ({ bucket, tiers: tiers ?? [] }))
+    .filter((entry) => entry.tiers.length > 0);
+}
+
+function formatBucketSummary(bucket: string, tiers: PricingTier[]) {
+  const [first] = tiers;
+  if (!first) {
+    return `${bucket}: n/a`;
+  }
+  const price = currency.format(first.price_per_unit ?? 0);
+  const unitLabel = formatUnitLabel(first.unit);
+  const scope = first.max_units
+    ? `≤${Number(first.max_units).toLocaleString()} `
+    : "";
+  const metadataLabel =
+    first.metadata?.quality ??
+    first.metadata?.operation ??
+    first.metadata?.channel ??
+    first.metadata?.resolution;
+  const summary = `${scope}${price} / ${unitLabel}`.trim();
+  const annotated = metadataLabel ? `${summary} (${metadataLabel})` : summary;
+  const suffix = tiers.length > 1 ? ` (+${tiers.length - 1} tiers)` : "";
+  return `${bucket}: ${annotated}${suffix}`;
+}
+
+function formatUnitLabel(unit?: string) {
+  switch (unit) {
+    case "tokens_per_million":
+      return "tokens per 1M";
+    case "tokens_per_thousand":
+      return "tokens per 1k";
+    case "per_image":
+      return "image";
+    case "per_megapixel":
+      return "megapixel";
+    case "per_minute":
+      return "minute";
+    case "per_second":
+      return "second";
+    case "per_million_characters":
+      return "characters per 1M";
+    default:
+      return unit ?? "unit";
   }
 }

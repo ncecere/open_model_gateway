@@ -8,6 +8,7 @@ INSERT INTO model_catalog (
     max_output_tokens,
     modalities_json,
     supports_tools,
+    pricing_tiers_json,
     price_input,
     price_output,
     currency,
@@ -21,7 +22,10 @@ INSERT INTO model_catalog (
     weight,
     provider_config_json
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+)
 ON CONFLICT (alias)
 DO UPDATE SET
     provider = EXCLUDED.provider,
@@ -31,6 +35,7 @@ DO UPDATE SET
     max_output_tokens = EXCLUDED.max_output_tokens,
     modalities_json = EXCLUDED.modalities_json,
     supports_tools = EXCLUDED.supports_tools,
+    pricing_tiers_json = EXCLUDED.pricing_tiers_json,
     price_input = EXCLUDED.price_input,
     price_output = EXCLUDED.price_output,
     currency = EXCLUDED.currency,

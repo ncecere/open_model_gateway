@@ -37,7 +37,7 @@ import {
   PROVIDER_DETAILS,
   SUPPORTED_PROVIDERS,
 } from "../providers";
-import { buildMetadataPayload } from "../form";
+import { buildMetadataPayload, buildPricingPayload } from "../form";
 import { normalizeMetadataForProvider } from "../metadata";
 import {
   MODEL_TYPE_OPTIONS,
@@ -46,6 +46,7 @@ import {
   type ModelFormState,
 } from "../types";
 import { ModelMetadataEditor } from "./ModelMetadataEditor";
+import { PricingTiersEditor } from "./PricingTiersEditor";
 
 const ALL_MODALITIES = ["text", "image", "audio", "video"] as const;
 
@@ -270,6 +271,11 @@ export function ModelEditorDialog({
           : undefined,
     };
 
+    const pricingPayload = buildPricingPayload(form);
+    if (pricingPayload) {
+      payload.pricing_tiers = pricingPayload;
+    }
+
     onSubmit(payload);
   };
 
@@ -440,32 +446,15 @@ export function ModelEditorDialog({
             />
           ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="price_input">Price input ($ per 1M tokens)</Label>
-              <Input
-                id="price_input"
-                value={form.price_input}
-                onChange={(event) =>
-                  handleStringChange("price_input", event.target.value)
-                }
-                inputMode="decimal"
-                placeholder="0.005"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="price_output">Price output ($ per 1M tokens)</Label>
-              <Input
-                id="price_output"
-                value={form.price_output}
-                onChange={(event) =>
-                  handleStringChange("price_output", event.target.value)
-                }
-                inputMode="decimal"
-                placeholder="0.015"
-              />
-            </div>
-          </div>
+          <PricingTiersEditor
+            value={form.pricing_tiers}
+            onChange={(tiers) =>
+              onChange({
+                ...form,
+                pricing_tiers: tiers,
+              })
+            }
+          />
 
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="space-y-2">

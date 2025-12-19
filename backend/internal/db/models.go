@@ -318,6 +318,7 @@ type ModelCatalog struct {
 	MaxOutputTokens    int32              `json:"max_output_tokens"`
 	ModalitiesJson     []byte             `json:"modalities_json"`
 	SupportsTools      bool               `json:"supports_tools"`
+	PricingTiersJson   []byte             `json:"pricing_tiers_json"`
 	PriceInput         decimal.Decimal    `json:"price_input"`
 	PriceOutput        decimal.Decimal    `json:"price_output"`
 	Currency           string             `json:"currency"`

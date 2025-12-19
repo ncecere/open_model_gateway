@@ -1,6 +1,8 @@
 import type {
   ModelCatalogEntry,
   ProviderOverrides,
+  PricingTier,
+  PricingTierMap,
   VertexProviderConfig,
 } from "@/api/model-catalog";
 
@@ -8,10 +10,86 @@ import {
   partitionMetadataForProvider,
   sanitizeMetadataPayload,
 } from "./metadata";
-import { defaultVertexOverride, type ModelFormState } from "./types";
+import {
+  defaultVertexOverride,
+  type ModelFormState,
+  type PricingTierForm,
+  type PricingTiersFormState,
+} from "./types";
+
+const DEFAULT_PRICING_BUCKETS = ["input", "output"] as const;
+
+function createEmptyPricingTiers(): PricingTiersFormState {
+  const buckets: PricingTiersFormState = {};
+  for (const bucket of DEFAULT_PRICING_BUCKETS) {
+    buckets[bucket] = [];
+  }
+  return buckets;
+}
+
+function generateTierId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2);
+}
+
+function formatMetadataLines(metadata?: Record<string, string>) {
+  if (!metadata || Object.keys(metadata).length === 0) {
+    return "";
+  }
+  return Object.entries(metadata)
+    .map(([key, value]) => `${key}=${value ?? ""}`)
+    .join("\n");
+}
+
+function parseMetadataLines(input: string) {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const map: Record<string, string> = {};
+  trimmed.split(/\n+/).forEach((line) => {
+    const raw = line.trim();
+    if (!raw) {
+      return;
+    }
+    const [key, ...rest] = raw.split("=");
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      return;
+    }
+    map[normalizedKey] = rest.join("=").trim();
+  });
+  return Object.keys(map).length > 0 ? map : undefined;
+}
+
+function mapPricingTiersToForm(
+  pricing?: PricingTierMap,
+): PricingTiersFormState {
+  const state = createEmptyPricingTiers();
+  if (!pricing) {
+    return state;
+  }
+  for (const [bucket, tiers] of Object.entries(pricing)) {
+    state[bucket] = tiers.map((tier) => ({
+      id: generateTierId(),
+      unit: tier.unit || "tokens_per_million",
+      price_per_unit:
+        tier.price_per_unit !== undefined
+          ? tier.price_per_unit.toString()
+          : "",
+      max_units:
+        tier.max_units !== undefined ? tier.max_units.toString() : "",
+      metadata: formatMetadataLines(tier.metadata),
+    } satisfies PricingTierForm));
+  }
+  return state;
+}
 
 export function createEmptyModelForm(): ModelFormState {
   return {
+
     alias: "",
     provider: "azure",
     provider_model: "",
@@ -33,6 +111,7 @@ export function createEmptyModelForm(): ModelFormState {
     weight: "",
     enabled: true,
     provider_overrides: {},
+    pricing_tiers: createEmptyPricingTiers(),
   };
 }
 
@@ -86,9 +165,61 @@ export function mapEntryToForm(entry: ModelCatalogEntry): ModelFormState {
           } satisfies VertexProviderConfig)
         : undefined,
     },
+    pricing_tiers: mapPricingTiersToForm(entry.pricing_tiers),
   };
 }
 
 export function buildMetadataPayload(form: ModelFormState) {
   return sanitizeMetadataPayload(form.metadata, form.customMetadata);
+}
+
+export function buildPricingPayload(
+  form: ModelFormState,
+): PricingTierMap | undefined {
+  const entries = Object.entries(form.pricing_tiers ?? {});
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const output: PricingTierMap = {};
+  let hasAny = false;
+
+  for (const [bucket, tiers] of entries) {
+    if (tiers.length === 0) {
+      continue;
+    }
+    const normalized = tiers
+      .map((tier) => {
+        const unit = tier.unit?.trim() || "tokens_per_million";
+        const price = Number(tier.price_per_unit);
+        if (!Number.isFinite(price) || price <= 0) {
+          return undefined;
+        }
+        const normalizedTier: PricingTier = {
+          unit,
+          price_per_unit: price,
+        };
+        const maxUnits = Number(tier.max_units);
+        if (
+          tier.max_units.trim() !== "" &&
+          Number.isFinite(maxUnits) &&
+          maxUnits > 0
+        ) {
+          normalizedTier.max_units = maxUnits;
+        }
+        const metadata = parseMetadataLines(tier.metadata);
+        if (metadata) {
+          normalizedTier.metadata = metadata;
+        }
+        return normalizedTier;
+      })
+      .filter((tier): tier is PricingTier => Boolean(tier));
+
+    if (normalized.length > 0) {
+      output[bucket] = normalized;
+      hasAny = true;
+    }
+  }
+
+  return hasAny ? output : undefined;
 }

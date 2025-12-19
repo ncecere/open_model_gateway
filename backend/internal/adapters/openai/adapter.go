@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/pagination"
 	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/packages/respjson"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
@@ -579,9 +581,16 @@ func buildChatParams(req models.ChatRequest) openai.ChatCompletionNewParams {
 func convertChatResponse(resp openai.ChatCompletion) models.ChatResponse {
 	choices := make([]models.ChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
+		reasoning, reasoningContent := extractReasoning(choice.Message.JSON.ExtraFields, choice.Message.RawJSON())
 		message := models.ChatMessage{
-			Role:    string(choice.Message.Role),
-			Content: choice.Message.Content,
+			Role:             string(choice.Message.Role),
+			Content:          choice.Message.Content,
+			Reasoning:        reasoning,
+			ReasoningContent: reasoningContent,
+		}
+
+		if message.Content == "" && message.ReasoningContent != "" {
+			message.Content = message.ReasoningContent
 		}
 		choices = append(choices, models.ChatChoice{
 			Index:        int(choice.Index),
@@ -593,6 +602,7 @@ func convertChatResponse(resp openai.ChatCompletion) models.ChatResponse {
 	usage := models.Usage{
 		PromptTokens:     int32(resp.Usage.PromptTokens),
 		CompletionTokens: int32(resp.Usage.CompletionTokens),
+		ReasoningTokens:  int32(resp.Usage.CompletionTokensDetails.ReasoningTokens),
 		TotalTokens:      int32(resp.Usage.TotalTokens),
 	}
 
@@ -608,9 +618,15 @@ func convertChatResponse(resp openai.ChatCompletion) models.ChatResponse {
 func convertChatChunk(chunk openai.ChatCompletionChunk) models.ChatChunk {
 	choices := make([]models.ChunkDelta, 0, len(chunk.Choices))
 	for _, choice := range chunk.Choices {
+		reasoning, reasoningContent := extractReasoning(choice.Delta.JSON.ExtraFields, choice.Delta.RawJSON())
 		msg := models.ChatMessage{
-			Role:    choice.Delta.Role,
-			Content: choice.Delta.Content,
+			Role:             choice.Delta.Role,
+			Content:          choice.Delta.Content,
+			Reasoning:        reasoning,
+			ReasoningContent: reasoningContent,
+		}
+		if msg.Content == "" && msg.ReasoningContent != "" {
+			msg.Content = msg.ReasoningContent
 		}
 		choices = append(choices, models.ChunkDelta{
 			Index:        int(choice.Index),
@@ -635,12 +651,50 @@ func convertUsagePointer(u openai.CompletionUsage) *models.Usage {
 	usage := models.Usage{
 		PromptTokens:     int32(u.PromptTokens),
 		CompletionTokens: int32(u.CompletionTokens),
+		ReasoningTokens:  int32(u.CompletionTokensDetails.ReasoningTokens),
 		TotalTokens:      int32(u.TotalTokens),
 	}
 	if usage.TotalTokens == 0 {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 	return &usage
+}
+
+func extractReasoning(extra map[string]respjson.Field, raw string) (string, string) {
+	decodeField := func(field respjson.Field) string {
+		if !field.Valid() {
+			return ""
+		}
+		return decodeRawValue([]byte(field.Raw()))
+	}
+	reasoning := decodeField(extra["reasoning"])
+	reasoningContent := decodeField(extra["reasoning_content"])
+	if (reasoning == "" || reasoningContent == "") && strings.TrimSpace(raw) != "" {
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &payload); err == nil {
+			if reasoning == "" {
+				reasoning = decodeRawValue(payload["reasoning"])
+			}
+			if reasoningContent == "" {
+				reasoningContent = decodeRawValue(payload["reasoning_content"])
+			}
+		}
+	}
+	return reasoning, reasoningContent
+}
+
+func decodeRawValue(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	if string(data) == "null" {
+		return ""
+	}
+	var out string
+	if err := json.Unmarshal(data, &out); err == nil {
+		return out
+	}
+	return strings.Trim(string(data), "\"")
 }
 
 func convertImageResponse(resp openai.ImagesResponse) models.ImageResponse {

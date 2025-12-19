@@ -19,6 +19,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/observability"
+	"github.com/ncecere/open_model_gateway/backend/internal/pricing"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 )
 
@@ -29,8 +30,7 @@ type Logger struct {
 	alerts   *AlertDispatcher
 	metrics  *observability.Provider
 
-	priceMu          sync.RWMutex
-	prices           map[string]priceInfo
+	pricing          *pricing.Cache
 	remainderMu      sync.Mutex
 	tenantRemainders map[uuid.UUID]decimal.Decimal
 	events           chan usageEvent
@@ -58,12 +58,6 @@ const (
 type alertSnapshot struct {
 	Level AlertLevel
 	Sent  time.Time
-}
-
-type priceInfo struct {
-	Input    decimal.Decimal
-	Output   decimal.Decimal
-	Currency string
 }
 
 func dollarsToCents(value float64) int64 {
@@ -105,7 +99,7 @@ func NewLogger(ctx context.Context, pool *pgxpool.Pool, queries *db.Queries, cfg
 		budgets:          NewBudgetEvaluator(cfg, queries, metrics),
 		alerts:           NewAlertDispatcher(queries, sink),
 		metrics:          metrics,
-		prices:           make(map[string]priceInfo),
+		pricing:          pricing.NewCache(),
 		tenantRemainders: make(map[uuid.UUID]decimal.Decimal),
 		events:           make(chan usageEvent, defaultQueueSize),
 		cancel:           cancel,
@@ -120,16 +114,13 @@ func NewLogger(ctx context.Context, pool *pgxpool.Pool, queries *db.Queries, cfg
 
 // LoadCatalog seeds or refreshes the in-memory pricing cache.
 func (l *Logger) LoadCatalog(entries []config.ModelCatalogEntry) {
-	l.priceMu.Lock()
-	defer l.priceMu.Unlock()
-
-	for _, entry := range entries {
-		l.prices[entry.Alias] = priceInfo{
-			Input:    decimal.NewFromFloat(entry.PriceInput),
-			Output:   decimal.NewFromFloat(entry.PriceOutput),
-			Currency: entry.Currency,
-		}
+	if l == nil {
+		return
 	}
+	if l.pricing == nil {
+		l.pricing = pricing.NewCache()
+	}
+	l.pricing.Load(entries)
 }
 
 // CheckBudget verifies whether the tenant can proceed before processing the request.
@@ -242,22 +233,14 @@ func (l *Logger) SetConfig(cfg config.BudgetConfig) {
 }
 
 func (l *Logger) costFor(alias string, usage models.Usage) decimal.Decimal {
-	price := l.priceFor(alias)
-	if price.Input.IsZero() && price.Output.IsZero() {
+	if l == nil || l.pricing == nil {
 		return decimal.Zero
 	}
-
-	prompt := decimal.NewFromInt(int64(usage.PromptTokens))
-	completion := decimal.NewFromInt(int64(usage.CompletionTokens))
-
-	million := decimal.NewFromInt(1_000_000)
-	promptCost := price.Input.Mul(prompt).Div(million)
-	completionCost := price.Output.Mul(completion).Div(million)
-	totalUSD := promptCost.Add(completionCost)
-	if totalUSD.IsNegative() {
-		return decimal.Zero
+	params := pricing.Params{
+		PromptTokens:     int64(usage.PromptTokens),
+		CompletionTokens: int64(usage.CompletionTokens),
 	}
-	return totalUSD
+	return l.pricing.Cost(alias, params)
 }
 
 func (l *Logger) enqueueEvent(evt usageEvent) {
@@ -354,16 +337,6 @@ func (l *Logger) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-func (l *Logger) priceFor(alias string) priceInfo {
-	l.priceMu.RLock()
-	if info, ok := l.prices[alias]; ok {
-		l.priceMu.RUnlock()
-		return info
-	}
-	l.priceMu.RUnlock()
-	return priceInfo{}
 }
 
 func (l *Logger) allocateCostCents(tenantID uuid.UUID, usd decimal.Decimal) int64 {

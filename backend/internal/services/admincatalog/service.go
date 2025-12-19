@@ -37,25 +37,26 @@ func NewService(queries *db.Queries, reload ReloadFunc) *Service {
 
 // ModelPayload represents the upsert request body.
 type ModelPayload struct {
-	Alias           string            `json:"alias"`
-	Provider        string            `json:"provider"`
-	ProviderModel   string            `json:"provider_model"`
-	ModelType       string            `json:"model_type"`
-	ContextWindow   int32             `json:"context_window"`
-	MaxOutputTokens int32             `json:"max_output_tokens"`
-	Modalities      []string          `json:"modalities"`
-	SupportsTools   bool              `json:"supports_tools"`
-	PriceInput      float64           `json:"price_input"`
-	PriceOutput     float64           `json:"price_output"`
-	Currency        string            `json:"currency"`
-	Deployment      string            `json:"deployment"`
-	Endpoint        string            `json:"endpoint"`
-	APIKey          string            `json:"api_key"`
-	APIVersion      string            `json:"api_version"`
-	Region          string            `json:"region"`
-	Weight          int32             `json:"weight"`
-	Enabled         bool              `json:"enabled"`
-	Metadata        map[string]string `json:"metadata"`
+	Alias           string              `json:"alias"`
+	Provider        string              `json:"provider"`
+	ProviderModel   string              `json:"provider_model"`
+	ModelType       string              `json:"model_type"`
+	ContextWindow   int32               `json:"context_window"`
+	MaxOutputTokens int32               `json:"max_output_tokens"`
+	Modalities      []string            `json:"modalities"`
+	SupportsTools   bool                `json:"supports_tools"`
+	PriceInput      float64             `json:"price_input"`
+	PriceOutput     float64             `json:"price_output"`
+	Currency        string              `json:"currency"`
+	Deployment      string              `json:"deployment"`
+	Endpoint        string              `json:"endpoint"`
+	APIKey          string              `json:"api_key"`
+	APIVersion      string              `json:"api_version"`
+	Region          string              `json:"region"`
+	Weight          int32               `json:"weight"`
+	Enabled         bool                `json:"enabled"`
+	Metadata        map[string]string   `json:"metadata"`
+	PricingTiers    config.PricingTiers `json:"pricing_tiers"`
 	config.ProviderOverrides
 }
 
@@ -101,6 +102,9 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 	}
 	if payload.Metadata == nil {
 		payload.Metadata = map[string]string{}
+	}
+	if payload.PricingTiers == nil {
+		payload.PricingTiers = config.PricingTiers{}
 	}
 
 	switch provider {
@@ -180,6 +184,10 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 	if err != nil {
 		return db.ModelCatalog{}, err
 	}
+	pricingJSON, err := json.Marshal(payload.PricingTiers)
+	if err != nil {
+		return db.ModelCatalog{}, err
+	}
 
 	params := db.UpsertModelCatalogEntryParams{
 		Alias:              alias,
@@ -190,6 +198,7 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 		MaxOutputTokens:    payload.MaxOutputTokens,
 		ModalitiesJson:     modalitiesJSON,
 		SupportsTools:      payload.SupportsTools,
+		PricingTiersJson:   pricingJSON,
 		PriceInput:         decimal.NewFromFloat(payload.PriceInput),
 		PriceOutput:        decimal.NewFromFloat(payload.PriceOutput),
 		Currency:           strings.ToUpper(strings.TrimSpace(payload.Currency)),

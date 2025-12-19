@@ -3,9 +3,11 @@ package models
 import "time"
 
 type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Name    string `json:"name,omitempty"`
+	Role             string `json:"role"`
+	Content          string `json:"content"`
+	Name             string `json:"name,omitempty"`
+	Reasoning        string `json:"reasoning,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type ChatRequest struct {
@@ -27,6 +29,7 @@ type ChatChoice struct {
 type Usage struct {
 	PromptTokens     int32 `json:"prompt_tokens"`
 	CompletionTokens int32 `json:"completion_tokens"`
+	ReasoningTokens  int32 `json:"reasoning_tokens,omitempty"`
 	TotalTokens      int32 `json:"total_tokens"`
 }
 

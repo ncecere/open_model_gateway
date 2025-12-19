@@ -9,6 +9,16 @@ export type CustomMetadataEntry = {
   value: string;
 };
 
+export type PricingTierForm = {
+  id: string;
+  unit: string;
+  price_per_unit: string;
+  max_units: string;
+  metadata: string;
+};
+
+export type PricingTiersFormState = Record<string, PricingTierForm[]>;
+
 export type ModelFormState = {
   alias: string;
   provider: string;
@@ -31,6 +41,7 @@ export type ModelFormState = {
   weight: number | "";
   enabled: boolean;
   provider_overrides: ProviderOverrides;
+  pricing_tiers: PricingTiersFormState;
 };
 
 export function defaultVertexOverride(): VertexProviderConfig {

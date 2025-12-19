@@ -173,11 +173,26 @@ model_catalog:
     price_input: 0.005
     price_output: 0.015
     currency: "USD"
-    deployment: "gpt-4o-deployment-eastus"
-    endpoint: "https://sub1-eastus.openai.azure.com"
-    api_key: "AZURE_SUB1_KEY"
-    api_version: "2024-07-01-preview"
-    region: "eastus"
+    pricing_tiers:
+      input:
+        - unit: tokens_per_million
+          max_units: 200000
+          price_per_unit: 1.25
+          metadata:
+            context_scope: "<=200k"
+        - unit: tokens_per_million
+          price_per_unit: 2.50
+          metadata:
+            context_scope: ">200k"
+      output:
+        - unit: tokens_per_million
+          price_per_unit: 10.0
+    azure:
+      deployment: "gpt-4o-deployment-eastus"
+      endpoint: "https://sub1-eastus.openai.azure.com"
+      api_key: "AZURE_SUB1_KEY"
+      api_version: "2024-07-01-preview"
+      region: "eastus"
   - alias: "gpt-image-1"
     provider: "openai"
     provider_model: "gpt-image-1"
@@ -189,9 +204,27 @@ model_catalog:
     price_input: 0.04
     price_output: 0.08
     currency: "USD"
+    pricing_tiers:
+      image:
+        - unit: per_image
+          price_per_unit: 0.01
+          metadata:
+            quality: "low"
+            resolution: "512x512"
+        - unit: per_image
+          price_per_unit: 0.04
+          metadata:
+            quality: "standard"
+            resolution: "1024x1024"
+        - unit: per_image
+          price_per_unit: 0.17
+          metadata:
+            quality: "hd"
+            resolution: "2048x2048"
     deployment: "gpt-image-1"
-    metadata:
+    openai:
       openai_organization: ""
+    metadata:
       description: "Full images API (generate/edit/variation)"
 
   - alias: "gpt-4o-mini-tts"
@@ -205,6 +238,17 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    pricing_tiers:
+      tts:
+        - unit: per_million_characters
+          price_per_unit: 12.0
+          metadata:
+            voice: "alloy"
+        - unit: per_million_characters
+          price_per_unit: 18.0
+          metadata:
+            voice: "alloy"
+            quality: "hd"
     deployment: "gpt-4o-mini-tts"
     metadata:
       audio_voice: "alloy"
@@ -222,6 +266,18 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    pricing_tiers:
+      audio:
+        - unit: per_minute
+          price_per_unit: 0.003
+          metadata:
+            operation: "stt"
+      video:
+        - unit: per_second
+          price_per_unit: 0.0003
+          metadata:
+            operation: "stt"
+            channel: "audio+video"
     deployment: "gpt-4o-mini-transcribe"
     metadata:
       audio_formats: "json,verbose_json,diarized_json,text,srt,vtt"
@@ -240,11 +296,24 @@ model_catalog:
     price_input: 0.04
     price_output: 0.08
     currency: "USD"
-    endpoint: "https://partners.example.com/v1"
-    api_key: "PARTNER_IMAGE_KEY"
+    pricing_tiers:
+      image:
+        - unit: per_image
+          price_per_unit: 0.01
+          metadata:
+            quality: "low"
+        - unit: per_image
+          price_per_unit: 0.04
+          metadata:
+            quality: "standard"
+        - unit: per_image
+          price_per_unit: 0.17
+          metadata:
+            quality: "hd"
     deployment: "gpt-image-1"
-    metadata:
+    openai_compatible:
       base_url: "https://partners.example.com/v1"
+      api_key: "PARTNER_IMAGE_KEY"
       openai_organization: ""
 
   - alias: "openrouter-qwen72b"
@@ -258,10 +327,19 @@ model_catalog:
     price_input: 0.0004
     price_output: 0.0008
     currency: "USD"
+    pricing_tiers:
+      input:
+        - unit: tokens_per_million
+          price_per_unit: 0.4
+      output:
+        - unit: tokens_per_million
+          price_per_unit: 0.8
     deployment: "qwen2.5-72b-instruct"
+    openrouter:
+      api_key: "OPENROUTER_API_KEY"
+      referer: "https://your-app.example.com"
+      app_name: "Open Model Gateway"
     metadata:
-      openrouter_referer: "https://your-app.example.com"
-      openrouter_app_name: "Open Model Gateway"
       description: "Example OpenRouter alias using providers.openrouter defaults."
 
   - alias: "groq-llama3-70b"
@@ -275,9 +353,17 @@ model_catalog:
     price_input: 0.59
     price_output: 0.79
     currency: "USD"
+    pricing_tiers:
+      input:
+        - unit: tokens_per_million
+          price_per_unit: 0.59
+      output:
+        - unit: tokens_per_million
+          price_per_unit: 0.79
     deployment: "llama-3.3-70b-versatile"
-    metadata:
-      groq_region: "us-east-1"
+    groq:
+      api_key: "GROQ_API_KEY"
+      region: "us-east-1"
 
   - alias: "groq-mixtral-8x7b"
     provider: "groq"
@@ -290,9 +376,17 @@ model_catalog:
     price_input: 0.27
     price_output: 0.27
     currency: "USD"
+    pricing_tiers:
+      input:
+        - unit: tokens_per_million
+          price_per_unit: 0.27
+      output:
+        - unit: tokens_per_million
+          price_per_unit: 0.27
     deployment: "mixtral-8x7b"
-    metadata:
-      groq_region: "us-east-1"
+    groq:
+      api_key: "GROQ_API_KEY"
+      region: "us-east-1"
 
   - alias: "claude-3-sonnet"
     provider: "bedrock"
@@ -305,11 +399,18 @@ model_catalog:
     price_input: 0.006
     price_output: 0.015
     currency: "USD"
+    pricing_tiers:
+      input:
+        - unit: tokens_per_million
+          price_per_unit: 6.0
+      output:
+        - unit: tokens_per_million
+          price_per_unit: 15.0
     deployment: "anthropic.claude-3-sonnet-20240229-v1:0"
-    region: "us-west-2"
-    metadata:
-      aws_session_token: ""
+    bedrock:
+      region: "us-west-2"
       aws_profile: ""
+      aws_session_token: ""
   
   - alias: "titan-image"
     provider: "bedrock"
@@ -320,11 +421,22 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    pricing_tiers:
+      image:
+        - unit: per_image
+          price_per_unit: 0.018
+          metadata:
+            quality: "standard"
+        - unit: per_image
+          price_per_unit: 0.036
+          metadata:
+            quality: "premium"
     deployment: "amazon.titan-image-generator-v1"
-    region: "us-west-2"
     weight: 100
-    metadata:
+    bedrock:
+      region: "us-west-2"
       bedrock_image_task_type: "TEXT_IMAGE"
+    metadata:
       bedrock_image_quality: "standard"
       bedrock_image_cfg_scale: "8"
       bedrock_image_strength: "0.35"
@@ -341,11 +453,22 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    pricing_tiers:
+      image:
+        - unit: per_image
+          price_per_unit: 0.02
+          metadata:
+            quality: "standard"
+        - unit: per_image
+          price_per_unit: 0.05
+          metadata:
+            quality: "premium"
     deployment: "stability.stable-diffusion-xl-v1"
-    region: "us-west-2"
     weight: 100
-    metadata:
+    bedrock:
+      region: "us-west-2"
       bedrock_image_task_type: "TEXT_IMAGE"
+    metadata:
       bedrock_image_quality: "premium"
       bedrock_image_cfg_scale: "10"
       aws_session_token: ""
@@ -361,14 +484,24 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    pricing_tiers:
+      image:
+        - unit: per_image
+          price_per_unit: 0.025
+          metadata:
+            quality: "standard"
+        - unit: per_image
+          price_per_unit: 0.05
+          metadata:
+            quality: "hd"
     deployment: "imagen-3.0-generate-001"
-    region: "us-central1"
-    metadata:
+    vertex:
       gcp_project_id: "vertex-project"
       vertex_location: "us-central1"
       vertex_publisher: "google"
       gcp_credentials_json: "${VERTEX_CREDS_BASE64}"
       gcp_credentials_format: "base64"
+    metadata:
       vertex_edit_mode: "EDIT_MODE_INPAINT_INSERTION"
       vertex_mask_mode: "MASK_MODE_USER_PROVIDED"
       vertex_mask_dilation: "0.01"
@@ -387,14 +520,20 @@ model_catalog:
     price_input: 0
     price_output: 0
     currency: "USD"
+    pricing_tiers:
+      image:
+        - unit: per_image
+          price_per_unit: 0.015
+          metadata:
+            quality: "standard"
     deployment: "imagen-3.0-fast-generate-001"
-    region: "us-central1"
-    metadata:
+    vertex:
       gcp_project_id: "vertex-project"
       vertex_location: "us-central1"
       vertex_publisher: "google"
       gcp_credentials_json: "${VERTEX_CREDS_BASE64}"
       gcp_credentials_format: "base64"
+    metadata:
       description: "Imagen Nano Banana reference"
       vertex_mask_mode: "MASK_MODE_USER_PROVIDED"
       vertex_mask_dilation: "0.01"

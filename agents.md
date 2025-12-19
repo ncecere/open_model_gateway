@@ -16,6 +16,7 @@
   - Config loader accepts YAML file + `.env`; ENV vars override.
   - Provider adapters for OpenAI, Anthropic, Azure OpenAI, AWS Bedrock, Vertex (Gemini), Hugging Face embeddings.
   - Key modules: auth (virtual keys, RBAC), routing/failover, rate/budget enforcement, idempotency cache, telemetry exporters.
+  - Provider telemetry stack (sampler → SLI evaluator → incidents/alerts) plus the usage pipeline’s micro-USD tracking keep routing, alerts, and budgets in sync across admin/user surfaces.
 - **Frontend (`frontend/`)**
   - React + Vite + TypeScript managed via Bun (package install, dev server, build).
   - Auth against admin API (JWT), dashboards for usage/cost, CRUD for tenants/users/keys/routes/models/budgets, health status.
@@ -24,6 +25,7 @@
 - Health checks: run every 60s, rolling window of 5 results, cooldown 5m (align with PRD).
 - Timeouts: sync 300s, streaming idle 30s, total 300s, upstream 280s.
 - Rate limits/budgets: use PRD defaults; surface env keys prefixed `DEFAULT_`.
+- Provider configs: nested `providers.<slug>` blocks supply default API versions/endpoints/regions while legacy flat keys + ENV vars remain valid overrides.
 - Observability: enable OTEL exporters (HTTP OTLP by default), Prometheus `/metrics`.
 
 ## Research & Decisions Needed
@@ -117,3 +119,12 @@
 - Added native Anthropic Claude adapter riding the public Messages API (sync + SSE), plus `/v1/audio/speech` text-to-speech routing through OpenAI/OpenAI-compatible providers with configurable default voices.
 - Added an OpenRouter adapter + builder (chat, streaming, embeddings, health/models) with BYOK-friendly overrides, config defaults for attribution headers, and frontend hooks ready for the forthcoming model-import UX.
 - Added a Groq adapter (chat + SSE) with region-aware metadata, config overrides (`providers.groq.*` + `provider_overrides.groq`), admin UI support, and sample catalog entries so operators can route Groq-hosted models alongside existing providers without auto-discovery.
+- Unified the shared executor across chat, audio, images, embeddings, moderations, files, and batch flows; provider routes expose retry/tokenizer metadata, and generated fixtures/tests keep adapters + catalog entries in sync.
+- Split admin and user portals into dedicated Vite entrypoints with shared auth/token storage, Axios client factory, DirectoryProvider, and UI kit primitives backed by Vitest + Playwright smoke tests.
+- Landed SMTP-backed email sender powering budget alerts/admin invites, added invite resend APIs, directory-backed membership flows, and session mismatch detection across both portals.
+- Introduced polished HTML email templates (budget alerts, invites, SMTP smoke tests), admin test-email tooling, Settings tab/layout refresh, and shared status/budget badge helpers for admin + user UIs.
+- Published `Code_Examples/` with curl/Python/TypeScript samples plus reusable assets so operators can demo chat, embeddings, images, files, and batch workflows instantly.
+- Added user catalog scope selector + `/user/models?scope=` support so personal vs tenant contexts see only entitled aliases, with backend enforcement of scope filters.
+- Built provider telemetry/alerting pipeline (Redis sampler, SLI evaluator, incident persistence, dispatcher) with admin Provider Health views, docs, and routing down-weighting degraded deployments.
+- Added user-facing API key rotation for both personal and tenant scopes, reissuing secrets while preserving budgets/rate overrides and surfacing rotate/reveal flows in the portals.
+- Introduced structured provider config blocks (`providers.openai`, `providers.azure`, `providers.bedrock`, `providers.vertex`, `providers.anthropic`, `providers.openrouter`, `providers.groq`) supplying default endpoints/API versions while honoring legacy overrides; sample configs/docs updated.

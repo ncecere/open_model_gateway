@@ -59,6 +59,7 @@ CREATE TABLE model_catalog (
     max_output_tokens  INT NOT NULL,
     modalities_json    JSONB NOT NULL DEFAULT '[]'::JSONB,
     supports_tools     BOOLEAN NOT NULL DEFAULT FALSE,
+    pricing_tiers_json JSONB NOT NULL DEFAULT '{}'::JSONB,
     price_input        NUMERIC(12,6) NOT NULL,
     price_output       NUMERIC(12,6) NOT NULL,
     currency           TEXT NOT NULL DEFAULT 'USD',

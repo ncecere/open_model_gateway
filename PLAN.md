@@ -1,54 +1,68 @@
-# Provider Telemetry & Alerting Plan
+# Pricing Flexibility Plan
 
-Objective: deliver structured provider telemetry with configurable SLIs, alerting, and admin visibility so operators can detect upstream degradation early and act before tenant impact.
+## Current State Recap
+- Catalog entries (`backend/internal/config/config.go:204-225`, `backend/internal/services/admincatalog/service.go:38-221`) expose only `price_input`/`price_output` floats (USD per 1M tokens). Usage logging (`backend/internal/services/usagepipeline/logger.go:121-367`) loads these two numbers into an in-memory map to compute every request cost.
+- Image endpoints bolt on metadata overrides (`price_image_cents`, `price_image_edit_cents`, `price_image_variation_cents`) which executor threads through via `OverrideCostCents` (`backend/internal/executor/executor.go:349-365`). Audio metadata (`price_audio_minute_cents`, `price_tts_million_chars_cents`) exists in config docs but is not consumed anywhere yet.
+- Admin UI/editor (`backend/frontend/src/features/models/components/ModelEditorDialog.tsx:245-468`, `ModelTable.tsx:128-142`) only supports scalar input/output pricing. Usage dashboards only display the computed cents/USD returned from the backend; they have no concept of tiers or modality-specific units.
+- Notes (`notes/pricing_tiers.md`, `notes/audio_pricing.md`) already describe desired tiered pricing and alternative units, but the database schema (`backend/sql/schema/000_init.sql:100-139`, `model_catalog` columns in `backend/sql/schema/000_init.sql` via generated queries) lacks any structure to store them.
 
-## Outcomes
-- Providers emit OTEL/Prometheus metrics for latency, tokens, and upstream errors; dashboards and alerts leverage the same signals.
-- SLIs (latency, error rate, saturation/timeout rate) are configurable per provider entry; recent windows are persisted and queryable.
-- Alert pipeline reuses existing email/webhook channels with dedupe/cooldowns and incident history.
-- Admin UI surfaces live health charts and incidents; router can optionally consume health to bias failover.
+## Problems To Solve
+1. LLMs like Gemini 1.5/3 charge different rates above token brackets (e.g., >200k tokens). Single scalar prices cannot represent these, so budget enforcement becomes inaccurate.
+2. Image/audio/video workloads bill on different units (per image, per megapixel, per minute, per character, per frame quality). Encoding them as ad-hoc metadata strings makes executor logic brittle and spreads billing rules across handlers.
+3. Operators need a clear way to configure these prices (YAML + Admin UI) and audit them (usage dashboards), otherwise multi-modal routing is untrustworthy.
 
-## Scope (v1)
-- Instrument provider adapters (sync + streaming) to emit structured metrics and spans with provider/model labels.
-- SLI evaluator computing rolling windows (Redis) with persistence of incidents (Postgres).
-- Alert triggers on threshold breach with cooldowns and dedupe; attaches sample errors where available.
-- Read-only admin panels for health and incidents; OTEL/Prometheus endpoints export new metrics.
-- Configurable defaults/env keys under `DEFAULT_PROVIDER_TELEMETRY_*`; per-entry overrides via provider registry metadata.
+## Proposed Architecture
 
-## Non-goals (for now)
-- Automatic rerouting/weight adjustments beyond reading health flags.
-- Long-term retention/warehouse exports of raw telemetry.
-- Provider-specific deep diagnostics beyond upstream error/status codes.
+### 1. Unified Pricing Schema
+- Extend catalog entries with a `pricing_tiers` map (`input`, `output`, `cache`, `image`, `audio`, `tts`, etc.). Each tier item includes `max_units` (tokens/minutes/etc), `unit` (defaults to `tokens` per 1M), `price_per_unit` (USD per million tokens or natural unit), optional `metadata` (quality/resolution tags). JSONB column `pricing_tiers_json` (and generated struct) stores this.
+- Migration seeds backwards-compatible tiers from existing `price_input`/`price_output` and any `price_image*_cents` metadata. Keep legacy columns for rollout; mark them deprecated once UI/API no longer require them.
 
-## Design Notes
-- Instrumentation: wrap provider capability interfaces so every call records timers, upstream status, token counts, and failure reasons; ensure streaming helper emits final metrics once streams close/abort.
-- Metrics surface: publish OTEL metrics (histograms for latency, counters for errors/timeouts/tokens) and mirror critical gauges to Prometheus with provider/model labels.
-- SLI config: define per-provider SLI profiles (p95 latency, error rate %, timeout rate) with defaults; store overrides in config/provider registry. Persist windowed aggregates in Redis keyed by provider/model + window.
-- Evaluator: periodic worker computes SLIs from Redis windows; writes incident rows (opened/resolved) in Postgres with timestamps, window size, and sample errors.
-- Alerting: reuse existing email/webhook channels with per-channel cooldown; dedupe by provider/model/incident type; include links to Grafana/Prom dashboards when configured.
-- Router integration: expose a health/telemetry service that the existing health monitor can read; optionally annotate routing decisions with current health state for audit logs.
-- Admin UI: new "Provider Health" view showing live metrics (latency/error charts), incident list, and SLI thresholds; leverage React Query + existing OTEL/Prom proxy if available.
-- Configuration: env/yaml knobs for defaults, window sizes, evaluator frequency, alert cooldown, and enable/disable per provider.
-- Testing: unit tests for instrumentation hooks, evaluator math, and alert dedupe; integration tests with fake providers to emit metrics and trigger incidents.
+### 2. Config + Admin API + UI
+- YAML/bootstrap: allow `pricing_tiers` under each model (mirrors structure from `notes/pricing_tiers.md`). Loader populates both new structure and legacy floats (for compatibility) but warns when both conflict.
+- Admin API payload gains optional `pricing_tiers`; server normalizes tier ordering/units, validates ascending thresholds, and persists JSON. Admin UI adds a tier editor (table form) supporting multiple tier types plus metadata for things like image quality/resolution or audio billing source. Provide presets for common providers.
+- For short term, show both scalar fallback fields and the tier builder with a banner explaining precedence (tiers override scalars).
 
-## Milestones
-- M0: Define config schema + metrics naming; add data structures for SLIs and incidents.
-- M1: Instrument all provider adapters and streaming helper; expose OTEL/Prom metrics.
-- M2: Implement SLI evaluator + Redis windows + Postgres incidents; wire alert channels.
-- M3: API surfaces for health/incidents + router consumption hook; seed sample data in dev.
-- M4: Admin UI for health/incidents; docs + Grafana dashboards; harden tests/load checks.
+### 3. Cost Computation
+- Add helper in `usagepipeline` (e.g., `pricing.SelectPrice(alias, usage, metadata)`) that:
+  - Chooses tier based on usage metrics (prompt/output tokens, cached tokens, audio duration, image dimensions, etc.).
+  - Supports per-request overrides (quality/resolution) by matching tier metadata keys.
+  - Returns USD w/ micros + cents for persistence. Falls back to scalar prices if no tiers exist.
+- Executors/handlers populate new usage metrics (e.g., audio duration, generated image resolution, streaming token counts) so tier selection has the necessary inputs. Image/audio overrides no longer parse ad-hoc metadata; they ask the pricing helper instead.
+- Update batch worker to reuse the same helper so offline jobs stay consistent.
 
-## Dependencies & Assumptions
-- Redis available for rolling windows; Postgres migrations managed via Goose.
-- Existing alert channels (email/webhook) reusable; OTEL/Prom exporters already enabled.
-- Provider registry metadata can accept additional telemetry configs without breaking existing adapters.
+### 4. Usage + Reporting
+- Store the resolved tier + unit alongside request/usage rows (extra columns like `billing_unit`, `billing_tier`). Expose them via admin/user usage APIs so dashboards can show "Billed @ $0.04 per image (HD)" or "Tier 2 (>200k tokens)".
+- Update React dashboards to surface tier info and highlight non-token billing, reducing operator confusion.
 
-## Risks
-- High-cardinality metrics if labels are too granular; mitigate with provider/model scoping and sampling.
-- Streaming calls may double-count tokens if instrumentation is misplaced; ensure single close-path.
-- Alert fatigue if thresholds are too sensitive; ship safe defaults and cooldowns.
+### 5. Docs + Tooling
+- Refresh `docs/runtime/config.md`, `deploy/router.example.yaml`, and admin documentation to highlight tier syntax and migration guidance.
+- Add changelog entry plus migration/runbook instructions (export DB, run migration, verify seeded tiers, optionally delete legacy metadata overrides).
 
-## Open Questions (resolved)
-- Router down-weighting: down-weight unhealthy provider instances when there are multiple entries for the same model alias (e.g., gpt-5 east-1 vs west-3). Keep single-instance aliases advisory only.
-- Prometheus proxy: no proxy needed; metrics stay in Prometheus/OTEL and operators will consume via Grafana. Admin UI can rely on summaries exposed by the admin API (derived from the same metrics) without proxying Prometheus directly.
-- Incident retention: 30 days by default, configurable via config file and adjustable in admin settings.
+### Metadata Reference
+| Metadata key | Purpose | Classification |
+| --- | --- | --- |
+| `cached` | Distinguishes cached-input traffic so discounted tiers apply | Price-determining |
+| `modality` | Identifies which token/channel (text vs image tokens, etc.) the tier covers | Price-determining |
+| `quality` | Maps UI quality presets (low/med/high image renders) to the correct tier | Price-determining |
+| `operation` | Labels the workload such as `stt`, `tts`, or `video` so handlers pick the right tier | Price-determining |
+| `channel` | Specifies the billed output channel (e.g., `text_transcript`, `audio_output`) | Price-determining |
+| `model` | Points to a sub-model/SKU when an alias fronts multiple provider SKUs | Price-determining |
+| `resolution` | Selects pricing based on requested pixels (720p vs 4K) | Price-determining |
+| `context_scope` | Human-readable explanation of when the tier applies (e.g., <=200k tokens) | Context-only |
+| `approx_resolution` | Describes implied size for UI/docs (“square ~1024px”) | Context-only |
+| `includes` | Notes what is bundled in the tier (“text-to-image & editing”) | Context-only |
+| `usage` | Highlights policy constraints (“dev only”) | Context-only |
+| `sku` | Display/reference label when providers rename SKUs | Context-only |
+
+`channel` is especially helpful on multimodal workloads so dashboards can show whether costs landed on `text_transcript`, `subtitle_caption`, `video_only`, or `video_plus_audio`. Keep `operation` values consistent—`stt`, `tts`, and `video` are the current canonical tags—to ensure the pricing helper resolves tiers deterministically.
+
+## Phased Delivery
+1. **Schema & loader foundation**: add JSON column/models, config parsing, migration that seeds tiers from existing fields, keep runtime behavior identical (still reading scalar values) while flagging entries lacking tiers.
+2. **Usage pipeline + executor refactor**: introduce pricing helper, support image/audio overrides via tiers, make logger consume new structure while honoring fallback.
+3. **Admin/API/UI upgrades**: expose tier editor, extend API, add usage reporting metadata, adjust tests.
+4. **Cleanup**: remove deprecated metadata keys, document new flow, add integration tests for multi-tier costing, revisit budgets to ensure warnings remain accurate.
+
+## Risks / Open Questions
+- Need deterministic ordering + validation for tiers to avoid ambiguous billing (tie-breaking when metadata tags overlap).
+- Some providers return usage mid-stream (SSE). Ensure streaming completions capture full token counts for tier selection.
+- Backward compatibility for automation hitting Admin API expecting scalar fields; consider versioned API or transitional period where server accepts both but always responds with normalized tiers.

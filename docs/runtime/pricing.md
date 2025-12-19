@@ -1,0 +1,308 @@
+---
+title: Model Pricing & Billing
+description: Tiered costs across runtime usage flows
+---
+[**routerd**](/docs/runtime/bootstrap.md) now loads tiered pricing metadata so billing and budgets stay aligned.
+
+---
+
+#### Adopt tiered schema
+
+Each model catalog entry now exposes a `pricing_tiers` map (YAML, Admin UI, Admin API) that compiles into the `pricing_tiers_json` column alongside the legacy scalar `price_input` and `price_output` floats.
+The map uses bucket keys such as `input`, `image`, or `tts`, each pointing to ordered tiers that `pricing.Cache` loads whenever the router reloads.
+
+Legacy scalar fields remain required for now because migration `20251117120000_model_pricing_tiers.sql` backfilled single tiers from the existing floats plus image/audio metadata overrides.
+Plan to phase them out after every alias defines tiers so docs, APIs, and budgets converge on the same pricing source.
+
+---
+
+#### Define tier fields
+
+Each tier entry includes `unit`, `price_per_unit`, optional `max_units`, and optional `metadata`, all persisted as-is so Admin API and UI stay in sync.
+Values are treated as USD per unit, and omitting `unit` makes the runtime default to `tokens_per_million` before computing costs.
+
+Use `max_units` as an inclusive ceiling for that tier; leaving it null keeps the row open-ended.
+Metadata accepts arbitrary key/value pairs, but selectors such as `quality` or `operation` should match the hints documented below so handlers and dashboards can label tiers consistently.
+
+---
+
+#### Select billing units
+
+Pick one of the supported units below; the cache converts quantities using the shown scale.
+Units are case-insensitive, but stick to the exact strings because UI presets rely on them.
+
+| Unit | When to use |
+| --- | --- |
+| `tokens_per_million` | Prompt/completion tokens for LLMs or embeddings such as gpt-4o mini, gpt-4o azure, and Gemini text tiers. |
+| `tokens_per_thousand` | Low-cost providers (for example qwen72b on OpenRouter) when cents per 1K tokens are easier to audit. |
+| `per_image` | Image generations like gpt-image-1 or partner gateways that bill per request regardless of resolution. |
+| `per_megapixel` | Image or video models that scale pricing with pixels; pair with `approx_resolution` metadata for clarity. |
+| `per_minute` | Audio transcription workloads such as gpt-4o-mini-transcribe that bill on input duration. |
+| `per_second` | Streaming audio/video tiers like Sora previews or multi-channel STT buckets that bill per second. |
+| `per_million_characters` | Text-to-speech workloads such as gpt-4o-mini-tts or other character-based synthesizers. |
+
+---
+
+#### Tag metadata consistently
+
+Use metadata keys to disambiguate tiers when multiple qualities exist; the runtime lowercases keys before caching.
+Only the keys marked Yes below influence tier selection, but all of them show up in Admin and user UIs for auditing.
+
+| Key | Affects billing? | Notes |
+| --- | --- | --- |
+| `cached` | Yes | Flags cache buckets so discounted tiers apply only to reused prompt tokens. |
+| `modality` | Yes | States which signal (text, image, audio) the tier applies to when a bucket mixes workloads. |
+| `quality` | Yes | Maps UI presets (low/standard/hd) to tiers for gpt-image-1, Sora, or similar services. |
+| `operation` | Yes | Labels the workload (`stt`, `tts`, `video`, `image_edit`) so executors pick the right tier. |
+| `channel` | Yes | Identifies the billed output channel (e.g., `audio+video` vs `text_transcript`). |
+| `model` | Yes | Points to a downstream SKU when an alias fronts multiple provider models. |
+| `resolution` | Yes | Selects pricing based on requested pixels (e.g., `1024x1024`). |
+| `context_scope` | No | Human-readable explanation such as `<=200k` or `>200k` tokens. |
+| `approx_resolution` | No | Friendly description (for example `~2MP square`) for docs and UI tooltips. |
+| `includes` | No | Notes bundled capabilities such as "edits + variations". |
+| `usage` | No | Highlights policy constraints like "sandbox only". |
+| `sku` | No | Reference label mirroring the provider’s SKU naming. |
+
+---
+
+#### Map usage buckets
+
+Buckets align with the usage metrics recorded by `usagepipeline.Logger`, and each one multiplies the measured quantity by the matched tier before budgets update.
+Combine buckets as needed when models emit multiple modalities in a single request.
+
+| Bucket | Measurement & examples |
+| --- | --- |
+| `input` | Prompt tokens counted per request for LLMs (gpt-4o mini, gpt-4o azure, Gemini). |
+| `output` | Completion tokens or tool outputs for chat routes. |
+| `cache` | Cached prompt tokens (Azure cache hits, Claude cache, etc.) when providers discount reused context. |
+| `image` | Number of images or megapixels rendered by gpt-image-1, Titan Image, or Vertex Imagen. |
+| `audio` | Minutes of input audio processed by gpt-4o-mini-transcribe or similar STT flows. |
+| `tts` | Output characters synthesized by gpt-4o-mini-tts or other TTS aliases. |
+| `video` | Seconds or frames generated by Sora-style models or hybrid video buckets inside STT flows. |
+| `embedding` | Tokens per million (or per thousand) consumed by embedding routes. |
+
+---
+
+#### Preserve compatibility
+
+The migration seeds `pricing_tiers_json` with one entry per scalar so existing configs stay aligned and Admin exports still include the old floats.
+When you remove deprecated metadata overrides such as `price_image_cents` or `price_audio_minute_cents`, the persisted JSON becomes the single source.
+
+At runtime `pricing.Cache` sorts tiers by `max_units` and uses them first, then falls back to `price_input` or `price_output` for whichever buckets are missing so budgets, alerts, and invoices continue to reflect scalar totals.
+You should still maintain the scalars until every alias defines tiers, but plan to drop them because they cannot represent per-minute, per-image, or capped-cache billing.
+
+---
+
+#### Configure workflows
+
+Configure tiers through YAML/bootstrap, the Admin UI, or the Admin API; all flows persist to `pricing_tiers_json` and trigger a router reload.
+Credential and endpoint defaults still flow from `providers.*` or `provider_overrides.*`, so adding tiers does not change how secrets are handled.
+
+- YAML/bootstrap: Mirror the block below when editing `router.yaml` or bootstrap seeds; Goose will load it into Postgres on startup.
+  
+  ```yaml
+  model_catalog:
+    - alias: sample-llm
+      provider: openai
+      provider_model: gpt-4o-mini
+      pricing_tiers:
+        input:
+          - unit: tokens_per_million
+            price_per_unit: 0.0005
+        output:
+          - unit: tokens_per_million
+            price_per_unit: 0.0015
+  ```
+
+- Admin UI: The Model Catalog dialog exposes a tier editor table (bucket selector, unit dropdown, metadata rows) plus warnings when thresholds overlap.
+  Rows auto-sort by `max_units`, and metadata chips display exactly what you enter so operators can audit each tier.
+- Admin API: `POST /admin/model-catalog` accepts the same structure and responds with Base64-encoded `pricing_tiers_json` so clients can decode it.
+  
+  ```json
+  {
+    "alias": "gpt-4o-azure",
+    "provider": "azure",
+    "pricing_tiers": {
+      "input": [
+        { "unit": "tokens_per_million", "max_units": 200000, "price_per_unit": 1.25 }
+      ],
+      "output": [
+        { "unit": "tokens_per_million", "price_per_unit": 10.0 }
+      ]
+    }
+  }
+  ```
+
+- Provider defaults: Continue storing credentials under `providers.openai`, `providers.azure`, etc., and keep per-alias overrides (`azure`, `vertex`, `openrouter`, etc.) for deployment metadata while pricing stays inside `pricing_tiers`.
+
+---
+
+#### Use YAML examples
+
+Use these copy/paste blocks as references; each matches the numbers already published in `deploy/router.example.yaml`.
+Adjust tier names or units as needed while keeping metadata keys consistent.
+
+Use this structure for a flat-priced LLM such as `gpt-4o-mini` when prompt and completion tiers each collapse to one row.
+
+```yaml
+- alias: "gpt-4o-mini"
+  provider: "openai"
+  provider_model: "gpt-4o-mini"
+  model_type: "llm"
+  context_window: 128000
+  max_output_tokens: 16384
+  modalities: ["text"]
+  supports_tools: true
+  price_input: 0.0005
+  price_output: 0.0015
+  currency: "USD"
+  pricing_tiers:
+    input:
+      - unit: tokens_per_million
+        price_per_unit: 0.0005
+        metadata:
+          modality: "text"
+    output:
+      - unit: tokens_per_million
+        price_per_unit: 0.0015
+        metadata:
+          modality: "text"
+```
+
+Use this tiered example for `gemini-1.5-pro`, which charges more after 200k tokens but still reports usage per million tokens.
+
+```yaml
+- alias: "gemini-1.5-pro"
+  provider: "vertex"
+  provider_model: "gemini-1.5-pro"
+  model_type: "llm"
+  region: "us-central1"
+  price_input: 1.25
+  price_output: 10.0
+  pricing_tiers:
+    input:
+      - unit: tokens_per_million
+        max_units: 200000
+        price_per_unit: 1.25
+        metadata:
+          context_scope: "<=200k"
+          modality: "text"
+      - unit: tokens_per_million
+        price_per_unit: 2.50
+        metadata:
+          context_scope: ">200k"
+          modality: "text"
+    output:
+      - unit: tokens_per_million
+        max_units: 200000
+        price_per_unit: 10.0
+        metadata:
+          context_scope: "<=200k"
+      - unit: tokens_per_million
+        price_per_unit: 15.0
+        metadata:
+          context_scope: ">200k"
+```
+
+Use this gpt-image-1 block to show per-quality pricing with metadata describing the implied resolution.
+
+```yaml
+- alias: "gpt-image-1"
+  provider: "openai"
+  provider_model: "gpt-image-1"
+  model_type: "image"
+  modalities: ["image"]
+  price_input: 0.04
+  price_output: 0.08
+  pricing_tiers:
+    image:
+      - unit: per_image
+        price_per_unit: 0.01
+        metadata:
+          quality: "low"
+          resolution: "512x512"
+          approx_resolution: "~0.25MP"
+      - unit: per_image
+        price_per_unit: 0.04
+        metadata:
+          quality: "standard"
+          resolution: "1024x1024"
+          approx_resolution: "~1MP"
+      - unit: per_image
+        price_per_unit: 0.17
+        metadata:
+          quality: "hd"
+          resolution: "2048x2048"
+          approx_resolution: "~4MP"
+```
+
+Use this combined audio/video example to cover gpt-4o mini transcription plus TTS; adapt the same pattern for Sora or other video-first aliases by switching `operation` and `channel`.
+
+```yaml
+- alias: "gpt-4o-mini-transcribe"
+  provider: "openai"
+  provider_model: "gpt-4o-mini-transcribe"
+  model_type: "audio_transcription"
+  modalities: ["audio"]
+  pricing_tiers:
+    audio:
+      - unit: per_minute
+        price_per_unit: 0.003
+        metadata:
+          operation: "stt"
+          channel: "audio_only"
+    video:
+      - unit: per_second
+        price_per_unit: 0.0003
+        metadata:
+          operation: "stt"
+          channel: "audio+video"
+- alias: "gpt-4o-mini-tts"
+  provider: "openai"
+  provider_model: "gpt-4o-mini-tts"
+  model_type: "audio_speech"
+  modalities: ["audio"]
+  pricing_tiers:
+    tts:
+      - unit: per_million_characters
+        price_per_unit: 12.0
+        metadata:
+          quality: "standard"
+          voice: "alloy"
+      - unit: per_million_characters
+        price_per_unit: 18.0
+        metadata:
+          quality: "hd"
+          voice: "alloy"
+```
+
+---
+
+#### Explain runtime behavior
+
+During startup and each catalog reload, `usagepipeline.Logger.LoadCatalog` builds the pricing cache by calling `pricing.Cache.Load`, which sorts tiers, normalizes metadata, and stores them per alias.
+That cache is consulted for every synchronous request, SSE stream, and batch job because all flows record usage through the same logger entry points.
+
+When a request succeeds, the logger calculates USD using the resolved tier, stores the unit and metadata on the usage row, and translates the amount into cents and micros before updating budgets.
+Admin and user usage APIs expose those tier labels so the dashboards highlight cases like “HD image @ $0.17 per image” or “Tier 2 (>200k tokens).”
+
+---
+
+#### Troubleshoot tiers
+
+- Validate ordering: after edits, confirm the Admin API echoes tiers sorted by `max_units`. Unsorted rows are re-ordered automatically, but gaps cause fallback to scalar pricing.
+- Ensure coverage: provide a terminal tier with `max_units: null` in every bucket so requests above the highest threshold never revert to legacy prices.
+- Audit metadata: stick to the canonical key list (`quality`, `operation`, `channel`, etc.) so Sora, gpt-image-1, and other adapters can resolve the correct tier without surprises.
+- Sync docs: whenever provider pricing changes or new adapters land, update both this page and `deploy/router.example.yaml` so operators reference a single canonical sample.
+
+---
+
+## Research
+
+- Verified tier syntax, bucket names, and sample numbers in `deploy/router.example.yaml`.
+- Confirmed `PricingTier` structure, default unit handling, and cache sorting in `backend/internal/config/config.go` and `backend/internal/pricing/cache.go`.
+- Reviewed compatibility migration `backend/migrations/20251117120000_model_pricing_tiers.sql` for scalar backfill behavior.
+- Checked Admin API payload expectations and reload semantics in `backend/internal/services/admincatalog/service.go`.
+- Referenced gpt-4o mini catalog sample values in `docs/admin/model-catalog-examples.md`.
+- Reviewed usage logger cost flow, budget integration, and tier recording in `backend/internal/services/usagepipeline/logger.go`.
+- Captured metadata guidance from `PLAN.md` to populate the key table.

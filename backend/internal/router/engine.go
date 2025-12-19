@@ -243,6 +243,7 @@ func MergeEntries(cfgEntries []config.ModelCatalogEntry, dbEntries []db.ModelCat
 			Region:          row.Region,
 			Weight:          int(row.Weight),
 			Metadata:        map[string]string{},
+			PricingTiers:    config.PricingTiers{},
 		}
 		if len(row.ModalitiesJson) > 0 {
 			if err := json.Unmarshal(row.ModalitiesJson, &entry.Modalities); err != nil {
@@ -251,6 +252,11 @@ func MergeEntries(cfgEntries []config.ModelCatalogEntry, dbEntries []db.ModelCat
 		}
 		if len(row.MetadataJson) > 0 {
 			if err := json.Unmarshal(row.MetadataJson, &entry.Metadata); err != nil {
+				return nil, err
+			}
+		}
+		if len(row.PricingTiersJson) > 0 {
+			if err := json.Unmarshal(row.PricingTiersJson, &entry.PricingTiers); err != nil {
 				return nil, err
 			}
 		}

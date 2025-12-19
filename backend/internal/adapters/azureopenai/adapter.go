@@ -420,6 +420,7 @@ func convertChatResponse(resp openai.ChatCompletion) models.ChatResponse {
 	usage := models.Usage{}
 	usage.PromptTokens = int32(resp.Usage.PromptTokens)
 	usage.CompletionTokens = int32(resp.Usage.CompletionTokens)
+	usage.ReasoningTokens = int32(resp.Usage.CompletionTokensDetails.ReasoningTokens)
 	usage.TotalTokens = int32(resp.Usage.TotalTokens)
 
 	return models.ChatResponse{
@@ -461,6 +462,7 @@ func convertUsagePointer(u openai.CompletionUsage) *models.Usage {
 	usage := models.Usage{
 		PromptTokens:     int32(u.PromptTokens),
 		CompletionTokens: int32(u.CompletionTokens),
+		ReasoningTokens:  int32(u.CompletionTokensDetails.ReasoningTokens),
 		TotalTokens:      int32(u.TotalTokens),
 	}
 	if usage.TotalTokens == 0 {

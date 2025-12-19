@@ -116,9 +116,10 @@ type openAIModelList struct {
 }
 
 type openAIChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Name    string `json:"name,omitempty"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	Name      string `json:"name,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 type openAIChatRequest struct {
@@ -140,6 +141,7 @@ type openAIChatChoice struct {
 type openAIUsage struct {
 	PromptTokens     int32 `json:"prompt_tokens"`
 	CompletionTokens int32 `json:"completion_tokens"`
+	ReasoningTokens  int32 `json:"reasoning_tokens,omitempty"`
 	TotalTokens      int32 `json:"total_tokens"`
 }
 
@@ -633,12 +635,14 @@ func traceIDFromContext(c *fiber.Ctx) string {
 func convertChatResponse(resp models.ChatResponse, alias string) openAIChatResponse {
 	choices := make([]openAIChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
+		msg := openAIChatMessage{
+			Role:      choice.Message.Role,
+			Content:   fallbackContent(choice.Message.Content, choice.Message.ReasoningContent),
+			Reasoning: choice.Message.Reasoning,
+		}
 		choices = append(choices, openAIChatChoice{
-			Index: choice.Index,
-			Message: openAIChatMessage{
-				Role:    choice.Message.Role,
-				Content: choice.Message.Content,
-			},
+			Index:        choice.Index,
+			Message:      msg,
 			FinishReason: choice.FinishReason,
 		})
 	}
@@ -652,6 +656,7 @@ func convertChatResponse(resp models.ChatResponse, alias string) openAIChatRespo
 		Usage: openAIUsage{
 			PromptTokens:     resp.Usage.PromptTokens,
 			CompletionTokens: resp.Usage.CompletionTokens,
+			ReasoningTokens:  resp.Usage.ReasoningTokens,
 			TotalTokens:      resp.Usage.TotalTokens,
 		},
 	}
@@ -679,8 +684,9 @@ func convertEmbeddingResponse(resp models.EmbeddingsResponse, alias string) open
 }
 
 type openAIStreamDelta struct {
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Content   string `json:"content,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 type openAIStreamChoice struct {
@@ -701,8 +707,9 @@ func convertStreamChunk(chunk models.ChatChunk, alias string) openAIStreamChunk 
 	choices := make([]openAIStreamChoice, 0, len(chunk.Choices))
 	for _, choice := range chunk.Choices {
 		delta := openAIStreamDelta{
-			Role:    choice.Delta.Role,
-			Content: choice.Delta.Content,
+			Role:      choice.Delta.Role,
+			Content:   fallbackContent(choice.Delta.Content, choice.Delta.ReasoningContent),
+			Reasoning: choice.Delta.Reasoning,
 		}
 		choices = append(choices, openAIStreamChoice{
 			Index:        choice.Index,
@@ -718,6 +725,13 @@ func convertStreamChunk(chunk models.ChatChunk, alias string) openAIStreamChunk 
 		Model:   alias,
 		Choices: choices,
 	}
+}
+
+func fallbackContent(content, reasoning string) string {
+	if strings.TrimSpace(content) == "" && strings.TrimSpace(reasoning) != "" {
+		return reasoning
+	}
+	return content
 }
 
 func convertModerationHTTPResponse(resp models.ModerationResponse, alias string) openAIModerationResponse {

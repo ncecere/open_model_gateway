@@ -234,8 +234,11 @@ Each entry registers a public alias:
 | `modalities` | e.g., `["text","image"]`. |
 | `supports_tools` | Enables tool/function calling. |
 | `price_input` / `price_output` / `currency` | Used by the usage logger (values represent USD per 1M tokens). |
+| `pricing_tiers` | Tiered or per-unit overrides; see [pricing tiers](pricing.md) for full guidance. |
 | `deployment`, `endpoint`, `api_key`, `api_version`, `region` | Optional overrides. |
 | `metadata` or provider-specific block | Adapter-specific knobs (Azure deployments, Vertex credentials, Bedrock image options, etc.). |
+
+`pricing_tiers` supersedes `price_input`/`price_output` when you need multi-step pricing (e.g., per-request floors plus per-token rates) while the legacy fields still work for flat billing. Use the tiered map whenever budgets or invoices depend on multiple meters so the usage logger can emit accurate micro-USD totals.
 
 See `docs/architecture/providers/*.md` for per-provider metadata tables.
 

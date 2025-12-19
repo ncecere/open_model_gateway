@@ -1060,12 +1060,14 @@ func mapStatusToCode(status int) string {
 func convertChatResponse(resp models.ChatResponse, alias string) openAIChatResponse {
 	choices := make([]openAIChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
+		msg := openAIChatMessage{
+			Role:      choice.Message.Role,
+			Content:   fallbackContent(choice.Message.Content, choice.Message.ReasoningContent),
+			Reasoning: choice.Message.Reasoning,
+		}
 		choices = append(choices, openAIChatChoice{
-			Index: choice.Index,
-			Message: openAIChatMessage{
-				Role:    choice.Message.Role,
-				Content: choice.Message.Content,
-			},
+			Index:        choice.Index,
+			Message:      msg,
 			FinishReason: choice.FinishReason,
 		})
 	}
@@ -1078,6 +1080,7 @@ func convertChatResponse(resp models.ChatResponse, alias string) openAIChatRespo
 		Usage: openAIUsage{
 			PromptTokens:     resp.Usage.PromptTokens,
 			CompletionTokens: resp.Usage.CompletionTokens,
+			ReasoningTokens:  resp.Usage.ReasoningTokens,
 			TotalTokens:      resp.Usage.TotalTokens,
 		},
 	}
@@ -1101,6 +1104,13 @@ func convertEmbeddingResponse(resp models.EmbeddingsResponse, alias string) open
 			TotalTokens:  resp.Usage.TotalTokens,
 		},
 	}
+}
+
+func fallbackContent(content, reasoning string) string {
+	if strings.TrimSpace(content) == "" && strings.TrimSpace(reasoning) != "" {
+		return reasoning
+	}
+	return content
 }
 
 func convertModerationResponse(resp models.ModerationResponse, alias string) openAIModerationResponse {
@@ -1318,13 +1328,15 @@ type openAIChatChoice struct {
 }
 
 type openAIChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 type openAIUsage struct {
 	PromptTokens     int32 `json:"prompt_tokens"`
 	CompletionTokens int32 `json:"completion_tokens"`
+	ReasoningTokens  int32 `json:"reasoning_tokens,omitempty"`
 	TotalTokens      int32 `json:"total_tokens"`
 }
 

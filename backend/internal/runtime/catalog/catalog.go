@@ -28,6 +28,14 @@ func EnsurePersisted(ctx context.Context, queries *db.Queries, entries []config.
 		if err != nil {
 			return err
 		}
+		pricingTiers := entry.PricingTiers
+		if pricingTiers == nil {
+			pricingTiers = config.PricingTiers{}
+		}
+		pricingJSON, err := json.Marshal(pricingTiers)
+		if err != nil {
+			return err
+		}
 		providerCfgJSON, err := json.Marshal(entry.ProviderOverrides)
 		if err != nil {
 			return err
@@ -61,6 +69,7 @@ func EnsurePersisted(ctx context.Context, queries *db.Queries, entries []config.
 			MaxOutputTokens:    entry.MaxOutputTokens,
 			ModalitiesJson:     modalitiesJSON,
 			SupportsTools:      entry.SupportsTools,
+			PricingTiersJson:   pricingJSON,
 			PriceInput:         priceInput,
 			PriceOutput:        priceOutput,
 			Currency:           currency,

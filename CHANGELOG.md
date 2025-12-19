@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.19] - 2025-12-18
+### Added
+- Structured provider config blocks (`providers.openai`, `providers.azure`, `providers.bedrock`, `providers.vertex`, etc.) with defaults for common fields like API versions, regions, and organizations.
+
+### Changed
+- Provider builders now pull defaults from the new nested provider config keys (while still honoring legacy flat keys) for Azure, OpenAI, OpenAI-compatible, Anthropic, Bedrock, and Vertex.
+- Model catalog validation now defaults `deployment` to `provider_model` when omitted, and the admin model editor treats deployment as optional with a clearer helper note.
+- Updated sample router config to the nested provider config layout.
+
 ## [v0.1.18] - 2025-12-09
 ### Added
 - User-facing API key rotation: added `/user/api-keys/:id/rotate` and `/user/tenants/:id/api-keys/:keyId/rotate` endpoints that reissue secrets while preserving rate/budget settings; user portal now exposes rotate actions and one-time secret reveal for personal and tenant keys.

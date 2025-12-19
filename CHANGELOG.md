@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. The format 
 - Multimodal content support across the entire chat pipeline: `models.ChatMessage` now carries structured `content_parts`, the OpenAI-compatible handler/batch worker stream back those arrays, and the adapter layer forwards mixed text/image/audio inputs when providers support them (OpenAI/Azure/OpenAI-compatible, OpenRouter, Groq, Vertex, Anthropic, Bedrock).
 - Vertex Gemini adapter can now ingest inline image/audio payloads by translating OpenAI-style content parts into Vertex `Parts` (with remote fetches + size guards). Anthropic and Bedrock adapters gained parallel support for the Claude Messages schema.
 - User docs and code examples show how to upload files and reference them in chat requests (new “Using File IDs in Chat Requests” section plus curl/Python/TS snippets driven by the `VISION_IMAGE_PATH` env var).
+- OpenAI Responses API surface: added sync + streaming `/v1/responses`, SSE events that mirror OpenAI’s `response.output_text.delta` contract, batch-worker execution + doc/code coverage (new curl/Python/TypeScript samples).
 
 ### Changed
 - `/user/models` now returns the full `pricing_tiers` map, and when legacy `price_input`/`price_output` fields are zero the API surfaces the first tier price instead. The user portal consumes the extra data so tenants see accurate pricing even when admin-only tiers are configured.

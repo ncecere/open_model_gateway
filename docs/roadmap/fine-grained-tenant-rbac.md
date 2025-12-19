@@ -1,55 +1,51 @@
-# Fine-Grained Tenant RBAC Roadmap
+# Fine-Grained Tenant RBAC
 
 ## Summary
-Move beyond the current owner/admin/viewer roles and introduce granular permissions so enterprises can enforce least-privilege access. Roles should govern both admin APIs and user portal actions.
+Upgrade the coarse owner/admin/viewer roles to a flexible RBAC system so large teams can delegate specific permissions (model management, budget edits, log access) without granting full admin rights. Support per-tenant roles plus custom policies for future growth.
 
-## Implementation Overview
+## Implementation Plan
 
-1. **Role Model**
-   - Define a `permissions` table mapping role names to capability flags (manage tenants, view usage, rotate keys, change budgets, etc.).
-   - Allow custom roles per tenant or reuse platform defaults.
+### Role Model
+- Extend `membership_role` to include new standard roles (e.g., `owner`, `admin`, `operator`, `analyst`, `support`, `viewer`).
+- Introduce a `permissions` table mapping roles to capabilities (CRUD flags for models, budgets, members, keys, usage exports, guardrails, etc.).
+- Allow custom roles per tenant (optional) stored in `tenant_roles` with editable permission sets.
 
-2. **Enforcement**
-   - Update middleware to check capabilities instead of hardcoded role checks (e.g., `requirePermission(c, "tenants.update")`).
-   - Ensure both admin and user APIs respect these permissions.
+### Enforcement
+1. Backend middleware checks role capabilities before executing admin/user endpoints.
+2. UI hides/disables actions based on current role.
+3. Audit logs capture role changes, permission grants, and sensitive actions.
 
-3. **UI & APIs**
-   - Admin UI gets a “Roles & Permissions” section to review, edit, and assign roles.
-   - Invitation workflow lets admins choose a role when adding members.
+### Admin UX
+- Role management panel under Tenants → Members tab:
+  - Assign built-in roles.
+  - Define custom role (name + permissions checkboxes).
+- Invite flows show capability descriptions for each role.
 
-## Usage Examples
+### API Changes
+- Update `/admin/tenants/:id/members` and `/user/tenants/:id/members` endpoints to accept role IDs.
+- Provide `/admin/roles` endpoints for listing/updating custom roles.
 
-### Creating a “Billing Analyst” Role
-```bash
-curl -X POST https://router.example.com/admin/roles \
-  -H "Authorization: Bearer sk-admin" \
-  -H "Content-Type: application/json" \
-  -d '{
-        "name": "billing_analyst",
-        "permissions": ["usage.view", "budget.view"]
-      }'
-```
-- Assign to a user so they can view spend dashboards but cannot modify budgets or keys.
+## Example Permissions
+| Capability | Description |
+| --- | --- |
+| `models.manage` | Create/edit catalog entries for the tenant. |
+| `budgets.update` | Change tenant budgets/rate limits. |
+| `keys.manage` | Issue/rotate/revoke API keys. |
+| `usage.view` | View usage/billing data. |
+| `guardrails.manage` | Configure guardrail policies. |
 
-### Assign Role to Member
-```bash
-curl -X PATCH https://router.example.com/admin/tenants/{tenant_id}/members/{user_id} \
-  -H "Authorization: Bearer sk-admin" \
-  -H "Content-Type: application/json" \
-  -d '{"role": "billing_analyst"}'
-```
+## Components Needed
+- DB migrations for roles/permissions.
+- Middleware + helper functions to check permissions (`hasPermission(ctx, "models.manage")`).
+- Portal updates (role selector, capability tooltips, guardrails around UI actions).
+- Docs describing role definitions and how to configure custom roles.
 
-## Implementation Details
-
-| Area | Notes |
-|------|-------|
-| Schema | `roles` table + `role_permissions` join table. Tenants can override or inherit defaults. |
-| Migration | Backfill existing members to new roles (owner/admin/viewer) to preserve behavior. |
-| UI | Role picker in tenant member table; tooltip listing permissions. |
-| Audit | Log role changes for compliance review. |
+## Risks
+- Complexity creep → keep built-in roles simple and add custom roles as optional advanced feature.
+- Backwards compatibility → map existing roles to new permission sets during migration.
 
 ## Next Steps
-1. Finalize permission taxonomy.
-2. Implement schema + service layer.
-3. Update middleware to check capability flags.
-4. Build UI + API flows for managing roles.
+1. Design permission matrix and default roles.
+2. Implement backend enforcement + migrations.
+3. Update UIs + invite flows.
+4. Document roles and capability mapping.

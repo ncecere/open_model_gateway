@@ -164,7 +164,12 @@ Shipped an end-to-end telemetry pipeline that records provider samples, evaluate
 - `/v1/moderations` 
 
 **Missing / planned**
-- `POST /v1/responses`, Assistants/Threads/Runs APIs (future stretch goal)
+- Assistants/Threads/Runs APIs (future stretch goal)
+- Tool calling parity for `/v1/responses` (tools + file search)
+
+### Responses API
+- **Status**: ✅ Completed — `/v1/responses` now mirrors OpenAI’s sync and streaming semantics (including all `response.*` SSE events), shares the chat pipeline so budgets/rate limits/idempotency apply automatically, plugs into `/v1/batches`, and ships with refreshed docs plus curl/Python/TypeScript examples. Unsupported features (tools, file search) are validated with clear 400s until provider support lands.
+- **Benefits**: Lets tenants adopt OpenAI’s newer API without rewrites, keeps SDK parity as Responses becomes the primary interface, and lays the groundwork for future assistants/tooling support.
 
 ### Batches API
 - **Implementation**: Mirror `/v1/batches` upload/list/retrieve/delete endpoints, storing batch metadata and job statuses in Postgres. Reuse the existing internal batch runner but add response payload compatibility (file references, errors array).

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.20] - 2025-12-20
+### Added
+- Dedicated pricing documentation (`docs/runtime/pricing.md`) detailing tier schema, supported units, metadata semantics, admin/API workflows, and copy/paste YAML samples for LLM/image/audio/video aliases.
+- `pricing_tiers` coverage in the runtime config reference so operators can discover the new knobs directly from the Model Catalog docs.
+- Reasoning-token telemetry: adapters store provider reasoning counts, `models.Usage` records them, and OpenAI-compatible responses/batch worker payloads now expose `usage.reasoning_tokens` when the upstream includes that counter.
+
+### Changed
+- OpenAI-compatible chat responses default `message.content` to `reasoning_content` whenever the upstream reasoning model omits plain content, while still returning the short `reasoning` summary.
+- Removed the `reasoning_content` field from client-facing responses to match the OpenAI contract; reasoning text now only flows through `content` + `reasoning`.
+
 ## [v0.1.19] - 2025-12-18
 ### Added
 - Structured provider config blocks (`providers.openai`, `providers.azure`, `providers.bedrock`, `providers.vertex`, etc.) with defaults for common fields like API versions, regions, and organizations.

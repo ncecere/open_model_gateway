@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 	"github.com/ncecere/open_model_gateway/backend/internal/router"
@@ -18,16 +20,17 @@ import (
 const userModelPerformanceWindow = 24 * time.Hour
 
 type userModelResponse struct {
-	Alias                  string  `json:"alias"`
-	Provider               string  `json:"provider"`
-	ModelType              string  `json:"model_type"`
-	PriceInput             float64 `json:"price_input"`
-	PriceOutput            float64 `json:"price_output"`
-	Currency               string  `json:"currency"`
-	Enabled                bool    `json:"enabled"`
-	ThroughputTokensPerSec float64 `json:"throughput_tokens_per_sec"`
-	AvgLatencyMs           float64 `json:"avg_latency_ms"`
-	Status                 string  `json:"status"`
+	Alias                  string              `json:"alias"`
+	Provider               string              `json:"provider"`
+	ModelType              string              `json:"model_type"`
+	PriceInput             float64             `json:"price_input"`
+	PriceOutput            float64             `json:"price_output"`
+	Currency               string              `json:"currency"`
+	Enabled                bool                `json:"enabled"`
+	ThroughputTokensPerSec float64             `json:"throughput_tokens_per_sec"`
+	AvgLatencyMs           float64             `json:"avg_latency_ms"`
+	Status                 string              `json:"status"`
+	PricingTiers           config.PricingTiers `json:"pricing_tiers,omitempty"`
 }
 
 func (h *userHandler) listModels(c *fiber.Ctx) error {
@@ -81,6 +84,24 @@ func (h *userHandler) listModels(c *fiber.Ctx) error {
 		}
 		priceInput, _ := model.PriceInput.Float64()
 		priceOutput, _ := model.PriceOutput.Float64()
+
+		var pricing config.PricingTiers
+		if len(model.PricingTiersJson) > 0 {
+			if err := json.Unmarshal(model.PricingTiersJson, &pricing); err != nil {
+				return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to decode pricing tiers")
+			}
+		}
+		if priceInput == 0 {
+			if fallback, ok := firstTierPrice(pricing, "input"); ok {
+				priceInput = fallback
+			}
+		}
+		if priceOutput == 0 {
+			if fallback, ok := firstTierPrice(pricing, "output"); ok {
+				priceOutput = fallback
+			}
+		}
+
 		stats := usageservice.ModelPerformanceStats{}
 		if perf != nil {
 			if s, ok := perf[model.Alias]; ok {
@@ -199,4 +220,16 @@ func (h *userHandler) loadAllowedModelAliases(ctx context.Context, tenantIDs []u
 		}
 	}
 	return allowed, nil
+}
+
+func firstTierPrice(pricing config.PricingTiers, bucket string) (float64, bool) {
+	if len(pricing) == 0 {
+		return 0, false
+	}
+	for key, tiers := range pricing {
+		if strings.EqualFold(key, bucket) && len(tiers) > 0 {
+			return tiers[0].PricePerUnit, true
+		}
+	}
+	return 0, false
 }

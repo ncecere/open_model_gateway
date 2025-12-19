@@ -1,3 +1,4 @@
+import type { PricingTierMap } from "@/api/model-catalog";
 import { userApi } from "../userClient";
 
 export interface UserModel {
@@ -11,6 +12,7 @@ export interface UserModel {
   throughput_tokens_per_second?: number;
   avg_latency_ms?: number;
   status: string;
+  pricing_tiers?: PricingTierMap;
 }
 
 export async function listUserModels(scope?: string): Promise<UserModel[]> {

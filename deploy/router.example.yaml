@@ -64,20 +64,36 @@ reporting:
   timezone: "UTC"
 
 providers:
-  openai_key: ""
-  anthropic_key: ""
-  azure_openai_endpoint: "https://your-resource.openai.azure.com"
-  azure_openai_key: ""
-  azure_openai_version: "2024-07-01-preview"
-  aws_access_key_id: ""
-  aws_secret_access_key: ""
-  aws_region: ""
-  gcp_project_id: ""
-  gcp_json_credentials: ""
+  openai:
+    api_key: ""
+    openai_organization: ""
+    base_url: ""
+  anthropic:
+    api_key: ""
+    base_url: ""
+    version: ""
+  azure:
+    endpoint: "https://your-resource.openai.azure.com"
+    api_key: ""
+    api_version: "2024-07-01-preview"
+    region: ""
+  bedrock:
+    region: ""
+    aws_access_key_id: ""
+    aws_secret_access_key: ""
+    aws_session_token: ""
+    aws_profile: ""
+  vertex:
+    gcp_project_id: ""
+    gcp_credentials_json: ""
+    gcp_credentials_format: ""
+    vertex_location: ""
+    vertex_publisher: ""
   hugging_face_token: ""
   openai_compatible:
     base_url: ""
     api_key: ""
+    openai_organization: ""
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: ""

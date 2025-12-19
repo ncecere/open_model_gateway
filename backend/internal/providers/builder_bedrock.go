@@ -21,9 +21,9 @@ func init() {
 			Summary: "AWS Bedrock adapter supporting Anthropic Claude chat/SSE and Titan embeddings/images.",
 			Auth:    []string{"aws_keys", "sts_profile"},
 			ConfigInputs: []Input{
-				{Name: "providers.aws_region", Description: "Default AWS region", Required: true, Source: "config.providers.aws_region"},
-				{Name: "providers.aws_access_key_id", Description: "Access key (when not using IAM role)", Secret: true, Source: "config.providers.aws_access_key_id"},
-				{Name: "providers.aws_secret_access_key", Description: "Secret key", Secret: true, Source: "config.providers.aws_secret_access_key"},
+				{Name: "providers.bedrock.region", Description: "Default AWS region", Required: true, Source: "config.providers.bedrock.region"},
+				{Name: "providers.bedrock.aws_access_key_id", Description: "Access key (when not using IAM role)", Secret: true, Source: "config.providers.bedrock.aws_access_key_id"},
+				{Name: "providers.bedrock.aws_secret_access_key", Description: "Secret key", Secret: true, Source: "config.providers.bedrock.aws_secret_access_key"},
 			},
 			EntryFields: []Input{
 				{Name: "region", Description: "Override AWS region", Source: "catalog.region"},
@@ -48,13 +48,18 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 	cfg = EnsureConfig(cfg)
 
 	override := entry.ProviderOverrides.Bedrock
+	cfgBedrock := cfg.Providers.Bedrock
 
 	region := entry.Region
 	if override != nil && strings.TrimSpace(override.Region) != "" {
 		region = strings.TrimSpace(override.Region)
 	}
 	if region == "" {
-		region = cfg.Providers.AWSRegion
+		if strings.TrimSpace(cfgBedrock.Region) != "" {
+			region = strings.TrimSpace(cfgBedrock.Region)
+		} else {
+			region = cfg.Providers.AWSRegion
+		}
 	}
 	if region == "" {
 		return Route{}, fmt.Errorf("aws region required for bedrock provider")
@@ -67,8 +72,11 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 	}
 
 	chatFormat := strings.TrimSpace(metadata["bedrock_chat_format"])
-	if override != nil && strings.TrimSpace(override.ChatFormat) != "" {
+	switch {
+	case override != nil && strings.TrimSpace(override.ChatFormat) != "":
 		chatFormat = strings.TrimSpace(override.ChatFormat)
+	case chatFormat == "" && strings.TrimSpace(cfgBedrock.ChatFormat) != "":
+		chatFormat = strings.TrimSpace(cfgBedrock.ChatFormat)
 	}
 	if chatFormat == "" && strings.Contains(entry.ProviderModel, ".anthropic.") {
 		chatFormat = bedrock.ChatFormatAnthropicMessages
@@ -78,8 +86,11 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 	}
 
 	embeddingFormat := strings.TrimSpace(metadata["bedrock_embedding_format"])
-	if override != nil && strings.TrimSpace(override.EmbeddingFormat) != "" {
+	switch {
+	case override != nil && strings.TrimSpace(override.EmbeddingFormat) != "":
 		embeddingFormat = strings.TrimSpace(override.EmbeddingFormat)
+	case embeddingFormat == "" && strings.TrimSpace(cfgBedrock.EmbeddingFormat) != "":
+		embeddingFormat = strings.TrimSpace(cfgBedrock.EmbeddingFormat)
 	}
 	if embeddingFormat == "" && strings.Contains(entry.ProviderModel, "titan-embed") {
 		embeddingFormat = bedrock.EmbeddingFormatTitanText
@@ -97,6 +108,8 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 			if parsed, err := strconv.Atoi(metadata["bedrock_default_max_tokens"]); err == nil {
 				defaultMaxTokens = int32(parsed)
 			}
+		case cfgBedrock.DefaultMaxTokens != 0:
+			defaultMaxTokens = cfgBedrock.DefaultMaxTokens
 		}
 	}
 
@@ -108,6 +121,8 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 		if parsed, err := strconv.Atoi(metadata["bedrock_embed_dims"]); err == nil {
 			embedDims = int32(parsed)
 		}
+	case cfgBedrock.EmbedDims != 0:
+		embedDims = cfgBedrock.EmbedDims
 	}
 
 	embedNormalize := false
@@ -118,11 +133,16 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 		if parsed, err := strconv.ParseBool(metadata["bedrock_embed_normalize"]); err == nil {
 			embedNormalize = parsed
 		}
+	case cfgBedrock.EmbedNormalize:
+		embedNormalize = true
 	}
 
 	imageTask := strings.TrimSpace(metadata["bedrock_image_task_type"])
-	if override != nil && strings.TrimSpace(override.ImageTaskType) != "" {
+	switch {
+	case override != nil && strings.TrimSpace(override.ImageTaskType) != "":
 		imageTask = strings.TrimSpace(override.ImageTaskType)
+	case imageTask == "" && strings.TrimSpace(cfgBedrock.ImageTaskType) != "":
+		imageTask = strings.TrimSpace(cfgBedrock.ImageTaskType)
 	}
 	if imageTask == "" && supportsModality(entry.Modalities, "image") {
 		imageTask = "TEXT_IMAGE"
@@ -142,7 +162,10 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 			if override != nil && strings.TrimSpace(override.AnthropicVersion) != "" {
 				return strings.TrimSpace(override.AnthropicVersion)
 			}
-			return metadata["anthropic_version"]
+			if val := strings.TrimSpace(metadata["anthropic_version"]); val != "" {
+				return val
+			}
+			return strings.TrimSpace(cfgBedrock.AnthropicVersion)
 		}(),
 		EmbedDimensions: embedDims,
 		EmbedNormalize:  embedNormalize,
@@ -153,7 +176,10 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 			if v := metadata["aws_access_key_id"]; v != "" {
 				return v
 			}
-			return cfg.Providers.AWSAccessKeyID
+			if strings.TrimSpace(cfgBedrock.AccessKeyID) != "" {
+				return strings.TrimSpace(cfgBedrock.AccessKeyID)
+			}
+			return strings.TrimSpace(cfg.Providers.AWSAccessKeyID)
 		}(),
 		SecretAccessKey: func() string {
 			if override != nil && strings.TrimSpace(override.SecretAccessKey) != "" {
@@ -162,19 +188,28 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 			if v := metadata["aws_secret_access_key"]; v != "" {
 				return v
 			}
-			return cfg.Providers.AWSSecretAccessKey
+			if strings.TrimSpace(cfgBedrock.SecretAccessKey) != "" {
+				return strings.TrimSpace(cfgBedrock.SecretAccessKey)
+			}
+			return strings.TrimSpace(cfg.Providers.AWSSecretAccessKey)
 		}(),
 		SessionToken: func() string {
 			if override != nil && strings.TrimSpace(override.SessionToken) != "" {
 				return strings.TrimSpace(override.SessionToken)
 			}
-			return metadata["aws_session_token"]
+			if val := strings.TrimSpace(metadata["aws_session_token"]); val != "" {
+				return val
+			}
+			return strings.TrimSpace(cfgBedrock.SessionToken)
 		}(),
 		Profile: func() string {
 			if override != nil && strings.TrimSpace(override.Profile) != "" {
 				return strings.TrimSpace(override.Profile)
 			}
-			return metadata["aws_profile"]
+			if val := strings.TrimSpace(metadata["aws_profile"]); val != "" {
+				return val
+			}
+			return strings.TrimSpace(cfgBedrock.Profile)
 		}(),
 		Metadata: metadata,
 	}

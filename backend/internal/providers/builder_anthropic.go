@@ -19,7 +19,9 @@ func init() {
 			Summary: "Anthropic Claude Messages API (sync + SSE).",
 			Auth:    []string{"api_key"},
 			ConfigInputs: []Input{
-				{Name: "providers.anthropic_key", Description: "Default Anthropic API key", Secret: true, Source: "config.providers.anthropic_key"},
+				{Name: "providers.anthropic.api_key", Description: "Default Anthropic API key", Secret: true, Source: "config.providers.anthropic.api_key"},
+				{Name: "providers.anthropic.base_url", Description: "Optional default base URL", Source: "config.providers.anthropic.base_url"},
+				{Name: "providers.anthropic.version", Description: "Optional default API version", Source: "config.providers.anthropic.version"},
 			},
 			EntryFields: []Input{
 				{Name: "api_key", Description: "Override API key", Secret: true, Source: "catalog.api_key"},
@@ -40,6 +42,7 @@ func buildAnthropicRoute(ctx context.Context, cfg *config.Config, entry config.M
 	cfg = EnsureConfig(cfg)
 	md := cloneMetadata(entry.Metadata)
 	override := entry.ProviderOverrides.Anthropic
+	cfgAnthropic := cfg.Providers.Anthropic
 
 	apiKey := strings.TrimSpace(entry.APIKey)
 	if apiKey == "" {
@@ -48,6 +51,8 @@ func buildAnthropicRoute(ctx context.Context, cfg *config.Config, entry config.M
 			apiKey = strings.TrimSpace(override.APIKey)
 		case md["api_key"] != "":
 			apiKey = strings.TrimSpace(md["api_key"])
+		case strings.TrimSpace(cfgAnthropic.APIKey) != "":
+			apiKey = strings.TrimSpace(cfgAnthropic.APIKey)
 		default:
 			apiKey = strings.TrimSpace(cfg.Providers.AnthropicKey)
 		}
@@ -63,10 +68,16 @@ func buildAnthropicRoute(ctx context.Context, cfg *config.Config, entry config.M
 	if baseURL == "" {
 		baseURL = strings.TrimSpace(md["anthropic_base_url"])
 	}
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(cfgAnthropic.BaseURL)
+	}
 
 	version := strings.TrimSpace(md["anthropic_version"])
 	if override != nil && strings.TrimSpace(override.Version) != "" {
 		version = strings.TrimSpace(override.Version)
+	}
+	if version == "" && strings.TrimSpace(cfgAnthropic.Version) != "" {
+		version = strings.TrimSpace(cfgAnthropic.Version)
 	}
 
 	defaultMax := entry.MaxOutputTokens

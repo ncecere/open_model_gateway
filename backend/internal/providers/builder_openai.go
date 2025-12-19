@@ -22,7 +22,9 @@ func init() {
 			Summary: "Native OpenAI platform using the official REST API.",
 			Auth:    []string{"api_key"},
 			ConfigInputs: []Input{
-				{Name: "providers.openai_key", Description: "Default API key when catalog entries omit one", Required: true, Secret: true, Source: "config.providers.openai_key"},
+				{Name: "providers.openai.api_key", Description: "Default API key when catalog entries omit one", Required: true, Secret: true, Source: "config.providers.openai.api_key"},
+				{Name: "providers.openai.openai_organization", Description: "Optional organization header", Source: "config.providers.openai.openai_organization"},
+				{Name: "providers.openai.base_url", Description: "Optional base URL override", Source: "config.providers.openai.base_url"},
 			},
 			EntryFields: []Input{
 				{Name: "api_key", Description: "Override the API key for this catalog entry", Secret: true, Source: "catalog.api_key"},
@@ -44,7 +46,9 @@ func init() {
 			Summary: "Targets third-party gateways that speak the OpenAI API (base URL + API key).",
 			Auth:    []string{"api_key"},
 			ConfigInputs: []Input{
-				{Name: "providers.openai_key", Description: "Fallback API key", Secret: true, Source: "config.providers.openai_key"},
+				{Name: "providers.openai_compatible.base_url", Description: "Default base URL when catalog entries omit one", Source: "config.providers.openai_compatible.base_url"},
+				{Name: "providers.openai_compatible.api_key", Description: "Fallback API key", Secret: true, Source: "config.providers.openai_compatible.api_key"},
+				{Name: "providers.openai.api_key", Description: "Secondary fallback API key", Secret: true, Source: "config.providers.openai.api_key"},
 			},
 			EntryFields: []Input{
 				{Name: "endpoint", Description: "Required base URL for the upstream gateway", Required: true, Source: "catalog.endpoint"},
@@ -63,33 +67,50 @@ func init() {
 func buildOpenAIRoute(ctx context.Context, cfg *config.Config, entry config.ModelCatalogEntry) (Route, error) {
 	cfg = EnsureConfig(cfg)
 	override := entry.ProviderOverrides.OpenAI
+	openaiCfg := cfg.Providers.OpenAI
+
 	apiKey := strings.TrimSpace(entry.APIKey)
 	if apiKey == "" {
 		switch {
 		case override != nil && strings.TrimSpace(override.APIKey) != "":
 			apiKey = strings.TrimSpace(override.APIKey)
+		case strings.TrimSpace(openaiCfg.APIKey) != "":
+			apiKey = strings.TrimSpace(openaiCfg.APIKey)
 		default:
 			apiKey = strings.TrimSpace(cfg.Providers.OpenAIKey)
 		}
 	}
 	if apiKey == "" {
-		return Route{}, fmt.Errorf("openai provider requires api key (providers.openai_key or catalog entry api_key)")
+		return Route{}, fmt.Errorf("openai provider requires api key (providers.openai.api_key or catalog entry api_key)")
 	}
 
 	md := cloneMetadata(entry.Metadata)
-	setDefaultAudioMetadata(md, true, true)
-	if override != nil {
-		if strings.TrimSpace(override.Organization) != "" {
-			md["openai_organization"] = strings.TrimSpace(override.Organization)
-		}
-		if strings.TrimSpace(override.BaseURL) != "" {
-			entry.Endpoint = strings.TrimSpace(override.BaseURL)
-		}
+	org := strings.TrimSpace(md["openai_organization"])
+	if override != nil && strings.TrimSpace(override.Organization) != "" {
+		org = strings.TrimSpace(override.Organization)
+	} else if org == "" && strings.TrimSpace(openaiCfg.Organization) != "" {
+		org = strings.TrimSpace(openaiCfg.Organization)
 	}
+	if org != "" {
+		md["openai_organization"] = org
+	}
+
+	baseURL := strings.TrimSpace(entry.Endpoint)
+	switch {
+	case override != nil && strings.TrimSpace(override.BaseURL) != "":
+		baseURL = strings.TrimSpace(override.BaseURL)
+	case baseURL == "" && strings.TrimSpace(openaiCfg.BaseURL) != "":
+		baseURL = strings.TrimSpace(openaiCfg.BaseURL)
+	}
+	if baseURL != "" {
+		md["base_url"] = baseURL
+	}
+
+	setDefaultAudioMetadata(md, true, true)
 	opts := native.Options{
 		APIKey:       apiKey,
-		BaseURL:      strings.TrimSpace(entry.Endpoint),
-		Organization: strings.TrimSpace(md["openai_organization"]),
+		BaseURL:      baseURL,
+		Organization: org,
 	}
 	adapter, err := native.New(opts)
 	if err != nil {
@@ -99,9 +120,6 @@ func buildOpenAIRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 	weight := entry.Weight
 	if weight == 0 {
 		weight = 100
-	}
-	if opts.BaseURL != "" {
-		md["base_url"] = opts.BaseURL
 	}
 
 	route := Route{
@@ -131,6 +149,8 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 	cfg = EnsureConfig(cfg)
 	md := cloneMetadata(entry.Metadata)
 	override := entry.ProviderOverrides.OpenAICompatible
+	compatCfg := cfg.Providers.OpenAICompatible
+	openaiCfg := cfg.Providers.OpenAI
 	baseURL := strings.TrimSpace(entry.Endpoint)
 	if override != nil && strings.TrimSpace(override.BaseURL) != "" {
 		baseURL = strings.TrimSpace(override.BaseURL)
@@ -138,8 +158,11 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 	if baseURL == "" {
 		baseURL = strings.TrimSpace(md["base_url"])
 	}
+	if baseURL == "" && strings.TrimSpace(compatCfg.BaseURL) != "" {
+		baseURL = strings.TrimSpace(compatCfg.BaseURL)
+	}
 	if baseURL == "" {
-		return Route{}, fmt.Errorf("openai-compatible provider requires base_url (entry.endpoint or metadata.base_url)")
+		return Route{}, fmt.Errorf("openai-compatible provider requires base_url (entry.endpoint, metadata.base_url, or providers.openai_compatible.base_url)")
 	}
 	apiKey := strings.TrimSpace(entry.APIKey)
 	if apiKey == "" {
@@ -148,6 +171,10 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 			apiKey = strings.TrimSpace(override.APIKey)
 		case md["api_key"] != "":
 			apiKey = strings.TrimSpace(md["api_key"])
+		case strings.TrimSpace(compatCfg.APIKey) != "":
+			apiKey = strings.TrimSpace(compatCfg.APIKey)
+		case strings.TrimSpace(openaiCfg.APIKey) != "":
+			apiKey = strings.TrimSpace(openaiCfg.APIKey)
 		default:
 			apiKey = strings.TrimSpace(cfg.Providers.OpenAIKey)
 		}
@@ -155,10 +182,19 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 	if apiKey == "" {
 		return Route{}, fmt.Errorf("openai-compatible provider requires api key")
 	}
+	org := strings.TrimSpace(md["openai_organization"])
+	if override != nil && strings.TrimSpace(override.Organization) != "" {
+		org = strings.TrimSpace(override.Organization)
+	} else if org == "" && strings.TrimSpace(compatCfg.Organization) != "" {
+		org = strings.TrimSpace(compatCfg.Organization)
+	}
+	if org != "" {
+		md["openai_organization"] = org
+	}
 	opts := native.Options{
 		APIKey:       apiKey,
 		BaseURL:      baseURL,
-		Organization: strings.TrimSpace(md["openai_organization"]),
+		Organization: org,
 	}
 	adapter, err := native.New(opts)
 	if err != nil {

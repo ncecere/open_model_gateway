@@ -195,7 +195,9 @@ func testRuntimeConfig(pgURL, redisURL, filesDir string) *config.Config {
 			},
 		},
 		Reporting: config.ReportingConfig{Timezone: "UTC"},
-		Providers: config.ProviderConfig{OpenAIKey: "test-openai-key"},
+		Providers: config.ProviderConfig{
+			OpenAI: config.OpenAIProviderConfig{APIKey: "test-openai-key"},
+		},
 		Files: config.FilesConfig{
 			Storage:        "local",
 			MaxSizeMB:      25,

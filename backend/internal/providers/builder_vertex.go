@@ -30,8 +30,9 @@ func init() {
 			Summary: "Google Vertex AI via service account JSON (Gemini text+image models).",
 			Auth:    []string{"gcp_service_account"},
 			ConfigInputs: []Input{
-				{Name: "providers.gcp_project_id", Description: "Default GCP project", Required: true, Source: "config.providers.gcp_project_id"},
-				{Name: "providers.gcp_json_credentials", Description: "Base64 or JSON service account", Required: true, Secret: true, Source: "config.providers.gcp_json_credentials"},
+				{Name: "providers.vertex.gcp_project_id", Description: "Default GCP project", Required: true, Source: "config.providers.vertex.gcp_project_id"},
+				{Name: "providers.vertex.gcp_credentials_json", Description: "Base64 or JSON service account", Required: true, Secret: true, Source: "config.providers.vertex.gcp_credentials_json"},
+				{Name: "providers.vertex.vertex_location", Description: "Default Vertex location", Source: "config.providers.vertex.vertex_location"},
 			},
 			EntryFields: []Input{
 				{Name: "region", Description: "Vertex location", Source: "catalog.region"},
@@ -53,6 +54,7 @@ func buildVertexRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 
 	md := cloneMetadata(entry.Metadata)
 	override := entry.ProviderOverrides.Vertex
+	vertexCfg := cfg.Providers.Vertex
 
 	projectID := pickFirst(
 		func() string {
@@ -62,6 +64,7 @@ func buildVertexRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 			return ""
 		}(),
 		md["gcp_project_id"],
+		vertexCfg.ProjectID,
 		cfg.Providers.GCPProjectID,
 	)
 	if projectID == "" {
@@ -77,6 +80,7 @@ func buildVertexRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 		}(),
 		entry.Region,
 		md["vertex_location"],
+		vertexCfg.Location,
 	)
 	if location == "" {
 		location = "us-central1"
@@ -90,6 +94,7 @@ func buildVertexRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 			return ""
 		}(),
 		md["gcp_credentials_json"],
+		vertexCfg.CredentialsJSON,
 		cfg.Providers.GCPJSONCredentials,
 	)
 	if credSource == "" {
@@ -105,6 +110,7 @@ func buildVertexRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 			return ""
 		}(),
 		md["gcp_credentials_format"],
+		vertexCfg.CredentialsFormat,
 	)
 	credBytes := []byte(credSource)
 	switch strings.ToLower(format) {
@@ -136,6 +142,9 @@ func buildVertexRoute(ctx context.Context, cfg *config.Config, entry config.Mode
 		Publisher: func() string {
 			if override != nil && strings.TrimSpace(override.Publisher) != "" {
 				return strings.TrimSpace(override.Publisher)
+			}
+			if strings.TrimSpace(vertexCfg.Publisher) != "" {
+				return strings.TrimSpace(vertexCfg.Publisher)
 			}
 			return md["vertex_publisher"]
 		}(),

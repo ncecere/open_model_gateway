@@ -143,19 +143,27 @@ type ReportingConfig struct {
 }
 
 type ProviderConfig struct {
-	OpenAIKey           string                   `mapstructure:"openai_key"`
-	AnthropicKey        string                   `mapstructure:"anthropic_key"`
-	AzureOpenAIKey      string                   `mapstructure:"azure_openai_key"`
-	AzureOpenAIEndpoint string                   `mapstructure:"azure_openai_endpoint"`
-	AzureOpenAIVersion  string                   `mapstructure:"azure_openai_version"`
-	AWSAccessKeyID      string                   `mapstructure:"aws_access_key_id"`
-	AWSSecretAccessKey  string                   `mapstructure:"aws_secret_access_key"`
-	AWSRegion           string                   `mapstructure:"aws_region"`
-	GCPProjectID        string                   `mapstructure:"gcp_project_id"`
-	GCPJSONCredentials  string                   `mapstructure:"gcp_json_credentials"`
-	HuggingFaceToken    string                   `mapstructure:"hugging_face_token"`
-	OpenRouter          OpenRouterProviderConfig `mapstructure:"openrouter"`
-	Groq                GroqProviderConfig       `mapstructure:"groq"`
+	OpenAI           OpenAIProviderConfig           `mapstructure:"openai"`
+	OpenAICompatible OpenAICompatibleProviderConfig `mapstructure:"openai_compatible"`
+	Anthropic        AnthropicProviderConfig        `mapstructure:"anthropic"`
+	Azure            AzureProviderConfig            `mapstructure:"azure"`
+	Vertex           VertexProviderConfig           `mapstructure:"vertex"`
+	Bedrock          BedrockProviderConfig          `mapstructure:"bedrock"`
+	OpenRouter       OpenRouterProviderConfig       `mapstructure:"openrouter"`
+	Groq             GroqProviderConfig             `mapstructure:"groq"`
+
+	// Legacy flat keys (kept for backward compatibility with older configs/env)
+	OpenAIKey           string `mapstructure:"openai_key"`
+	AnthropicKey        string `mapstructure:"anthropic_key"`
+	AzureOpenAIKey      string `mapstructure:"azure_openai_key"`
+	AzureOpenAIEndpoint string `mapstructure:"azure_openai_endpoint"`
+	AzureOpenAIVersion  string `mapstructure:"azure_openai_version"`
+	AWSAccessKeyID      string `mapstructure:"aws_access_key_id"`
+	AWSSecretAccessKey  string `mapstructure:"aws_secret_access_key"`
+	AWSRegion           string `mapstructure:"aws_region"`
+	GCPProjectID        string `mapstructure:"gcp_project_id"`
+	GCPJSONCredentials  string `mapstructure:"gcp_json_credentials"`
+	HuggingFaceToken    string `mapstructure:"hugging_face_token"`
 }
 
 type FilesConfig struct {
@@ -500,7 +508,8 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("model_catalog[%d].provider_model must be provided", i)
 		}
 		if entry.Deployment == "" {
-			return fmt.Errorf("model_catalog[%d].deployment must be provided", i)
+			// Default the deployment to the provider model when omitted to reduce duplication.
+			c.ModelCatalog[i].Deployment = entry.ProviderModel
 		}
 		if entry.Weight == 0 {
 			c.ModelCatalog[i].Weight = 100
@@ -733,6 +742,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("admin.oidc.enabled", false)
 	v.SetDefault("admin.oidc.scopes", []string{"openid", "email", "profile"})
 	v.SetDefault("admin.oidc.http_timeout", "5s")
+	v.SetDefault("providers.azure.api_version", "2024-07-01-preview")
 	v.SetDefault("providers.azure_openai_version", "2024-07-01-preview")
 	v.SetDefault("providers.openrouter.base_url", "https://openrouter.ai/api/v1")
 }

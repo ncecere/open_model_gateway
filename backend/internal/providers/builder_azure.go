@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/azureopenai"
@@ -21,9 +22,10 @@ func init() {
 			Summary: "Azure-hosted OpenAI deployments using Azure-specific endpoints and API versions.",
 			Auth:    []string{"api_key"},
 			ConfigInputs: []Input{
-				{Name: "providers.azure_openai_endpoint", Description: "Default Azure OpenAI endpoint", Required: true, Source: "config.providers.azure_openai_endpoint"},
-				{Name: "providers.azure_openai_key", Description: "Default Azure API key", Required: true, Secret: true, Source: "config.providers.azure_openai_key"},
-				{Name: "providers.azure_openai_version", Description: "API version to use", Required: true, Source: "config.providers.azure_openai_version"},
+				{Name: "providers.azure.endpoint", Description: "Default Azure OpenAI endpoint", Required: true, Source: "config.providers.azure.endpoint"},
+				{Name: "providers.azure.api_key", Description: "Default Azure API key", Required: true, Secret: true, Source: "config.providers.azure.api_key"},
+				{Name: "providers.azure.api_version", Description: "API version to use", Required: true, Source: "config.providers.azure.api_version"},
+				{Name: "providers.azure.region", Description: "Default region metadata", Source: "config.providers.azure.region"},
 			},
 			EntryFields: []Input{
 				{Name: "deployment", Description: "Azure deployment name", Required: true, Source: "catalog.deployment"},
@@ -46,42 +48,58 @@ func buildAzureRoute(ctx context.Context, cfg *config.Config, entry config.Model
 	cfg = EnsureConfig(cfg)
 
 	az := entry.ProviderOverrides.Azure
+	cfgAzure := cfg.Providers.Azure
 
 	deployment := entry.Deployment
-	if az != nil && az.Deployment != "" {
-		deployment = az.Deployment
+	if az != nil && strings.TrimSpace(az.Deployment) != "" {
+		deployment = strings.TrimSpace(az.Deployment)
+	} else if deployment == "" && strings.TrimSpace(cfgAzure.Deployment) != "" {
+		deployment = strings.TrimSpace(cfgAzure.Deployment)
 	}
 
-	endpoint := entry.Endpoint
+	endpoint := strings.TrimSpace(entry.Endpoint)
 	if endpoint == "" {
-		if az != nil && az.Endpoint != "" {
-			endpoint = az.Endpoint
+		if az != nil && strings.TrimSpace(az.Endpoint) != "" {
+			endpoint = strings.TrimSpace(az.Endpoint)
 		} else {
-			endpoint = cfg.Providers.AzureOpenAIEndpoint
+			endpoint = strings.TrimSpace(cfgAzure.Endpoint)
+			if endpoint == "" {
+				endpoint = strings.TrimSpace(cfg.Providers.AzureOpenAIEndpoint)
+			}
 		}
 	}
-	apiKey := entry.APIKey
+	apiKey := strings.TrimSpace(entry.APIKey)
 	if apiKey == "" {
-		if az != nil && az.APIKey != "" {
-			apiKey = az.APIKey
-		} else {
-			apiKey = cfg.Providers.AzureOpenAIKey
+		switch {
+		case az != nil && strings.TrimSpace(az.APIKey) != "":
+			apiKey = strings.TrimSpace(az.APIKey)
+		case strings.TrimSpace(cfgAzure.APIKey) != "":
+			apiKey = strings.TrimSpace(cfgAzure.APIKey)
+		default:
+			apiKey = strings.TrimSpace(cfg.Providers.AzureOpenAIKey)
 		}
 	}
-	apiVersion := entry.APIVersion
+	apiVersion := strings.TrimSpace(entry.APIVersion)
 	if apiVersion == "" {
 		switch {
-		case az != nil && az.APIVersion != "":
-			apiVersion = az.APIVersion
-		case entry.Metadata != nil && entry.Metadata["api_version"] != "":
-			apiVersion = entry.Metadata["api_version"]
+		case az != nil && strings.TrimSpace(az.APIVersion) != "":
+			apiVersion = strings.TrimSpace(az.APIVersion)
+		case entry.Metadata != nil && strings.TrimSpace(entry.Metadata["api_version"]) != "":
+			apiVersion = strings.TrimSpace(entry.Metadata["api_version"])
+		case strings.TrimSpace(cfgAzure.APIVersion) != "":
+			apiVersion = strings.TrimSpace(cfgAzure.APIVersion)
 		default:
-			apiVersion = cfg.Providers.AzureOpenAIVersion
+			apiVersion = strings.TrimSpace(cfg.Providers.AzureOpenAIVersion)
 		}
 	}
-	region := entry.Region
-	if region == "" && az != nil && az.Region != "" {
-		region = az.Region
+	region := strings.TrimSpace(entry.Region)
+	if region == "" {
+		switch {
+		case az != nil && strings.TrimSpace(az.Region) != "":
+			region = strings.TrimSpace(az.Region)
+		case strings.TrimSpace(cfgAzure.Region) != "":
+			region = strings.TrimSpace(cfgAzure.Region)
+		}
 	}
 
 	if endpoint == "" || apiKey == "" {

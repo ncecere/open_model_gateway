@@ -187,8 +187,7 @@ export function ModelEditorDialog({
   const requiredMissing =
     !form.alias.trim() ||
     !form.provider.trim() ||
-    !form.provider_model.trim() ||
-    (providerConfig.showDeployment && !form.deployment.trim());
+    !form.provider_model.trim();
 
   const handleMetadataValueChange = (key: string, value: string) => {
     const next = { ...form.metadata };
@@ -210,7 +209,9 @@ export function ModelEditorDialog({
     }
 
     const resolvedDeployment = providerConfig.showDeployment
-      ? form.deployment.trim()
+      ? form.deployment.trim() ||
+        form.provider_model.trim() ||
+        form.alias.trim()
       : form.provider_model.trim() || form.alias.trim();
 
     const provider_overrides: ProviderOverrides = {};
@@ -360,8 +361,10 @@ export function ModelEditorDialog({
                     handleStringChange("deployment", event.target.value)
                   }
                   placeholder="gpt-4o-deployment"
-                  required={providerConfig.showDeployment}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Optional; defaults to provider model when left blank.
+                </p>
               </div>
             ) : providerKeyInline ? (
               <div className="space-y-2">

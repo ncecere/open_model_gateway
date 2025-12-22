@@ -75,6 +75,33 @@ Use these overrides when a provider adapter supports additional modalities (e.g.
   price_output: 0.08
   currency: "USD"
   deployment: "gpt-image-1"
+  pricing_tiers:
+    image:
+      - unit: per_image
+        price_per_unit: 0.01
+        metadata:
+          quality: "low"
+          resolution: "512x512"
+      - unit: per_image
+        price_per_unit: 0.04
+        metadata:
+          quality: "standard"
+          resolution: "1024x1024"
+      - unit: per_image
+        price_per_unit: 0.17
+        metadata:
+          quality: "hd"
+          resolution: "2048x2048"
+    image_edit:
+      - unit: per_image
+        price_per_unit: 0.08
+        metadata:
+          quality: "standard"
+    image_variation:
+      - unit: per_image
+        price_per_unit: 0.12
+        metadata:
+          quality: "standard"
 ```
 
 ### OpenAI Audio (Speech-to-Text)
@@ -168,6 +195,26 @@ Use these overrides when a provider adapter supports additional modalities (e.g.
   metadata:
     base_url: "https://partner-gateway.example.com/v1"
     description: "Proxy to partner cluster"
+```
+
+### OpenAI-Compatible Images (Per-Megapixel)
+```yaml
+- alias: "partner-flux-mp"
+  provider: "openai-compatible"
+  provider_model: "flux-1-schnell"
+  model_type: "image"
+  modalities: ["image"]
+  supports_tools: false
+  currency: "USD"
+  pricing_tiers:
+    image:
+      - unit: per_megapixel
+        price_per_unit: 0.012
+        metadata:
+          quality: "standard"
+  deployment: "flux-1-schnell"
+  endpoint: "https://partner-gateway.example.com/v1"
+  api_key: "${PARTNER_GATEWAY_KEY}"
 ```
 
 ---

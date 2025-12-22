@@ -221,6 +221,16 @@ model_catalog:
           metadata:
             quality: "hd"
             resolution: "2048x2048"
+      image_edit:
+        - unit: per_image
+          price_per_unit: 0.08
+          metadata:
+            quality: "standard"
+      image_variation:
+        - unit: per_image
+          price_per_unit: 0.12
+          metadata:
+            quality: "standard"
     deployment: "gpt-image-1"
     openai:
       openai_organization: ""
@@ -293,23 +303,15 @@ model_catalog:
     max_output_tokens: 0
     modalities: ["image"]
     supports_tools: false
-    price_input: 0.04
-    price_output: 0.08
+    price_input: 0
+    price_output: 0
     currency: "USD"
     pricing_tiers:
       image:
-        - unit: per_image
-          price_per_unit: 0.01
-          metadata:
-            quality: "low"
-        - unit: per_image
-          price_per_unit: 0.04
+        - unit: per_megapixel
+          price_per_unit: 0.012
           metadata:
             quality: "standard"
-        - unit: per_image
-          price_per_unit: 0.17
-          metadata:
-            quality: "hd"
     deployment: "gpt-image-1"
     openai_compatible:
       base_url: "https://partners.example.com/v1"

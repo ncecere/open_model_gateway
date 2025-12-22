@@ -34,6 +34,8 @@ type Params struct {
 	PromptTokens       int64
 	CompletionTokens   int64
 	CachedPromptTokens int64
+	ImageCount         int64
+	ImagePixels        int64
 	Metadata           map[string]string
 }
 
@@ -159,6 +161,9 @@ func (m ModelPrice) Cost(params Params) decimal.Decimal {
 	if params.CachedPromptTokens > 0 {
 		total = total.Add(m.costTokens(TierCachedInputKey, params.CachedPromptTokens, m.CachePrice))
 	}
+	if params.ImageCount > 0 || params.ImagePixels > 0 {
+		total = total.Add(m.costImage(params.ImageCount, params.ImagePixels, params.Metadata))
+	}
 
 	return total
 }
@@ -185,6 +190,128 @@ func (m ModelPrice) costTokens(bucket string, quantity int64, fallback decimal.D
 	}
 
 	return cost
+}
+
+func (m ModelPrice) costImage(count int64, pixels int64, metadata map[string]string) decimal.Decimal {
+	normalized := normalizeMetadata(metadata)
+	bucket := selectImageBucket(m.tiers, normalized)
+	tiers := m.tiers[bucket]
+	if len(tiers) == 0 && bucket != "image" {
+		tiers = m.tiers["image"]
+	}
+	if len(tiers) == 0 {
+		return decimal.Zero
+	}
+
+	tiers = filterTiersByMetadata(tiers, normalized)
+	if len(tiers) == 0 {
+		return decimal.Zero
+	}
+
+	if hasTierUnit(tiers, UnitPerMegapixel) {
+		if pixels <= 0 {
+			return decimal.Zero
+		}
+		quantity := decimal.NewFromInt(pixels).Div(decimal.NewFromInt(1_000_000))
+		cost, _ := applyTiers(tiers, quantity)
+		return cost
+	}
+
+	if count <= 0 {
+		return decimal.Zero
+	}
+	cost, _ := applyTiers(tiers, decimal.NewFromInt(count))
+	return cost
+}
+
+func hasTierUnit(tiers []tier, unit Unit) bool {
+	for _, t := range tiers {
+		if t.unit == unit {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeMetadata(metadata map[string]string) map[string]string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	normalized := make(map[string]string, len(metadata))
+	for key, value := range metadata {
+		k := strings.ToLower(strings.TrimSpace(key))
+		if k == "" {
+			continue
+		}
+		normalized[k] = strings.TrimSpace(value)
+	}
+	return normalized
+}
+
+func selectImageBucket(buckets map[string][]tier, metadata map[string]string) string {
+	if len(buckets) == 0 {
+		return "image"
+	}
+	op := strings.ToLower(strings.TrimSpace(metadata["operation"]))
+	switch op {
+	case "image_edit", "edit":
+		if _, ok := buckets["image_edit"]; ok {
+			return "image_edit"
+		}
+	case "image_variation", "variation":
+		if _, ok := buckets["image_variation"]; ok {
+			return "image_variation"
+		}
+	case "image_generation", "generation":
+		if _, ok := buckets["image_generation"]; ok {
+			return "image_generation"
+		}
+	}
+	if _, ok := buckets["image"]; ok {
+		return "image"
+	}
+	return "image"
+}
+
+func filterTiersByMetadata(tiers []tier, metadata map[string]string) []tier {
+	if len(tiers) == 0 {
+		return nil
+	}
+	if len(metadata) == 0 {
+		return tiers
+	}
+
+	matched := make([]tier, 0, len(tiers))
+	fallback := make([]tier, 0, len(tiers))
+	for _, t := range tiers {
+		if len(t.metadata) == 0 {
+			fallback = append(fallback, t)
+			continue
+		}
+		if metadataMatches(metadata, t.metadata) {
+			matched = append(matched, t)
+		}
+	}
+	if len(matched) > 0 {
+		return matched
+	}
+	if len(fallback) > 0 {
+		return fallback
+	}
+	return tiers
+}
+
+func metadataMatches(request map[string]string, tierMeta map[string]string) bool {
+	for key, tierValue := range tierMeta {
+		reqValue, ok := request[key]
+		if !ok {
+			return false
+		}
+		if !strings.EqualFold(strings.TrimSpace(reqValue), strings.TrimSpace(tierValue)) {
+			return false
+		}
+	}
+	return true
 }
 
 func applyTiers(tiers []tier, quantity decimal.Decimal) (decimal.Decimal, decimal.Decimal) {

@@ -237,6 +237,7 @@ func (a *Adapter) generateTitan(ctx context.Context, req models.ImageRequest) (m
 	return models.ImageResponse{
 		Created: time.Now().UTC(),
 		Data:    data,
+		Usage:   models.Usage{ImageCount: int32(len(data))},
 	}, nil
 }
 
@@ -312,6 +313,7 @@ func (a *Adapter) invokeStableDiffusion(ctx context.Context, request stableDiffu
 	return models.ImageResponse{
 		Created: time.Now().UTC(),
 		Data:    data,
+		Usage:   models.Usage{ImageCount: int32(len(data))},
 	}, nil
 }
 

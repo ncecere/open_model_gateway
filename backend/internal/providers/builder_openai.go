@@ -2,9 +2,13 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
+
+	"github.com/openai/openai-go/v3"
 
 	native "github.com/ncecere/open_model_gateway/backend/internal/adapters/openai"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -227,10 +231,30 @@ func buildOpenAICompatibleRoute(ctx context.Context, cfg *config.Config, entry c
 		AudioTranscribeStream: adapter,
 		AudioTranslate:        adapter,
 		TextToSpeech:          adapter,
-		Health:                WrapHealth(adapter.HealthCheck),
+		Health:                wrapOpenAICompatibleHealth(adapter.HealthCheck),
 	}
 	route.Capabilities = deriveCapabilities(entry.Modalities, route.Metadata)
 	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
 	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil
+}
+
+func wrapOpenAICompatibleHealth(check func(ctx context.Context) error) HealthChecker {
+	if check == nil {
+		return nil
+	}
+	return HealthCheckerFunc(func(ctx context.Context) error {
+		err := check(ctx)
+		if err == nil {
+			return nil
+		}
+		var apiErr *openai.Error
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+				return nil
+			}
+		}
+		return err
+	})
 }

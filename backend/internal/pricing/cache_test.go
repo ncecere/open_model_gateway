@@ -53,6 +53,96 @@ func TestCacheCostWithTiers(t *testing.T) {
 	}
 }
 
+func TestCacheCostImageTiers(t *testing.T) {
+	cache := NewCache()
+	entry := config.ModelCatalogEntry{
+		Alias:    "flux",
+		Currency: "USD",
+		PricingTiers: config.PricingTiers{
+			"image": {
+				{Unit: string(UnitPerImage), PricePerUnit: 0.05},
+			},
+		},
+	}
+	cache.Load([]config.ModelCatalogEntry{entry})
+
+	cost := cache.Cost("flux", Params{ImageCount: 3})
+	expected := decimal.NewFromFloat(0.15)
+	if !cost.Equal(expected) {
+		t.Fatalf("expected %s, got %s", expected.String(), cost.String())
+	}
+}
+
+func TestCacheCostImageMegapixelTiers(t *testing.T) {
+	cache := NewCache()
+	entry := config.ModelCatalogEntry{
+		Alias:    "flux-mp",
+		Currency: "USD",
+		PricingTiers: config.PricingTiers{
+			"image": {
+				{Unit: string(UnitPerMegapixel), PricePerUnit: 0.02},
+			},
+		},
+	}
+	cache.Load([]config.ModelCatalogEntry{entry})
+
+	cost := cache.Cost("flux-mp", Params{ImagePixels: 1_500_000})
+	expected := decimal.NewFromFloat(0.03)
+	if !cost.Equal(expected) {
+		t.Fatalf("expected %s, got %s", expected.String(), cost.String())
+	}
+}
+
+func TestCacheCostImageMetadataMatch(t *testing.T) {
+	cache := NewCache()
+	entry := config.ModelCatalogEntry{
+		Alias:    "image-meta",
+		Currency: "USD",
+		PricingTiers: config.PricingTiers{
+			"image": {
+				{Unit: string(UnitPerImage), PricePerUnit: 0.01, Metadata: map[string]string{"quality": "standard"}},
+				{Unit: string(UnitPerImage), PricePerUnit: 0.05, Metadata: map[string]string{"quality": "hd"}},
+			},
+		},
+	}
+	cache.Load([]config.ModelCatalogEntry{entry})
+
+	cost := cache.Cost("image-meta", Params{
+		ImageCount: 2,
+		Metadata:   map[string]string{"quality": "hd"},
+	})
+	expected := decimal.NewFromFloat(0.10)
+	if !cost.Equal(expected) {
+		t.Fatalf("expected %s, got %s", expected.String(), cost.String())
+	}
+}
+
+func TestCacheCostImageOperationBucket(t *testing.T) {
+	cache := NewCache()
+	entry := config.ModelCatalogEntry{
+		Alias:    "image-op",
+		Currency: "USD",
+		PricingTiers: config.PricingTiers{
+			"image": {
+				{Unit: string(UnitPerImage), PricePerUnit: 0.01},
+			},
+			"image_edit": {
+				{Unit: string(UnitPerImage), PricePerUnit: 0.03},
+			},
+		},
+	}
+	cache.Load([]config.ModelCatalogEntry{entry})
+
+	cost := cache.Cost("image-op", Params{
+		ImageCount: 1,
+		Metadata:   map[string]string{"operation": "image_edit"},
+	})
+	expected := decimal.NewFromFloat(0.03)
+	if !cost.Equal(expected) {
+		t.Fatalf("expected %s, got %s", expected.String(), cost.String())
+	}
+}
+
 func TestCacheLoadReplacesModels(t *testing.T) {
 	cache := NewCache()
 	entry := config.ModelCatalogEntry{Alias: "model", PriceInput: 1.0, PriceOutput: 1.0}

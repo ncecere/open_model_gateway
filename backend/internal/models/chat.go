@@ -35,6 +35,8 @@ type Usage struct {
 	CompletionTokens int32 `json:"completion_tokens"`
 	ReasoningTokens  int32 `json:"reasoning_tokens,omitempty"`
 	TotalTokens      int32 `json:"total_tokens"`
+	ImageCount       int32 `json:"image_count,omitempty"`
+	ImagePixels      int64 `json:"image_pixels,omitempty"`
 }
 
 type ChatResponse struct {

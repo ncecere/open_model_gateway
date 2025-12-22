@@ -3,7 +3,14 @@ package models
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -83,4 +90,73 @@ type ImageResponse struct {
 	Created time.Time
 	Data    []ImageData
 	Usage   Usage
+}
+
+// ParseImageSize splits a WxH size string into pixel dimensions.
+func ParseImageSize(size string) (int64, int64, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(size))
+	if normalized == "" {
+		return 0, 0, false
+	}
+	parts := strings.Split(normalized, "x")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	width, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	if err != nil || width <= 0 {
+		return 0, 0, false
+	}
+	height, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+	if err != nil || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
+// ImagePixelCount computes total pixels for a WxH size string and image count.
+func ImagePixelCount(size string, count int) int64 {
+	if count <= 0 {
+		count = 1
+	}
+	width, height, ok := ParseImageSize(size)
+	if !ok {
+		return 0
+	}
+	return width * height * int64(count)
+}
+
+// ImageSizeFromInput returns the WxH string for a decoded image payload.
+func ImageSizeFromInput(input ImageInput) (string, bool) {
+	width, height, ok := ImageDimensionsFromInput(input)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%dx%d", width, height), true
+}
+
+// ImagePixelCountFromInput computes total pixels for the image payload.
+func ImagePixelCountFromInput(input ImageInput, count int) int64 {
+	if count <= 0 {
+		count = 1
+	}
+	width, height, ok := ImageDimensionsFromInput(input)
+	if !ok {
+		return 0
+	}
+	return width * height * int64(count)
+}
+
+// ImageDimensionsFromInput decodes width/height from the image payload.
+func ImageDimensionsFromInput(input ImageInput) (int64, int64, bool) {
+	if len(input.Data) == 0 {
+		return 0, 0, false
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(input.Data))
+	if err != nil {
+		return 0, 0, false
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0, false
+	}
+	return int64(cfg.Width), int64(cfg.Height), true
 }

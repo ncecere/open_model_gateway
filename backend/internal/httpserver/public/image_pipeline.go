@@ -33,10 +33,12 @@ const (
 )
 
 type imageOperationConfig struct {
-	Alias          string
-	IdempotencyKey string
-	Operation      imageOperationType
-	Builder        func(context.Context, providers.Route) (models.ImageResponse, error)
+	Alias           string
+	IdempotencyKey  string
+	Operation       imageOperationType
+	Builder         func(context.Context, providers.Route) (models.ImageResponse, error)
+	ImagePixels     int64
+	PricingMetadata map[string]string
 }
 
 func (p *imagePipeline) Execute(c *fiber.Ctx, rc *requestctx.Context, cfg imageOperationConfig) error {
@@ -62,9 +64,11 @@ func (p *imagePipeline) Execute(c *fiber.Ctx, rc *requestctx.Context, cfg imageO
 		}
 	}
 	result, err := p.executor.Image(c.UserContext(), rc, traceID, executor.ImageOperationConfig{
-		Alias:          alias,
-		IdempotencyKey: idempotencyKey,
-		Builder:        cfg.Builder,
+		Alias:           alias,
+		IdempotencyKey:  idempotencyKey,
+		Builder:         cfg.Builder,
+		ImagePixels:     cfg.ImagePixels,
+		PricingMetadata: cfg.PricingMetadata,
 		OverrideCost: func(metadata map[string]string) *int64 {
 			return parseImageOverrideCost(metadata, operation)
 		},

@@ -471,6 +471,8 @@ func (h *openAIHandler) imageGenerations(c *fiber.Ctx) error {
 	}
 	req.Model = strings.TrimSpace(req.Model)
 	req.Prompt = strings.TrimSpace(req.Prompt)
+	req.Size = strings.TrimSpace(req.Size)
+	req.Quality = strings.TrimSpace(req.Quality)
 	if req.Model == "" {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "model is required")
 	}
@@ -485,13 +487,16 @@ func (h *openAIHandler) imageGenerations(c *fiber.Ctx) error {
 	if n > 10 {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "n must be between 1 and 10")
 	}
+	imagePixels := models.ImagePixelCount(req.Size, n)
 
 	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 	baseReq := req
 	return h.runImageOperation(c, imageOperationConfig{
-		Alias:          req.Model,
-		IdempotencyKey: idempotencyKey,
-		Operation:      imageOperationGeneration,
+		Alias:           req.Model,
+		IdempotencyKey:  idempotencyKey,
+		Operation:       imageOperationGeneration,
+		ImagePixels:     imagePixels,
+		PricingMetadata: buildImagePricingMetadata(imageOperationGeneration, req.Quality, req.Size),
 		Builder: func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
 			modelReq := models.ImageRequest{
 				Model:          route.ResolveDeployment(),
@@ -553,14 +558,23 @@ func (h *openAIHandler) imageEdits(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
+	requestSize := strings.TrimSpace(c.FormValue("size"))
+	pricingSize := requestSize
+	if pricingSize == "" && len(images) > 0 {
+		if derived, ok := models.ImageSizeFromInput(images[0]); ok {
+			pricingSize = derived
+		}
+	}
+	imagePixels := models.ImagePixelCount(pricingSize, n)
+	quality := strings.TrimSpace(c.FormValue("quality"))
 	baseReq := models.ImageEditRequest{
 		Model:          model,
 		Prompt:         prompt,
 		Images:         images,
 		Mask:           maskInput,
-		Size:           strings.TrimSpace(c.FormValue("size")),
+		Size:           requestSize,
 		ResponseFormat: strings.TrimSpace(c.FormValue("response_format")),
-		Quality:        strings.TrimSpace(c.FormValue("quality")),
+		Quality:        quality,
 		Background:     strings.TrimSpace(c.FormValue("background")),
 		Style:          strings.TrimSpace(c.FormValue("style")),
 		N:              n,
@@ -568,9 +582,11 @@ func (h *openAIHandler) imageEdits(c *fiber.Ctx) error {
 	}
 	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 	return h.runImageOperation(c, imageOperationConfig{
-		Alias:          model,
-		IdempotencyKey: idempotencyKey,
-		Operation:      imageOperationEdit,
+		Alias:           model,
+		IdempotencyKey:  idempotencyKey,
+		Operation:       imageOperationEdit,
+		ImagePixels:     imagePixels,
+		PricingMetadata: buildImagePricingMetadata(imageOperationEdit, quality, pricingSize),
 		Builder: func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
 			req := baseReq
 			req.Model = route.ResolveDeployment()
@@ -608,12 +624,21 @@ func (h *openAIHandler) imageVariations(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
+	requestSize := strings.TrimSpace(c.FormValue("size"))
+	pricingSize := requestSize
+	if pricingSize == "" {
+		if derived, ok := models.ImageSizeFromInput(baseImage); ok {
+			pricingSize = derived
+		}
+	}
+	imagePixels := models.ImagePixelCount(pricingSize, n)
+	quality := strings.TrimSpace(c.FormValue("quality"))
 	baseReq := models.ImageVariationRequest{
 		Model:          model,
 		Image:          baseImage,
-		Size:           strings.TrimSpace(c.FormValue("size")),
+		Size:           requestSize,
 		ResponseFormat: strings.TrimSpace(c.FormValue("response_format")),
-		Quality:        strings.TrimSpace(c.FormValue("quality")),
+		Quality:        quality,
 		Background:     strings.TrimSpace(c.FormValue("background")),
 		Style:          strings.TrimSpace(c.FormValue("style")),
 		N:              n,
@@ -621,9 +646,11 @@ func (h *openAIHandler) imageVariations(c *fiber.Ctx) error {
 	}
 	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 	return h.runImageOperation(c, imageOperationConfig{
-		Alias:          model,
-		IdempotencyKey: idempotencyKey,
-		Operation:      imageOperationVariation,
+		Alias:           model,
+		IdempotencyKey:  idempotencyKey,
+		Operation:       imageOperationVariation,
+		ImagePixels:     imagePixels,
+		PricingMetadata: buildImagePricingMetadata(imageOperationVariation, quality, pricingSize),
 		Builder: func(callCtx context.Context, route providers.Route) (models.ImageResponse, error) {
 			req := baseReq
 			req.Model = route.ResolveDeployment()
@@ -724,6 +751,34 @@ func parseImageCost(metadata map[string]string, op imageOperationType) *int64 {
 		}
 	}
 	return nil
+}
+
+func buildImagePricingMetadata(op imageOperationType, quality string, resolution string) map[string]string {
+	metadata := map[string]string{
+		"operation": imageOperationLabel(op),
+	}
+	q := strings.TrimSpace(quality)
+	if q == "" {
+		q = "standard"
+	}
+	if q != "" {
+		metadata["quality"] = q
+	}
+	if res := strings.TrimSpace(resolution); res != "" {
+		metadata["resolution"] = res
+	}
+	return metadata
+}
+
+func imageOperationLabel(op imageOperationType) string {
+	switch op {
+	case imageOperationEdit:
+		return "image_edit"
+	case imageOperationVariation:
+		return "image_variation"
+	default:
+		return "image_generation"
+	}
 }
 
 func errMessage(err error) string {

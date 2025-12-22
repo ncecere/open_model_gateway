@@ -42,10 +42,12 @@ type ChatResult struct {
 
 // ImageOperationConfig wraps shared parameters for image executions.
 type ImageOperationConfig struct {
-	Alias          string
-	IdempotencyKey string
-	Builder        func(context.Context, providers.Route) (models.ImageResponse, error)
-	OverrideCost   func(metadata map[string]string) *int64
+	Alias           string
+	IdempotencyKey  string
+	Builder         func(context.Context, providers.Route) (models.ImageResponse, error)
+	OverrideCost    func(metadata map[string]string) *int64
+	ImagePixels     int64
+	PricingMetadata map[string]string
 }
 
 // ImageResult captures the outcome of an image execution.
@@ -363,19 +365,26 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 			}
 
 			record := usagepipeline.Record{
-				Context:        rc,
-				Alias:          alias,
-				Provider:       route.Provider,
-				Usage:          resp.Usage,
-				Latency:        elapsed,
-				Status:         fiber.StatusOK,
-				TraceID:        traceID,
-				Timestamp:      time.Now().UTC(),
-				Success:        true,
-				IdempotencyKey: cfg.IdempotencyKey,
+				Context:         rc,
+				Alias:           alias,
+				Provider:        route.Provider,
+				Usage:           resp.Usage,
+				Latency:         elapsed,
+				Status:          fiber.StatusOK,
+				TraceID:         traceID,
+				Timestamp:       time.Now().UTC(),
+				Success:         true,
+				IdempotencyKey:  cfg.IdempotencyKey,
+				PricingMetadata: cfg.PricingMetadata,
 			}
 			if cfg.OverrideCost != nil {
 				record.OverrideCostCents = cfg.OverrideCost(route.Metadata)
+			}
+			if cfg.ImagePixels > 0 && record.Usage.ImagePixels == 0 {
+				record.Usage.ImagePixels = cfg.ImagePixels
+			}
+			if record.Usage.ImageCount == 0 && len(resp.Data) > 0 {
+				record.Usage.ImageCount = int32(len(resp.Data))
 			}
 			budgetStatus, err := e.container.UsageLogger.Record(ctx, record)
 			if err != nil {

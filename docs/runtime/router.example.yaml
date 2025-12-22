@@ -196,6 +196,33 @@ model_catalog:
     price_input: 0.04
     price_output: 0.08
     currency: "USD"
+    pricing_tiers:
+      image:
+        - unit: per_image
+          price_per_unit: 0.01
+          metadata:
+            quality: "low"
+            resolution: "512x512"
+        - unit: per_image
+          price_per_unit: 0.04
+          metadata:
+            quality: "standard"
+            resolution: "1024x1024"
+        - unit: per_image
+          price_per_unit: 0.17
+          metadata:
+            quality: "hd"
+            resolution: "2048x2048"
+      image_edit:
+        - unit: per_image
+          price_per_unit: 0.08
+          metadata:
+            quality: "standard"
+      image_variation:
+        - unit: per_image
+          price_per_unit: 0.12
+          metadata:
+            quality: "standard"
     metadata:
       openai_organization: ""
       description: "Full images API (generate/edit/variation)"

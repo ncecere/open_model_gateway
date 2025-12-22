@@ -78,6 +78,7 @@ type Record struct {
 	Timestamp         time.Time
 	Success           bool
 	OverrideCostCents *int64
+	PricingMetadata   map[string]string
 }
 
 // BudgetStatus reflects the tenant's budget posture after a request.
@@ -151,7 +152,7 @@ func (l *Logger) Record(ctx context.Context, rec Record) (BudgetStatus, error) {
 			costCents = *rec.OverrideCostCents
 			costMicros = *rec.OverrideCostCents * 10000 // convert cents to micros (1 cent = 10,000 micros)
 		} else {
-			costUSD := l.costFor(rec.Alias, rec.Usage)
+			costUSD := l.costFor(rec.Alias, rec.Usage, rec.PricingMetadata)
 			costCents = l.allocateCostCents(rec.Context.TenantID, costUSD)
 			costMicros = usdToMicros(costUSD)
 		}
@@ -232,13 +233,16 @@ func (l *Logger) SetConfig(cfg config.BudgetConfig) {
 	l.budgets.SetConfig(cfg)
 }
 
-func (l *Logger) costFor(alias string, usage models.Usage) decimal.Decimal {
+func (l *Logger) costFor(alias string, usage models.Usage, metadata map[string]string) decimal.Decimal {
 	if l == nil || l.pricing == nil {
 		return decimal.Zero
 	}
 	params := pricing.Params{
 		PromptTokens:     int64(usage.PromptTokens),
 		CompletionTokens: int64(usage.CompletionTokens),
+		ImageCount:       int64(usage.ImageCount),
+		ImagePixels:      usage.ImagePixels,
+		Metadata:         metadata,
 	}
 	return l.pricing.Cost(alias, params)
 }

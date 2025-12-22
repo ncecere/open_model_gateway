@@ -689,6 +689,9 @@ func convertImageResponse(resp openai.ImagesResponse) models.ImageResponse {
 	} else {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
+	if len(data) > 0 {
+		usage.ImageCount = int32(len(data))
+	}
 
 	return models.ImageResponse{
 		Created: time.Unix(resp.Created, 0),

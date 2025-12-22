@@ -234,11 +234,11 @@ Each entry registers a public alias:
 | `modalities` | e.g., `["text","image"]`. |
 | `supports_tools` | Enables tool/function calling. |
 | `price_input` / `price_output` / `currency` | Used by the usage logger (values represent USD per 1M tokens). |
-| `pricing_tiers` | Tiered or per-unit overrides; see [pricing tiers](pricing.md) for full guidance. |
+| `pricing_tiers` | Tiered or per-unit overrides; see [pricing tiers](pricing.md) for full guidance (including image buckets). |
 | `deployment`, `endpoint`, `api_key`, `api_version`, `region` | Optional overrides. |
 | `metadata` or provider-specific block | Adapter-specific knobs (Azure deployments, Vertex credentials, Bedrock image options, etc.). |
 
-`pricing_tiers` supersedes `price_input`/`price_output` when you need multi-step pricing (e.g., per-request floors plus per-token rates) while the legacy fields still work for flat billing. Use the tiered map whenever budgets or invoices depend on multiple meters so the usage logger can emit accurate micro-USD totals.
+`pricing_tiers` supersedes `price_input`/`price_output` when you need multi-step pricing (e.g., per-request floors plus per-token rates) while the legacy fields still work for flat billing. Use the tiered map whenever budgets or invoices depend on multiple meters so the usage logger can emit accurate micro-USD totals. Image tiers can also live under `image_edit`, `image_variation`, or `image_generation` buckets (falling back to `image` when omitted) and may include metadata selectors like `quality`, `resolution`, and `operation`.
 
 See `docs/architecture/providers/*.md` for per-provider metadata tables.
 
@@ -256,7 +256,7 @@ See `docs/architecture/providers/*.md` for per-provider metadata tables.
 | OpenAI-compatible | `base_url`, `api_key`, `openai_organization` | Required when the alias points at a third-party gateway. |
 | Cost overrides | `price_image_cents`, `price_image_edit_cents`, `price_image_variation_cents` | Optional per-alias image pricing overrides (used by the usage logger when providers omit usage numbers). |
 
-> Tip: if a provider bills differently for “standard” vs “HD” quality, define separate aliases for each tier and set the corresponding `price_image*_cents` overrides (see `docs/runtime/router.example.yaml` for the `qwen-image-standard` / `qwen-image-hd` example). Any extra metadata (e.g., `default_quality`) is passed to the adapter so you can inject the right quality flag whenever clients omit it.
+> Tip: if a provider bills differently for “standard” vs “HD” quality, you can keep a single alias and add multiple `pricing_tiers.image` rows with `metadata.quality` selectors (or split into separate aliases if you prefer). The gateway will match the request’s `quality` and `size` to the right tier when calculating image spend.
 
 ## Bootstrap (`bootstrap.*`)
 

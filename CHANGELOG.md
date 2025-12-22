@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.22] - 2025-12-22
+### Added
+- Image pricing now supports per-megapixel billing (with size-based estimation and input-image fallback for edits/variations), image operation buckets (`image_generation`, `image_edit`, `image_variation`), and metadata-based tier selection for image quality/resolution/operation.
+- Image usage tracking includes pixel counts alongside image counts, and image pricing defaults to `quality: standard` when the request omits it.
+- New runtime/admin docs and example config snippets covering image tier metadata, operation buckets, and per-megapixel pricing (plus updated sample Flux entries).
+
+### Fixed
+- OpenAI-compatible health checks no longer mark routes offline when upstreams omit `/models` (404/405/501 are treated as non-fatal).
+- Image model spend now records correctly from tiered pricing (per-image/per-megapixel) across HTTP and batch flows.
+
 ## [v0.1.21] - 2025-12-21
 ### Added
 - Multimodal content support across the entire chat pipeline: `models.ChatMessage` now carries structured `content_parts`, the OpenAI-compatible handler/batch worker stream back those arrays, and the adapter layer forwards mixed text/image/audio inputs when providers support them (OpenAI/Azure/OpenAI-compatible, OpenRouter, Groq, Vertex, Anthropic, Bedrock).

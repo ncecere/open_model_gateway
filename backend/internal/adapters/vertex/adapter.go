@@ -560,6 +560,7 @@ func convertVertexImageResponse(resp vertexImagePredictResponse) (models.ImageRe
 	return models.ImageResponse{
 		Created: time.Now().UTC(),
 		Data:    data,
+		Usage:   models.Usage{ImageCount: int32(len(data))},
 	}, nil
 }
 

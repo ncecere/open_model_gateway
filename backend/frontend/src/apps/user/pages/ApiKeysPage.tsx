@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import { BudgetMeter } from "@/ui/kit/BudgetMeter";
 import { useToast } from "@/hooks/use-toast";
+import { useDefaultSelection } from "@/hooks/useDefaultSelection";
 import { computeNextResetDate, formatScheduleLabel } from "@/features/api-keys";
 import type {
   CreateUserAPIKeyRequest,
@@ -97,11 +98,12 @@ export function UserApiKeysPage() {
   );
   const tenantIds = tenantOptions.map((tenant) => tenant.tenant_id);
   const [selectedTenantId, setSelectedTenantId] = useState<string>();
-  useEffect(() => {
-    if (!selectedTenantId && tenantOptions.length) {
-      setSelectedTenantId(tenantOptions[0].tenant_id);
-    }
-  }, [selectedTenantId, tenantOptions]);
+  useDefaultSelection({
+    items: tenantOptions,
+    selected: selectedTenantId,
+    onChange: setSelectedTenantId,
+    getValue: (tenant) => tenant.tenant_id,
+  });
 
   const { data: tenantKeyData, isFetching: tenantKeysLoading } =
     useTenantAPIKeysQuery(selectedTenantId);

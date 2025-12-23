@@ -1,0 +1,3871 @@
+openapi: 3.0.3
+info:
+  title: Open Model Gateway API
+  version: 0.1.0
+  description: OpenAI-compatible gateway API with admin and user surfaces.
+servers:
+- url: /
+paths:
+  /v1/files/{id}:
+    delete:
+      tags:
+      - Files
+      summary: DELETE /v1/files/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Delete files. Requires API key authentication.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+    get:
+      tags:
+      - Files
+      summary: GET /v1/files/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Get files. Requires API key authentication.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /v1/batches:
+    get:
+      tags:
+      - Batches
+      summary: GET /v1/batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: List batches. Requires API key authentication.
+    post:
+      tags:
+      - Batches
+      summary: POST /v1/batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create batches. Requires API key authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchCreateRequest'
+  /v1/batches/{id}:
+    get:
+      tags:
+      - Batches
+      summary: GET /v1/batches/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Get batches. Requires API key authentication.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /v1/batches/{id}/errors:
+    get:
+      tags:
+      - Batches
+      summary: GET /v1/batches/{id}/errors
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Download the batch error file. Requires API key authentication.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /v1/batches/{id}/output:
+    get:
+      tags:
+      - Batches
+      summary: GET /v1/batches/{id}/output
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Download the batch output file. Requires API key authentication.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /v1/files:
+    get:
+      tags:
+      - Files
+      summary: GET /v1/files
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: List files. Requires API key authentication.
+    post:
+      tags:
+      - Files
+      summary: POST /v1/files
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create files. Requires API key authentication.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadRequest'
+  /v1/files/{id}/content:
+    get:
+      tags:
+      - Files
+      summary: GET /v1/files/{id}/content
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Download the file content. Requires API key authentication.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /v1/models:
+    get:
+      tags:
+      - Models
+      summary: GET /v1/models
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: List models. Requires API key authentication.
+  /v1/audio/speech:
+    post:
+      tags:
+      - Audio
+      summary: POST /v1/audio/speech
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create speech. Requires API key authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AudioSpeechRequest'
+  /v1/audio/transcriptions:
+    post:
+      tags:
+      - Audio
+      summary: POST /v1/audio/transcriptions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create transcriptions. Requires API key authentication.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /v1/audio/translations:
+    post:
+      tags:
+      - Audio
+      summary: POST /v1/audio/translations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create translations. Requires API key authentication.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /v1/batches/{id}/cancel:
+    post:
+      tags:
+      - Batches
+      summary: POST /v1/batches/{id}/cancel
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Cancel the batch job. Requires API key authentication.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /v1/chat/completions:
+    post:
+      tags:
+      - Chat
+      summary: POST /v1/chat/completions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create completions. Requires API key authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+  /v1/embeddings:
+    post:
+      tags:
+      - Embeddings
+      summary: POST /v1/embeddings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create embeddings. Requires API key authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingRequest'
+  /v1/images/edits:
+    post:
+      tags:
+      - Images
+      summary: POST /v1/images/edits
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageGenerationResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create edits. Requires API key authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageGenerationRequest'
+  /v1/images/generations:
+    post:
+      tags:
+      - Images
+      summary: POST /v1/images/generations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageGenerationResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create generations. Requires API key authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageGenerationRequest'
+  /v1/images/variations:
+    post:
+      tags:
+      - Images
+      summary: POST /v1/images/variations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageGenerationResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create variations. Requires API key authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageGenerationRequest'
+  /v1/moderations:
+    post:
+      tags:
+      - public
+      summary: POST /v1/moderations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create moderations. Requires API key authentication.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /v1/responses:
+    post:
+      tags:
+      - Responses
+      summary: POST /v1/responses
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create responses. Requires API key authentication.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /v1/uploads:
+    post:
+      tags:
+      - Uploads
+      summary: POST /v1/uploads
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - apiKeyAuth: []
+      description: Create uploads. Requires API key authentication.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/admin-keys/{id}:
+    delete:
+      tags:
+      - Admin Keys
+      summary: DELETE /admin/admin-keys/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete admin API keys. Requires admin bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /admin/billing-webhooks/{id}:
+    delete:
+      tags:
+      - Admin Billing Webhooks
+      summary: DELETE /admin/billing-webhooks/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete billing webhooks. Requires admin bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+    put:
+      tags:
+      - Admin Billing Webhooks
+      summary: PUT /admin/billing-webhooks/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace billing webhooks. Requires admin bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingWebhookRequest'
+  /admin/budgets/overrides/{tenantID}:
+    delete:
+      tags:
+      - Admin Budgets
+      summary: DELETE /admin/budgets/overrides/{tenantID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete budget overrides. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    put:
+      tags:
+      - Admin Budgets
+      summary: PUT /admin/budgets/overrides/{tenantID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace budget overrides. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminBudgetOverrideRequest'
+  /admin/files/{fileID}:
+    delete:
+      tags:
+      - Admin Files
+      summary: DELETE /admin/files/{fileID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete files. Requires admin bearer token.
+      parameters:
+      - name: fileID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File identifier.
+    get:
+      tags:
+      - Admin Files
+      summary: GET /admin/files/{fileID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get files. Requires admin bearer token.
+      parameters:
+      - name: fileID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File identifier.
+  /admin/model-catalog/{alias}:
+    delete:
+      tags:
+      - Admin Model Catalog
+      summary: DELETE /admin/model-catalog/{alias}
+      responses:
+        '204':
+          description: No Content
+      security:
+      - bearerAuth: []
+      description: Delete model catalog entries. Requires admin bearer token.
+      parameters:
+      - name: alias
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Model alias.
+  /admin/settings/default-models/{alias}:
+    delete:
+      tags:
+      - Admin Settings
+      summary: DELETE /admin/settings/default-models/{alias}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete default model settings. Requires admin bearer token.
+      parameters:
+      - name: alias
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Model alias.
+  /admin/tenants/{tenantID}/api-keys/{apiKeyID}:
+    delete:
+      tags:
+      - Admin Tenants
+      summary: DELETE /admin/tenants/{tenantID}/api-keys/{apiKeyID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete API keys. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: apiKeyID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: API key identifier.
+  /admin/tenants/{tenantID}/budget:
+    delete:
+      tags:
+      - Admin Tenants
+      summary: DELETE /admin/tenants/{tenantID}/budget
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete budget. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/budget
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get budget. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    put:
+      tags:
+      - Admin Tenants
+      summary: PUT /admin/tenants/{tenantID}/budget
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace budget. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/tenants/{tenantID}/memberships/{userID}:
+    delete:
+      tags:
+      - Admin Tenants
+      summary: DELETE /admin/tenants/{tenantID}/memberships/{userID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete memberships. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: userID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: User identifier.
+  /admin/tenants/{tenantID}/models:
+    delete:
+      tags:
+      - Admin Tenants
+      summary: DELETE /admin/tenants/{tenantID}/models
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete models. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/models
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get models. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    put:
+      tags:
+      - Admin Tenants
+      summary: PUT /admin/tenants/{tenantID}/models
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace models. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantModelsRequest'
+  /admin/tenants/{tenantID}/rate-limits:
+    delete:
+      tags:
+      - Admin Tenants
+      summary: DELETE /admin/tenants/{tenantID}/rate-limits
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete rate limit overrides. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/rate-limits
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get rate limit overrides. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    put:
+      tags:
+      - Admin Tenants
+      summary: PUT /admin/tenants/{tenantID}/rate-limits
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace rate limit overrides. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantRateLimitRequest'
+  /admin/admin-keys:
+    get:
+      tags:
+      - Admin Keys
+      summary: GET /admin/admin-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List admin API keys. Requires admin bearer token.
+    post:
+      tags:
+      - Admin Keys
+      summary: POST /admin/admin-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create admin API keys. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/api-keys:
+    get:
+      tags:
+      - Admin API Keys
+      summary: GET /admin/api-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List API keys. Requires admin bearer token.
+  /admin/audit/logs:
+    get:
+      tags:
+      - Admin Audit
+      summary: GET /admin/audit/logs
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List logs. Requires admin bearer token.
+  /admin/auth/methods:
+    get:
+      tags:
+      - Admin Auth
+      summary: GET /admin/auth/methods
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      description: List methods.
+  /admin/auth/oidc/callback:
+    get:
+      tags:
+      - Admin Auth
+      summary: GET /admin/auth/oidc/callback
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      description: Handle OIDC callback.
+  /admin/auth/oidc/start:
+    get:
+      tags:
+      - Admin Auth
+      summary: GET /admin/auth/oidc/start
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      description: Start OIDC login flow.
+  /admin/batches:
+    get:
+      tags:
+      - Admin Batches
+      summary: GET /admin/batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List batches. Requires admin bearer token.
+  /admin/batches/{batchID}/errors:
+    get:
+      tags:
+      - Admin Batches
+      summary: GET /admin/batches/{batchID}/errors
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the batch error file. Requires admin bearer token.
+      parameters:
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+  /admin/batches/{batchID}/output:
+    get:
+      tags:
+      - Admin Batches
+      summary: GET /admin/batches/{batchID}/output
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the batch output file. Requires admin bearer token.
+      parameters:
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+  /admin/billing-webhooks:
+    get:
+      tags:
+      - Admin Billing Webhooks
+      summary: GET /admin/billing-webhooks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List billing webhooks. Requires admin bearer token.
+    post:
+      tags:
+      - Admin Billing Webhooks
+      summary: POST /admin/billing-webhooks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create billing webhooks. Requires admin bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingWebhookRequest'
+  /admin/billing-webhooks/{id}/events:
+    get:
+      tags:
+      - Admin Billing Webhooks
+      summary: GET /admin/billing-webhooks/{id}/events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get events. Requires admin bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /admin/budgets/default:
+    get:
+      tags:
+      - Admin Budgets
+      summary: GET /admin/budgets/default
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List default. Requires admin bearer token.
+    put:
+      tags:
+      - Admin Budgets
+      summary: PUT /admin/budgets/default
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace default. Requires admin bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminBudgetDefaultsRequest'
+  /admin/budgets/overrides:
+    get:
+      tags:
+      - Admin Budgets
+      summary: GET /admin/budgets/overrides
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List budget overrides. Requires admin bearer token.
+  /admin/files:
+    get:
+      tags:
+      - Admin Files
+      summary: GET /admin/files
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List files. Requires admin bearer token.
+  /admin/files/{fileID}/content:
+    get:
+      tags:
+      - Admin Files
+      summary: GET /admin/files/{fileID}/content
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the file content. Requires admin bearer token.
+      parameters:
+      - name: fileID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File identifier.
+  /admin/model-catalog:
+    get:
+      tags:
+      - Admin Model Catalog
+      summary: GET /admin/model-catalog
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModelCatalogEntry'
+      security:
+      - bearerAuth: []
+      description: List model catalog entries. Requires admin bearer token.
+    post:
+      tags:
+      - Admin Model Catalog
+      summary: POST /admin/model-catalog
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCatalogEntry'
+              examples:
+                created:
+                  value: &id002
+                    alias: gpt-4o-mini
+                    provider: openai
+                    provider_model: gpt-4o-mini
+                    model_type: llm
+                    context_window: 128000
+                    max_output_tokens: 16384
+                    modalities_json: '["text"]'
+                    supports_tools: true
+                    pricing_tiers_json: '{}'
+                    price_input: '0.0005'
+                    price_output: '0.0015'
+                    currency: USD
+                    enabled: true
+                    provider_config_json: '{}'
+                    updated_at: '2025-01-01T00:00:00Z'
+                    deployment: gpt-4o-mini
+                    endpoint: ''
+                    api_key: ''
+                    api_version: ''
+                    region: ''
+                    metadata_json: '{"openai_organization":"org_123"}'
+                    weight: 100
+      security:
+      - bearerAuth: []
+      description: Create model catalog entries. Requires admin bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelCatalogPayload'
+            examples:
+              openai-llm:
+                value: &id001
+                  alias: gpt-4o-mini
+                  provider: openai
+                  provider_model: gpt-4o-mini
+                  model_type: llm
+                  context_window: 128000
+                  max_output_tokens: 16384
+                  modalities:
+                  - text
+                  supports_tools: true
+                  price_input: 0.0005
+                  price_output: 0.0015
+                  currency: USD
+                  deployment: gpt-4o-mini
+                  metadata:
+                    openai_organization: org_123
+                  enabled: true
+                  weight: 100
+  /admin/model-catalog/status:
+    get:
+      tags:
+      - Admin Model Catalog
+      summary: GET /admin/model-catalog/status
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCatalogStatusResponse'
+      security:
+      - bearerAuth: []
+      description: List model catalog entries. Requires admin bearer token.
+  /admin/providers:
+    get:
+      tags:
+      - Admin Providers
+      summary: GET /admin/providers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List providers. Requires admin bearer token.
+  /admin/providers/alerts:
+    get:
+      tags:
+      - Admin Providers
+      summary: GET /admin/providers/alerts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List provider alerts. Requires admin bearer token.
+  /admin/providers/degraded:
+    get:
+      tags:
+      - Admin Providers
+      summary: GET /admin/providers/degraded
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List degraded providers. Requires admin bearer token.
+  /admin/providers/incidents:
+    get:
+      tags:
+      - Admin Providers
+      summary: GET /admin/providers/incidents
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List provider incidents. Requires admin bearer token.
+  /admin/providers/slis:
+    get:
+      tags:
+      - Admin Providers
+      summary: GET /admin/providers/slis
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List provider SLIs. Requires admin bearer token.
+  /admin/settings/alerts:
+    get:
+      tags:
+      - Admin Settings
+      summary: GET /admin/settings/alerts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List provider alerts. Requires admin bearer token.
+    put:
+      tags:
+      - Admin Settings
+      summary: PUT /admin/settings/alerts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace provider alerts. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/settings/batches:
+    get:
+      tags:
+      - Admin Settings
+      summary: GET /admin/settings/batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List batches. Requires admin bearer token.
+    put:
+      tags:
+      - Admin Settings
+      summary: PUT /admin/settings/batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace batches. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/settings/default-models:
+    get:
+      tags:
+      - Admin Settings
+      summary: GET /admin/settings/default-models
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List default model settings. Requires admin bearer token.
+    post:
+      tags:
+      - Admin Settings
+      summary: POST /admin/settings/default-models
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create default model settings. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/settings/files:
+    get:
+      tags:
+      - Admin Settings
+      summary: GET /admin/settings/files
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List files. Requires admin bearer token.
+    put:
+      tags:
+      - Admin Settings
+      summary: PUT /admin/settings/files
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace files. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/settings/rate-limits:
+    get:
+      tags:
+      - Admin Settings
+      summary: GET /admin/settings/rate-limits
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List rate limit overrides. Requires admin bearer token.
+    put:
+      tags:
+      - Admin Settings
+      summary: PUT /admin/settings/rate-limits
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace rate limit overrides. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/tenants:
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List tenants. Requires admin bearer token.
+    post:
+      tags:
+      - Admin Tenants
+      summary: POST /admin/tenants
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create tenants. Requires admin bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+  /admin/tenants/personal:
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/personal
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List personal. Requires admin bearer token.
+  /admin/tenants/{tenantID}/api-keys:
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/api-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get API keys. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    post:
+      tags:
+      - Admin Tenants
+      summary: POST /admin/tenants/{tenantID}/api-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create API keys for the specified resource. Requires admin bearer
+        token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAPIKeyRequest'
+  /admin/tenants/{tenantID}/batches:
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get batches. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+  /admin/tenants/{tenantID}/batches/{batchID}:
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/batches/{batchID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get batches. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+  /admin/tenants/{tenantID}/batches/{batchID}/errors:
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/batches/{batchID}/errors
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the batch error file. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+  /admin/tenants/{tenantID}/batches/{batchID}/output:
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/batches/{batchID}/output
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the batch output file. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+  /admin/tenants/{tenantID}/memberships:
+    get:
+      tags:
+      - Admin Tenants
+      summary: GET /admin/tenants/{tenantID}/memberships
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get memberships. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    post:
+      tags:
+      - Admin Tenants
+      summary: POST /admin/tenants/{tenantID}/memberships
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create memberships for the specified resource. Requires admin bearer
+        token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantMembershipRequest'
+  /admin/usage-exports:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage-exports
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List usage exports. Requires admin bearer token.
+    post:
+      tags:
+      - Admin Usage
+      summary: POST /admin/usage-exports
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create usage exports. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/usage-exports/{id}:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage-exports/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get usage exports. Requires admin bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /admin/usage-exports/{id}/content:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage-exports/{id}/content
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the file content. Requires admin bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /admin/usage/breakdown:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage/breakdown
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List breakdown. Requires admin bearer token.
+  /admin/usage/compare:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage/compare
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List usage metrics. Requires admin bearer token.
+  /admin/usage/model/daily:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage/model/daily
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List model. Requires admin bearer token.
+  /admin/usage/summary:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage/summary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List usage metrics. Requires admin bearer token.
+  /admin/usage/tenant/daily:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage/tenant/daily
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List tenant. Requires admin bearer token.
+  /admin/usage/user/daily:
+    get:
+      tags:
+      - Admin Usage
+      summary: GET /admin/usage/user/daily
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List usage metrics. Requires admin bearer token.
+  /admin/users:
+    get:
+      tags:
+      - Admin Users
+      summary: GET /admin/users
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List users. Requires admin bearer token.
+    post:
+      tags:
+      - Admin Users
+      summary: POST /admin/users
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create users. Requires admin bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateUserRequest'
+  /admin/users/{userID}/tenants:
+    get:
+      tags:
+      - Admin Users
+      summary: GET /admin/users/{userID}/tenants
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get tenants. Requires admin bearer token.
+      parameters:
+      - name: userID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: User identifier.
+  /admin/tenants/{tenantID}:
+    patch:
+      tags:
+      - Admin Tenants
+      summary: PATCH /admin/tenants/{tenantID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Update tenants. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTenantRequest'
+  /admin/tenants/{tenantID}/status:
+    patch:
+      tags:
+      - Admin Tenants
+      summary: PATCH /admin/tenants/{tenantID}/status
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Update tenants. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTenantStatusRequest'
+  /admin/auth/login:
+    post:
+      tags:
+      - Admin Auth
+      summary: POST /admin/auth/login
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTokenResponse'
+      description: Authenticate admin with local credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+  /admin/auth/logout:
+    post:
+      tags:
+      - Admin Auth
+      summary: POST /admin/auth/logout
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      description: Invalidate admin session.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/auth/refresh:
+    post:
+      tags:
+      - Admin Auth
+      summary: POST /admin/auth/refresh
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTokenResponse'
+      description: Refresh admin access token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRefreshRequest'
+  /admin/batches/{batchID}/cancel:
+    post:
+      tags:
+      - Admin Batches
+      summary: POST /admin/batches/{batchID}/cancel
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Cancel the batch job. Requires admin bearer token.
+      parameters:
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/billing-webhooks/events/{eventID}/retry:
+    post:
+      tags:
+      - Admin Billing Webhooks
+      summary: POST /admin/billing-webhooks/events/{eventID}/retry
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Retry a failed webhook event. Requires admin bearer token.
+      parameters:
+      - name: eventID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Webhook event identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/billing-webhooks/{id}/dispatch:
+    post:
+      tags:
+      - Admin Billing Webhooks
+      summary: POST /admin/billing-webhooks/{id}/dispatch
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Dispatch the webhook immediately. Requires admin bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/providers/seed/clear:
+    post:
+      tags:
+      - Admin Providers
+      summary: POST /admin/providers/seed/clear
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Clear any seeded telemetry data. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/settings/alerts/test-email:
+    post:
+      tags:
+      - Admin Settings
+      summary: POST /admin/settings/alerts/test-email
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Send a test alert email. Requires admin bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/tenants/{tenantID}/batches/{batchID}/cancel:
+    post:
+      tags:
+      - Admin Tenants
+      summary: POST /admin/tenants/{tenantID}/batches/{batchID}/cancel
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Cancel the batch job. Requires admin bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /admin/users/{userID}/invite:
+    post:
+      tags:
+      - Admin Users
+      summary: POST /admin/users/{userID}/invite
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Send an invite to the user. Requires admin bearer token.
+      parameters:
+      - name: userID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: User identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/billing-webhooks/{id}:
+    delete:
+      tags:
+      - User Billing Webhooks
+      summary: DELETE /user/billing-webhooks/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete billing webhooks. Requires user bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+    put:
+      tags:
+      - User Billing Webhooks
+      summary: PUT /user/billing-webhooks/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Replace billing webhooks. Requires user bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/tenants/{tenantID}/memberships/{userID}:
+    delete:
+      tags:
+      - User Tenants
+      summary: DELETE /user/tenants/{tenantID}/memberships/{userID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Delete memberships. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: userID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: User identifier.
+  /user/api-keys:
+    get:
+      tags:
+      - User API Keys
+      summary: GET /user/api-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List API keys. Requires user bearer token.
+    post:
+      tags:
+      - User API Keys
+      summary: POST /user/api-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create API keys. Requires user bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/api-keys/{apiKeyID}/usage:
+    get:
+      tags:
+      - User API Keys
+      summary: GET /user/api-keys/{apiKeyID}/usage
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get usage metrics. Requires user bearer token.
+      parameters:
+      - name: apiKeyID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: API key identifier.
+  /user/billing-webhooks:
+    get:
+      tags:
+      - User Billing Webhooks
+      summary: GET /user/billing-webhooks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List billing webhooks. Requires user bearer token.
+    post:
+      tags:
+      - User Billing Webhooks
+      summary: POST /user/billing-webhooks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create billing webhooks. Requires user bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/billing-webhooks/{id}/events:
+    get:
+      tags:
+      - User Billing Webhooks
+      summary: GET /user/billing-webhooks/{id}/events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get events. Requires user bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /user/dashboard:
+    get:
+      tags:
+      - User Dashboard
+      summary: GET /user/dashboard
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List dashboard. Requires user bearer token.
+  /user/directory/users:
+    get:
+      tags:
+      - User Directory
+      summary: GET /user/directory/users
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List users. Requires user bearer token.
+  /user/files/settings:
+    get:
+      tags:
+      - User Files
+      summary: GET /user/files/settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List settings. Requires user bearer token.
+  /user/models:
+    get:
+      tags:
+      - User Models
+      summary: GET /user/models
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List models. Requires user bearer token.
+  /user/profile:
+    get:
+      tags:
+      - User Profile
+      summary: GET /user/profile
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List profile. Requires user bearer token.
+    patch:
+      tags:
+      - User Profile
+      summary: PATCH /user/profile
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Update profile. Requires user bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdateRequest'
+  /user/tenants:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List tenants. Requires user bearer token.
+  /user/tenants/{tenantID}/api-keys:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/api-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get API keys. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    post:
+      tags:
+      - User Tenants
+      summary: POST /user/tenants/{tenantID}/api-keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create API keys for the specified resource. Requires user bearer
+        token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/tenants/{tenantID}/api-keys/{apiKeyID}/usage:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/api-keys/{apiKeyID}/usage
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get usage metrics. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: apiKeyID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: API key identifier.
+  /user/tenants/{tenantID}/batches:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get batches. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+  /user/tenants/{tenantID}/batches/{batchID}:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/batches/{batchID}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get batches. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+  /user/tenants/{tenantID}/batches/{batchID}/errors:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/batches/{batchID}/errors
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the batch error file. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+  /user/tenants/{tenantID}/batches/{batchID}/output:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/batches/{batchID}/output
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the batch output file. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+  /user/tenants/{tenantID}/files:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/files
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get files. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+  /user/tenants/{tenantID}/files/{fileID}/content:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/files/{fileID}/content
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the file content. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: fileID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File identifier.
+  /user/tenants/{tenantID}/memberships:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/memberships
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get memberships. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+    post:
+      tags:
+      - User Tenants
+      summary: POST /user/tenants/{tenantID}/memberships
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create memberships for the specified resource. Requires user bearer
+        token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/tenants/{tenantID}/summary:
+    get:
+      tags:
+      - User Tenants
+      summary: GET /user/tenants/{tenantID}/summary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get tenants. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+  /user/usage:
+    get:
+      tags:
+      - User Usage
+      summary: GET /user/usage
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List usage metrics. Requires user bearer token.
+  /user/usage-exports:
+    get:
+      tags:
+      - User Usage
+      summary: GET /user/usage-exports
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List usage exports. Requires user bearer token.
+    post:
+      tags:
+      - User Usage
+      summary: POST /user/usage-exports
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create usage exports. Requires user bearer token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/usage-exports/{id}:
+    get:
+      tags:
+      - User Usage
+      summary: GET /user/usage-exports/{id}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Get usage exports. Requires user bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /user/usage-exports/{id}/content:
+    get:
+      tags:
+      - User Usage
+      summary: GET /user/usage-exports/{id}/content
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Download the file content. Requires user bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+  /user/usage/compare:
+    get:
+      tags:
+      - User Usage
+      summary: GET /user/usage/compare
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List usage metrics. Requires user bearer token.
+  /user/usage/model/daily:
+    get:
+      tags:
+      - User Usage
+      summary: GET /user/usage/model/daily
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List model. Requires user bearer token.
+  /user/usage/tenant/daily:
+    get:
+      tags:
+      - User Usage
+      summary: GET /user/usage/tenant/daily
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: List tenant. Requires user bearer token.
+  /user/api-keys/{apiKeyID}/revoke:
+    post:
+      tags:
+      - User API Keys
+      summary: POST /user/api-keys/{apiKeyID}/revoke
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Revoke the API key. Requires user bearer token.
+      parameters:
+      - name: apiKeyID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: API key identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/api-keys/{apiKeyID}/rotate:
+    post:
+      tags:
+      - User API Keys
+      summary: POST /user/api-keys/{apiKeyID}/rotate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Rotate the API key and return a new secret. Requires user bearer
+        token.
+      parameters:
+      - name: apiKeyID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: API key identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/billing-webhooks/{id}/dispatch:
+    post:
+      tags:
+      - User Billing Webhooks
+      summary: POST /user/billing-webhooks/{id}/dispatch
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Dispatch the webhook immediately. Requires user bearer token.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/profile/password:
+    post:
+      tags:
+      - User Profile
+      summary: POST /user/profile/password
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Create password. Requires user bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserPasswordChangeRequest'
+  /user/tenants/{tenantID}/api-keys/{apiKeyID}/revoke:
+    post:
+      tags:
+      - User Tenants
+      summary: POST /user/tenants/{tenantID}/api-keys/{apiKeyID}/revoke
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Revoke the API key. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: apiKeyID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: API key identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/tenants/{tenantID}/api-keys/{apiKeyID}/rotate:
+    post:
+      tags:
+      - User Tenants
+      summary: POST /user/tenants/{tenantID}/api-keys/{apiKeyID}/rotate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Rotate the API key and return a new secret. Requires user bearer
+        token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: apiKeyID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: API key identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+  /user/tenants/{tenantID}/batches/{batchID}/cancel:
+    post:
+      tags:
+      - User Tenants
+      summary: POST /user/tenants/{tenantID}/batches/{batchID}/cancel
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+      security:
+      - bearerAuth: []
+      description: Cancel the batch job. Requires user bearer token.
+      parameters:
+      - name: tenantID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Tenant identifier.
+      - name: batchID
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericRequest'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+  schemas:
+    ModelCatalogPayload:
+      type: object
+      required:
+      - alias
+      - provider
+      - provider_model
+      properties:
+        alias:
+          type: string
+          description: Unique alias exposed to clients.
+        provider:
+          type: string
+          description: Provider slug (openai, azure, bedrock, anthropic, etc.).
+        provider_model:
+          type: string
+          description: Upstream model identifier.
+        model_type:
+          type: string
+          description: Model category (llm, embedding, image, moderation, audio_speech,
+            audio_transcription).
+        context_window:
+          type: integer
+          format: int32
+        max_output_tokens:
+          type: integer
+          format: int32
+        modalities:
+          type: array
+          items:
+            type: string
+        supports_tools:
+          type: boolean
+        price_input:
+          type: number
+          format: float
+        price_output:
+          type: number
+          format: float
+        currency:
+          type: string
+        deployment:
+          type: string
+        endpoint:
+          type: string
+        api_key:
+          type: string
+        api_version:
+          type: string
+        region:
+          type: string
+        weight:
+          type: integer
+          format: int32
+        enabled:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        pricing_tiers:
+          type: object
+          additionalProperties: true
+        provider_overrides:
+          type: object
+          additionalProperties: true
+          description: Provider-specific overrides.
+      example: *id001
+    ModelCatalogEntry:
+      type: object
+      properties:
+        alias:
+          type: string
+        provider:
+          type: string
+        provider_model:
+          type: string
+        model_type:
+          type: string
+        context_window:
+          type: integer
+          format: int32
+        max_output_tokens:
+          type: integer
+          format: int32
+        modalities_json:
+          type: string
+        supports_tools:
+          type: boolean
+        pricing_tiers_json:
+          type: string
+        price_input:
+          type: string
+        price_output:
+          type: string
+        currency:
+          type: string
+        enabled:
+          type: boolean
+        provider_config_json:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        deployment:
+          type: string
+        endpoint:
+          type: string
+        api_key:
+          type: string
+        api_version:
+          type: string
+        region:
+          type: string
+        metadata_json:
+          type: string
+        weight:
+          type: integer
+          format: int32
+      example: *id002
+    ModelCatalogStatusItem:
+      type: object
+      properties:
+        alias:
+          type: string
+        status:
+          type: string
+          enum:
+          - online
+          - degraded
+          - offline
+          - unknown
+          - disabled
+    ModelCatalogStatusResponse:
+      type: object
+      properties:
+        statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelCatalogStatusItem'
+    GenericRequest:
+      type: object
+      additionalProperties: true
+      example:
+        note: See endpoint description or docs for required fields.
+    GenericResponse:
+      type: object
+      additionalProperties: true
+      example:
+        status: ok
+    AdminLoginRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      example:
+        email: admin@example.com
+        password: changeme
+    AdminRefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      example:
+        refresh_token: refresh_token_value
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_login_at:
+          type: string
+          format: date-time
+          nullable: true
+    AdminTokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_expires_at:
+          type: string
+          format: date-time
+        method:
+          type: string
+        refresh_token:
+          type: string
+        user:
+          $ref: '#/components/schemas/AdminUser'
+    CreateTenantRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - active
+          - suspended
+      example:
+        name: Acme
+        status: active
+    UpdateTenantRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+      example:
+        name: Acme Inc
+    UpdateTenantStatusRequest:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - active
+          - suspended
+      example:
+        status: suspended
+    TenantRateLimitRequest:
+      type: object
+      properties:
+        requests_per_minute:
+          type: integer
+        tokens_per_minute:
+          type: integer
+        parallel_requests:
+          type: integer
+      example:
+        requests_per_minute: 60
+        tokens_per_minute: 60000
+        parallel_requests: 8
+    TenantModelsRequest:
+      type: object
+      properties:
+        models:
+          type: array
+          items:
+            type: string
+      example:
+        models:
+        - gpt-4o-mini
+        - text-embedding-3-small
+    TenantMembershipRequest:
+      type: object
+      required:
+      - email
+      - role
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+        password:
+          type: string
+      example:
+        email: member@example.com
+        role: viewer
+    AdminAPIKeyRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        quota:
+          type: object
+          additionalProperties: true
+        rate_limits:
+          $ref: '#/components/schemas/TenantRateLimitRequest'
+      example:
+        name: prod key
+        scopes:
+        - chat:write
+        quota:
+          budget_usd: 100
+    AdminCreateUserRequest:
+      type: object
+      required:
+      - email
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        password:
+          type: string
+        send_invite:
+          type: boolean
+      example:
+        email: user@example.com
+        name: User
+        send_invite: true
+    AdminBudgetDefaultsRequest:
+      type: object
+      properties:
+        default_usd:
+          type: number
+        warning_threshold:
+          type: number
+        refresh_schedule:
+          type: string
+        alert_emails:
+          type: array
+          items:
+            type: string
+        alert_webhooks:
+          type: array
+          items:
+            type: string
+        alert_cooldown_seconds:
+          type: integer
+      example:
+        default_usd: 100
+        warning_threshold: 0.8
+        refresh_schedule: monthly
+    AdminBudgetOverrideRequest:
+      type: object
+      properties:
+        budget_usd:
+          type: number
+        warning_threshold:
+          type: number
+        refresh_schedule:
+          type: string
+        alert_emails:
+          type: array
+          items:
+            type: string
+        alert_webhooks:
+          type: array
+          items:
+            type: string
+        alert_cooldown_seconds:
+          type: integer
+          nullable: true
+      example:
+        budget_usd: 500
+        warning_threshold: 0.9
+        refresh_schedule: monthly
+    BillingWebhookRequest:
+      type: object
+      properties:
+        url:
+          type: string
+        events:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+      example:
+        url: https://hooks.example.com/billing
+        events:
+        - invoice.created
+        enabled: true
+    UserProfileUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        theme_preference:
+          type: string
+      example:
+        name: Jane Doe
+        theme_preference: dark
+    UserPasswordChangeRequest:
+      type: object
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+      example:
+        current_password: oldpass
+        new_password: newpass
+    ChatCompletionRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            type: object
+        stream:
+          type: boolean
+      example:
+        model: gpt-4o-mini
+        messages:
+        - role: user
+          content: Hello
+        stream: false
+    ChatCompletionResponse:
+      type: object
+      example:
+        id: chatcmpl_123
+        object: chat.completion
+        choices:
+        - index: 0
+          message:
+            role: assistant
+            content: Hi!
+          finish_reason: stop
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 5
+          total_tokens: 15
+    EmbeddingRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        input:
+          type: string
+      example:
+        model: text-embedding-3-small
+        input: Hello
+    EmbeddingResponse:
+      type: object
+      example:
+        object: list
+        data:
+        - index: 0
+          embedding:
+          - 0.1
+          - 0.2
+          - 0.3
+        model: text-embedding-3-small
+    ImageGenerationRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+        size:
+          type: string
+      example:
+        model: gpt-image-1
+        prompt: A logo
+        size: 1024x1024
+    ImageGenerationResponse:
+      type: object
+      example:
+        created: 1710000000
+        data:
+        - url: https://example.com/image.png
+    AudioSpeechRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        input:
+          type: string
+        voice:
+          type: string
+        format:
+          type: string
+      example:
+        model: gpt-4o-mini-tts
+        input: Hello
+        voice: alloy
+        format: mp3
+    FileUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+        purpose:
+          type: string
+    BatchCreateRequest:
+      type: object
+      properties:
+        input_file_id:
+          type: string
+        endpoint:
+          type: string
+        completion_window:
+          type: string
+        metadata:
+          type: object
+      example:
+        input_file_id: file_123
+        endpoint: /v1/chat/completions
+        completion_window: 24h

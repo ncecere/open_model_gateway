@@ -91,31 +91,45 @@ func AsAPIError(err error) (int, string, bool) {
 	return 0, "", false
 }
 
+func (e *Executor) selectRoutes(alias string) ([]providers.Route, error) {
+	routes := e.container.Engine.SelectRoutes(alias)
+	if len(routes) == 0 {
+		return nil, NewAPIError(fiber.StatusServiceUnavailable, "no backend available for model")
+	}
+	return routes, nil
+}
+
+func (e *Executor) filterByCapabilities(routes []providers.Route, reqCaps models.CapabilityRequirements) ([]providers.Route, error) {
+	if !reqCaps.HasRequirements() {
+		return routes, nil
+	}
+	eligible := make([]providers.Route, 0, len(routes))
+	for _, route := range routes {
+		if route.SupportsCapabilities(reqCaps) {
+			eligible = append(eligible, route)
+		}
+	}
+	if len(eligible) == 0 {
+		return nil, NewAPIError(fiber.StatusBadRequest, fmt.Sprintf("model does not support %s input", reqCaps.Describe()))
+	}
+	return eligible, nil
+}
+
 // Chat executes a chat completion against the routed providers.
 func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias string, req models.ChatRequest, traceID string, idempotencyKey string) (ChatResult, error) {
 	ctx, span := execTracer.Start(ctx, "Executor.Chat", trace.WithAttributes(attribute.String("alias", alias)))
 	defer span.End()
-	routes := e.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		err := NewAPIError(fiber.StatusServiceUnavailable, "no backend available for model")
+	routes, err := e.selectRoutes(alias)
+	if err != nil {
 		e.spanError(span, err)
 		return ChatResult{}, err
 	}
 
 	reqCaps := req.CapabilityRequirements()
-	if reqCaps.HasRequirements() {
-		eligible := make([]providers.Route, 0, len(routes))
-		for _, route := range routes {
-			if route.SupportsCapabilities(reqCaps) {
-				eligible = append(eligible, route)
-			}
-		}
-		if len(eligible) == 0 {
-			err := NewAPIError(fiber.StatusBadRequest, fmt.Sprintf("model does not support %s input", reqCaps.Describe()))
-			e.spanError(span, err)
-			return ChatResult{}, err
-		}
-		routes = eligible
+	routes, err = e.filterByCapabilities(routes, reqCaps)
+	if err != nil {
+		e.spanError(span, err)
+		return ChatResult{}, err
 	}
 
 	budgetStatus, err := e.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
@@ -266,9 +280,8 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 	}
 	ctx, span := execTracer.Start(ctx, "Executor.Image", trace.WithAttributes(attribute.String("alias", alias)))
 	defer span.End()
-	routes := e.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		err := NewAPIError(fiber.StatusServiceUnavailable, "no backend available for model")
+	routes, err := e.selectRoutes(alias)
+	if err != nil {
 		e.spanError(span, err)
 		return ImageResult{}, err
 	}
@@ -426,9 +439,8 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 func (e *Executor) Embed(ctx context.Context, rc *requestctx.Context, alias string, req models.EmbeddingsRequest, traceID string) (EmbeddingsResult, error) {
 	ctx, span := execTracer.Start(ctx, "Executor.Embed", trace.WithAttributes(attribute.String("alias", alias)))
 	defer span.End()
-	routes := e.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		err := NewAPIError(fiber.StatusServiceUnavailable, "no backend available for model")
+	routes, err := e.selectRoutes(alias)
+	if err != nil {
 		e.spanError(span, err)
 		return EmbeddingsResult{}, err
 	}
@@ -572,9 +584,8 @@ func (e *Executor) Embed(ctx context.Context, rc *requestctx.Context, alias stri
 func (e *Executor) Moderate(ctx context.Context, rc *requestctx.Context, alias string, inputs []string, traceID string) (ModerationResult, error) {
 	ctx, span := execTracer.Start(ctx, "Executor.Moderate", trace.WithAttributes(attribute.String("alias", alias)))
 	defer span.End()
-	routes := e.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		err := NewAPIError(fiber.StatusServiceUnavailable, "no backend available for model")
+	routes, err := e.selectRoutes(alias)
+	if err != nil {
 		e.spanError(span, err)
 		return ModerationResult{}, err
 	}

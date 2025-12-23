@@ -12,64 +12,64 @@ import (
 )
 
 func (w *Worker) executeChatItem(ctx context.Context, rc *requestctx.Context, traceID string, alias string, req models.ChatRequest) itemOutcome {
-    callCtx := requestctx.WithContext(ctx, rc)
-    result, err := w.executor.Chat(callCtx, rc, alias, req, traceID, "")
-    if err != nil {
-        return mapExecutorError(traceID, err)
-    }
-    response := convertChatResponse(result.Response, alias)
-    data, err := json.Marshal(response)
-    if err != nil {
-        return newSerializationOutcome(traceID, err)
-    }
-    requestID := response.ID
-    if requestID == "" {
-        requestID = traceID
-    }
-    return itemOutcome{statusCode: fiber.StatusOK, requestID: requestID, response: data}
+	callCtx := requestctx.WithContext(ctx, rc)
+	result, err := w.executor.Chat(callCtx, rc, alias, req, traceID, "")
+	if err != nil {
+		return mapExecutorError(traceID, err)
+	}
+	response := convertChatResponse(result.Response, alias)
+	data, err := json.Marshal(response)
+	if err != nil {
+		return newSerializationOutcome(traceID, err)
+	}
+	requestID := response.ID
+	if requestID == "" {
+		requestID = traceID
+	}
+	return itemOutcome{statusCode: fiber.StatusOK, requestID: requestID, response: data}
 }
 
 func (w *Worker) executeEmbeddingItem(ctx context.Context, rc *requestctx.Context, traceID string, alias string, req models.EmbeddingsRequest) itemOutcome {
-    callCtx := requestctx.WithContext(ctx, rc)
-    result, err := w.executor.Embed(callCtx, rc, alias, req, traceID)
-    if err != nil {
-        return mapExecutorError(traceID, err)
-    }
-    response := convertEmbeddingResponse(result.Response, alias)
-    data, err := json.Marshal(response)
-    if err != nil {
-        return newSerializationOutcome(traceID, err)
-    }
-    return itemOutcome{statusCode: fiber.StatusOK, requestID: traceID, response: data}
+	callCtx := requestctx.WithContext(ctx, rc)
+	result, err := w.executor.Embed(callCtx, rc, alias, req, traceID)
+	if err != nil {
+		return mapExecutorError(traceID, err)
+	}
+	response := convertEmbeddingResponse(result.Response, alias)
+	data, err := json.Marshal(response)
+	if err != nil {
+		return newSerializationOutcome(traceID, err)
+	}
+	return itemOutcome{statusCode: fiber.StatusOK, requestID: traceID, response: data}
 }
 
 func (w *Worker) executeModerationItem(ctx context.Context, rc *requestctx.Context, traceID string, alias string, inputs []string) itemOutcome {
-    callCtx := requestctx.WithContext(ctx, rc)
-    result, err := w.executor.Moderate(callCtx, rc, alias, inputs, traceID)
-    if err != nil {
-        return mapExecutorError(traceID, err)
-    }
+	callCtx := requestctx.WithContext(ctx, rc)
+	result, err := w.executor.Moderate(callCtx, rc, alias, inputs, traceID)
+	if err != nil {
+		return mapExecutorError(traceID, err)
+	}
 	response := convertModerationResponse(result.Response, alias)
-    data, err := json.Marshal(response)
-    if err != nil {
-        return newSerializationOutcome(traceID, err)
-    }
-    return itemOutcome{statusCode: fiber.StatusOK, requestID: traceID, response: data}
+	data, err := json.Marshal(response)
+	if err != nil {
+		return newSerializationOutcome(traceID, err)
+	}
+	return itemOutcome{statusCode: fiber.StatusOK, requestID: traceID, response: data}
 }
 
 func (w *Worker) executeImageOperation(ctx context.Context, rc *requestctx.Context, traceID, alias string, cfg executor.ImageOperationConfig) itemOutcome {
-    callCtx := requestctx.WithContext(ctx, rc)
-    cfg.Alias = alias
-    result, err := w.executor.Image(callCtx, rc, traceID, cfg)
-    if err != nil {
-        return mapExecutorError(traceID, err)
-    }
-    payload := convertImageResponse(result.Response)
-    data, err := json.Marshal(payload)
-    if err != nil {
-        return newSerializationOutcome(traceID, err)
-    }
-    return itemOutcome{statusCode: fiber.StatusOK, requestID: traceID, response: data}
+	callCtx := requestctx.WithContext(ctx, rc)
+	cfg.Alias = alias
+	result, err := w.executor.Image(callCtx, rc, traceID, cfg)
+	if err != nil {
+		return mapExecutorError(traceID, err)
+	}
+	payload := convertImageResponse(result.Response)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return newSerializationOutcome(traceID, err)
+	}
+	return itemOutcome{statusCode: fiber.StatusOK, requestID: traceID, response: data}
 }
 
 func mapExecutorError(traceID string, err error) itemOutcome {

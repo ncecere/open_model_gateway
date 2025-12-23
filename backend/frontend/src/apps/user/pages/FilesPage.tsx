@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useDefaultSelection } from "@/hooks/useDefaultSelection";
 import { useUserFilesQuery, useUserTenantsQuery } from "../hooks/useUserData";
 import type { UserFileRecord } from "../../../api/user/files";
 import { downloadUserFile } from "../../../api/user/files";
@@ -22,13 +23,14 @@ export function UserFilesPage() {
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
 
-  useEffect(() => {
-    if (selectedTenantId || tenantOptions.length === 0) {
-      return;
-    }
-    const personal = tenantOptions.find((tenant) => tenant.is_personal);
-    setSelectedTenantId(personal?.tenant_id ?? tenantOptions[0]?.tenant_id);
-  }, [selectedTenantId, tenantOptions]);
+  useDefaultSelection({
+    items: tenantOptions,
+    selected: selectedTenantId,
+    onChange: setSelectedTenantId,
+    getValue: (tenant) => tenant.tenant_id,
+    getDefault: (items) =>
+      items.find((tenant) => tenant.is_personal)?.tenant_id ?? items[0]?.tenant_id,
+  });
 
   const {
     searchTerm,

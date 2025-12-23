@@ -9,6 +9,14 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 )
 
+type imageOperationType string
+
+const (
+	imageOperationGeneration imageOperationType = "generation"
+	imageOperationEdit       imageOperationType = "edit"
+	imageOperationVariation  imageOperationType = "variation"
+)
+
 func newImageGenerationOperationConfig(req models.ImageRequest) executor.ImageOperationConfig {
 	baseReq := req
 	size := strings.TrimSpace(req.Size)

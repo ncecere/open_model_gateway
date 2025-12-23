@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { ChevronDown, Download } from "lucide-react";
+import { Download } from "lucide-react";
 
 import { api } from "@/api/client";
 import {
@@ -26,7 +26,6 @@ import type {
 } from "@/api/usage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -47,29 +46,22 @@ import {
 } from "@/components/charts/UsageComparisonChart";
 import { SummaryCard } from "@/ui/kit/Cards";
 import { ChartCard } from "@/ui/kit/ChartCard";
-import { QueryAlert } from "@/features/usage";
+import {
+  QueryAlert,
+  UsageDailySkeleton,
+  UsageDailyTable,
+  UsageFilters,
+  formatTokensShort,
+  formatUsageUSD,
+  parseSpendValue,
+  useUsageRange,
+} from "@/features/usage";
 import { formatUsageDate } from "@/lib/dates";
-import { formatTokensShort } from "@/lib/numbers";
 import { getBrowserTimezone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { useDirectoryData } from "@/providers/DirectoryProvider";
 import { useToast } from "@/hooks/use-toast";
-
-const currencyFormatter = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-const formatSpendValue = (usd?: number, cents?: number) =>
-  currencyFormatter.format(
-    typeof usd === "number"
-      ? usd
-      : typeof cents === "number"
-        ? cents / 100
-        : 0,
-  );
+import { useDefaultSelection } from "@/hooks/useDefaultSelection";
 
 const EXPORT_POLL_INTERVAL_MS = 2000;
 const EXPORT_POLL_ATTEMPTS = 30;
@@ -112,50 +104,34 @@ export function UsagePage() {
   const [userMetric, setUserMetric] = useState<UsageComparisonMetric>("spend");
   const [exporting, setExporting] = useState(false);
 
-  useEffect(() => {
-    if (!tenants.length) {
-      setSelectedTenantId(undefined);
-      return;
-    }
-    if (!selectedTenantId || !tenants.find((tenant) => tenant.id === selectedTenantId)) {
-      setSelectedTenantId(tenants[0].id);
-    }
-  }, [tenants, selectedTenantId]);
+  useDefaultSelection({
+    items: tenants,
+    selected: selectedTenantId,
+    onChange: setSelectedTenantId,
+    getValue: (tenant) => tenant.id,
+  });
+  useDefaultSelection({
+    items: users,
+    selected: selectedUserId,
+    onChange: setSelectedUserId,
+    getValue: (user) => user.id,
+  });
+  useDefaultSelection({
+    items: models,
+    selected: selectedModelAlias,
+    onChange: setSelectedModelAlias,
+    getValue: (model) => model.alias,
+  });
 
-  useEffect(() => {
-    if (!users.length) {
-      setSelectedUserId(undefined);
-      return;
-    }
-    if (!selectedUserId || !users.find((user) => user.id === selectedUserId)) {
-      setSelectedUserId(users[0].id);
-    }
-  }, [users, selectedUserId]);
-
-  useEffect(() => {
-    if (!models.length) {
-      setSelectedModelAlias(undefined);
-      return;
-    }
-    if (!selectedModelAlias || !models.find((model) => model.alias === selectedModelAlias)) {
-      setSelectedModelAlias(models[0].alias);
-    }
-  }, [models, selectedModelAlias]);
-
-  const [startInput, setStartInput] = useState(() =>
-    formatDateInput(addDays(startOfToday(), -6)),
-  );
-  const [endInput, setEndInput] = useState(() => formatDateInput(startOfToday()));
-  const rangeResult = useMemo(
-    () => deriveRangeISO(startInput, endInput),
-    [startInput, endInput],
-  );
-  const activeRange = rangeResult?.range;
-  const rangeError = rangeResult?.error;
-  const rangeDisplay =
-    activeRange && !rangeError
-      ? `${formatInputDisplay(startInput)} – ${formatInputDisplay(endInput)}`
-      : null;
+  const {
+    startInput,
+    endInput,
+    setStartInput,
+    setEndInput,
+    range: activeRange,
+    rangeError,
+    rangeDisplay,
+  } = useUsageRange({ defaultDays: 6 });
 
   const overviewQueryEnabled = Boolean(activeRange && !rangeError);
   const usageQuery = useUsageOverview(
@@ -280,44 +256,27 @@ export function UsagePage() {
     return topUserIds.map((id) => map.get(id)).filter(Boolean) as UsageComparisonSeries[];
   }, [userComparison.data?.series, topUserIds]);
 
-  useEffect(() => {
-    const items = tenantBreakdown.data?.items ?? [];
-    if (!items.length) {
-      if (selectedTopTenant !== undefined) {
-        setSelectedTopTenant(undefined);
-      }
-      return;
-    }
-    if (selectedTopTenant && !items.some((item) => item.id === selectedTopTenant)) {
-      setSelectedTopTenant(undefined);
-    }
-  }, [tenantBreakdown.data?.items, selectedTopTenant]);
-
-  useEffect(() => {
-    const items = modelBreakdown.data?.items ?? [];
-    if (!items.length) {
-      if (selectedTopModel !== undefined) {
-        setSelectedTopModel(undefined);
-      }
-      return;
-    }
-    if (selectedTopModel && !items.some((item) => item.id === selectedTopModel)) {
-      setSelectedTopModel(undefined);
-    }
-  }, [modelBreakdown.data?.items, selectedTopModel]);
-
-  useEffect(() => {
-    const items = userBreakdown.data?.items ?? [];
-    if (!items.length) {
-      if (selectedTopUser !== undefined) {
-        setSelectedTopUser(undefined);
-      }
-      return;
-    }
-    if (selectedTopUser && !items.some((item) => item.id === selectedTopUser)) {
-      setSelectedTopUser(undefined);
-    }
-  }, [userBreakdown.data?.items, selectedTopUser]);
+  useDefaultSelection({
+    items: tenantBreakdown.data?.items ?? [],
+    selected: selectedTopTenant,
+    onChange: setSelectedTopTenant,
+    getValue: (item) => item.id,
+    selectFirst: false,
+  });
+  useDefaultSelection({
+    items: modelBreakdown.data?.items ?? [],
+    selected: selectedTopModel,
+    onChange: setSelectedTopModel,
+    getValue: (item) => item.id,
+    selectFirst: false,
+  });
+  useDefaultSelection({
+    items: userBreakdown.data?.items ?? [],
+    selected: selectedTopUser,
+    onChange: setSelectedTopUser,
+    getValue: (item) => item.id,
+    selectFirst: false,
+  });
 
   const selectedTenant = tenants.find((tenant) => tenant.id === selectedTenantId);
   const selectedUser = users.find((user) => user.id === selectedUserId);
@@ -445,30 +404,16 @@ export function UsagePage() {
         </div>
         <div className="w-full space-y-2 md:max-w-xl">
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <div className="grid flex-1 gap-2 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor="usage-start">Start date</Label>
-                <Input
-                  id="usage-start"
-                  type="date"
-                  value={startInput}
-                  onChange={(event) => {
-                    setStartInput(event.target.value);
-                  }}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="usage-end">End date</Label>
-                <Input
-                  id="usage-end"
-                  type="date"
-                  value={endInput}
-                  onChange={(event) => {
-                    setEndInput(event.target.value);
-                  }}
-                />
-              </div>
-            </div>
+            <UsageFilters
+              startInput={startInput}
+              endInput={endInput}
+              onStartChange={setStartInput}
+              onEndChange={setEndInput}
+              rangeError={rangeError}
+              rangeDisplay={rangeDisplay}
+              timezone={timezone}
+              idPrefix="usage"
+            />
             <Button
               variant="outline"
               onClick={handleExport}
@@ -478,13 +423,6 @@ export function UsagePage() {
               <Download className="mr-2 h-4 w-4" /> Export CSV
             </Button>
           </div>
-          {rangeError ? (
-            <p className="text-xs text-destructive">{rangeError}</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Times shown in {timezone}. Range: {rangeDisplay}
-            </p>
-          )}
         </div>
       </div>
 
@@ -514,7 +452,7 @@ export function UsagePage() {
               title="Total spend"
               value={
                 usageQuery.data
-                  ? formatSpendValue(totalCostUsd, totalCostCents)
+                  ? formatUsageUSD(totalCostUsd, totalCostCents)
                   : "—"
               }
               description="Usage-based fees"
@@ -588,7 +526,7 @@ export function UsagePage() {
                 onRetry={usageQuery.refetch}
               />
               {usageQuery.isLoading ? (
-                <DailySkeleton />
+                <UsageDailySkeleton />
               ) : (usageQuery.data?.points ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground">No usage recorded.</p>
               ) : (
@@ -608,7 +546,7 @@ export function UsagePage() {
                         <TableCell className="text-right">{point.requests.toLocaleString()}</TableCell>
                         <TableCell className="text-right">{point.tokens.toLocaleString()}</TableCell>
                         <TableCell className="text-right">
-                          {formatSpendValue(point.cost_usd, point.cost_cents)}
+                          {formatUsageUSD(point.cost_usd, point.cost_cents)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -645,8 +583,8 @@ export function UsagePage() {
                 {selectedTenant ? (
                   <p className="text-xs text-muted-foreground">
                     Status: {selectedTenant.status} · Budget limit{" "}
-                    {formatSpendValue(selectedTenant.budget_limit_usd ?? 0, undefined)} · Used{" "}
-                    {formatSpendValue(selectedTenant.budget_used_usd ?? 0, undefined)}
+                    {formatUsageUSD(selectedTenant.budget_limit_usd ?? 0, undefined)} · Used{" "}
+                    {formatUsageUSD(selectedTenant.budget_used_usd ?? 0, undefined)}
                   </p>
                 ) : null}
               </div>
@@ -657,7 +595,7 @@ export function UsagePage() {
               {!selectedTenantId ? (
                 <p className="text-sm text-muted-foreground">Select a tenant to begin.</p>
               ) : tenantDailyQuery.isLoading ? (
-                <DailySkeleton />
+                <UsageDailySkeleton />
               ) : tenantDailyQuery.data && tenantDailyQuery.data.days.length ? (
                 <TenantDailyList
                   days={tenantDailyQuery.data.days}
@@ -704,7 +642,7 @@ export function UsagePage() {
               {!selectedUserId ? (
                 <p className="text-sm text-muted-foreground">Select a user to begin.</p>
               ) : userDailyQuery.isLoading ? (
-                <DailySkeleton />
+                <UsageDailySkeleton />
               ) : userDailyQuery.data && userDailyQuery.data.days.length ? (
                 <UserDailyList
                   days={userDailyQuery.data.days}
@@ -753,7 +691,7 @@ export function UsagePage() {
               {!selectedModelAlias ? (
                 <p className="text-sm text-muted-foreground">Select a model to begin.</p>
               ) : modelDailyQuery.isLoading ? (
-                <DailySkeleton />
+                <UsageDailySkeleton />
               ) : modelDailyQuery.data && modelDailyQuery.data.days.length ? (
                 <ModelDailyList
                   days={modelDailyQuery.data.days}
@@ -772,7 +710,7 @@ export function UsagePage() {
 
 function TenantDailyList({ days, timezone }: { days: TenantDailyUsageDay[]; timezone: string }) {
   return (
-    <ExpandableDailyList<TenantDailyUsageKey, TenantDailyUsageDay>
+    <UsageDailyTable<TenantDailyUsageKey, TenantDailyUsageDay>
       days={days}
       timezone={timezone}
       emptyMessage="No key activity for this day."
@@ -784,7 +722,7 @@ function TenantDailyList({ days, timezone }: { days: TenantDailyUsageDay[]; time
           </div>
           <span className="text-right">{key.requests.toLocaleString()}</span>
           <span className="text-right">{key.tokens.toLocaleString()}</span>
-          <span className="text-right">{formatSpendValue(key.cost_usd, key.cost_cents)}</span>
+          <span className="text-right">{formatUsageUSD(key.cost_usd, key.cost_cents)}</span>
         </div>
       )}
       breakdownHeaders={["API key", "Requests", "Tokens", "Spend"]}
@@ -795,7 +733,7 @@ function TenantDailyList({ days, timezone }: { days: TenantDailyUsageDay[]; time
 
 function UserDailyList({ days, timezone }: { days: UserDailyUsageDay[]; timezone: string }) {
   return (
-    <ExpandableDailyList<UserDailyTenantUsage, UserDailyUsageDay>
+    <UsageDailyTable<UserDailyTenantUsage, UserDailyUsageDay>
       days={days}
       timezone={timezone}
       emptyMessage="No tenant activity for this day."
@@ -807,7 +745,7 @@ function UserDailyList({ days, timezone }: { days: UserDailyUsageDay[]; timezone
           </div>
           <span className="text-right">{tenant.requests.toLocaleString()}</span>
           <span className="text-right">{tenant.tokens.toLocaleString()}</span>
-          <span className="text-right">{formatSpendValue(tenant.cost_usd, tenant.cost_cents)}</span>
+          <span className="text-right">{formatUsageUSD(tenant.cost_usd, tenant.cost_cents)}</span>
         </div>
       )}
       breakdownHeaders={["Tenant", "Requests", "Tokens", "Spend"]}
@@ -818,7 +756,7 @@ function UserDailyList({ days, timezone }: { days: UserDailyUsageDay[]; timezone
 
 function ModelDailyList({ days, timezone }: { days: ModelDailyUsageDay[]; timezone: string }) {
   return (
-    <ExpandableDailyList<ModelDailyTenantUsage, ModelDailyUsageDay>
+    <UsageDailyTable<ModelDailyTenantUsage, ModelDailyUsageDay>
       days={days}
       timezone={timezone}
       emptyMessage="No tenant activity for this model on this day."
@@ -830,7 +768,7 @@ function ModelDailyList({ days, timezone }: { days: ModelDailyUsageDay[]; timezo
           </div>
           <span className="text-right">{tenant.requests.toLocaleString()}</span>
           <span className="text-right">{tenant.tokens.toLocaleString()}</span>
-          <span className="text-right">{formatSpendValue(tenant.cost_usd, tenant.cost_cents)}</span>
+          <span className="text-right">{formatUsageUSD(tenant.cost_usd, tenant.cost_cents)}</span>
         </div>
       )}
       breakdownHeaders={["Tenant", "Requests", "Tokens", "Spend"]}
@@ -973,7 +911,7 @@ function buildChartData(points?: UsageBreakdownSeriesPoint[]): UsageBreakdownDat
     label: point.date,
     requests: point.requests,
     tokens: point.tokens,
-    spend: deriveSpendValue(point.cost_usd, point.cost_cents),
+    spend: parseSpendValue(point.cost_usd, point.cost_cents),
   }));
 }
 
@@ -985,7 +923,7 @@ function metricValue(metric: UsageComparisonMetric, item: UsageBreakdownItem): n
       return item.tokens;
     case "spend":
     default:
-      return deriveSpendValue(item.cost_usd, item.cost_cents);
+      return parseSpendValue(item.cost_usd, item.cost_cents);
   }
 }
 
@@ -994,159 +932,4 @@ function formatMetricDisplay(metric: UsageComparisonMetric, value: number) {
     return `$${value.toFixed(2)}`;
   }
   return value.toLocaleString();
-}
-
-function deriveSpendValue(costUSD?: number, costCents?: number) {
-  if (typeof costUSD === "number" && !Number.isNaN(costUSD) && costUSD !== 0) {
-    return costUSD;
-  }
-  if (typeof costCents === "number") {
-    return costCents / 100;
-  }
-  return 0;
-}
-
-type DailySummary = {
-  date: string;
-  requests: number;
-  tokens: number;
-  cost_cents: number;
-  cost_usd?: number;
-};
-
-interface ExpandableDailyListProps<T, D extends DailySummary = DailySummary> {
-  days: D[];
-  timezone: string;
-  breakdownHeaders: string[];
-  getBreakdown: (day: D) => T[];
-  renderBreakdown: (item: T) => ReactNode;
-  emptyMessage: string;
-}
-
-function ExpandableDailyList<T, D extends DailySummary>({
-  days,
-  timezone,
-  breakdownHeaders,
-  getBreakdown,
-  renderBreakdown,
-  emptyMessage,
-}: ExpandableDailyListProps<T, D>) {
-  const [openState, setOpenState] = useState<Record<string, boolean>>({});
-
-  if (!days.length) {
-    return null;
-  }
-
-  const toggle = (date: string) => {
-    setOpenState((prev) => ({ ...prev, [date]: !prev[date] }));
-  };
-
-  return (
-    <div className="divide-y rounded-md border">
-      {days.map((day) => {
-        const isOpen = openState[day.date] ?? false;
-        const breakdown = getBreakdown(day);
-        return (
-          <div key={day.date}>
-            <button
-              type="button"
-              onClick={() => toggle(day.date)}
-              className="flex w-full items-center gap-4 p-4 text-left"
-            >
-              <ChevronDown className={`h-4 w-4 flex-none transition ${isOpen ? "rotate-180" : ""}`} />
-              <div className="flex flex-1 flex-col gap-1">
-                <p className="font-medium">{formatUsageDate(day.date, timezone)}</p>
-                <p className="text-xs text-muted-foreground">
-                  {breakdown.length ? `${breakdown.length} entries` : emptyMessage}
-                </p>
-              </div>
-              <div className="flex flex-none gap-6 text-sm text-muted-foreground">
-                <span className="w-20 text-right">{day.requests.toLocaleString()} req</span>
-                <span className="w-24 text-right">{day.tokens.toLocaleString()} tokens</span>
-                <span className="w-20 text-right">{formatSpendValue(day.cost_usd, day.cost_cents)}</span>
-              </div>
-            </button>
-            {isOpen ? (
-              <div className="space-y-3 border-t bg-muted/30 p-4 text-sm">
-                {breakdown.length ? (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 text-xs uppercase text-muted-foreground">
-                      {breakdownHeaders.map((header) => (
-                        <span key={header}>{header}</span>
-                      ))}
-                    </div>
-                    {breakdown.map((item, idx) => (
-                      <div key={idx}>{renderBreakdown(item)}</div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">{emptyMessage}</p>
-                )}
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function DailySkeleton() {
-  return (
-    <div className="space-y-2">
-      {[...Array(3)].map((_, idx) => (
-        <Skeleton key={idx} className="h-16 w-full" />
-      ))}
-    </div>
-  );
-}
-
-function startOfToday() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-function addDays(date: Date, amount: number) {
-  return new Date(date.getTime() + amount * 24 * 60 * 60 * 1000);
-}
-
-function formatDateInput(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseDateInput(value: string): Date | null {
-  if (!value) return null;
-  const [yearStr, monthStr, dayStr] = value.split("-");
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const day = Number(dayStr);
-  if (!year || !month || !day) {
-    return null;
-  }
-  return new Date(year, month - 1, day);
-}
-
-function formatInputDisplay(value: string) {
-  const parsed = parseDateInput(value);
-  if (!parsed) {
-    return "Select dates";
-  }
-  return parsed.toLocaleDateString();
-}
-
-function deriveRangeISO(startInput: string, endInput: string) {
-  const startDate = parseDateInput(startInput);
-  const endDate = parseDateInput(endInput);
-  if (!startDate || !endDate) {
-    return { error: "Select a valid start and end date." };
-  }
-  if (endDate.getTime() < startDate.getTime()) {
-    return { error: "End date must be after start date." };
-  }
-  const startISO = startDate.toISOString();
-  const endISO = addDays(endDate, 1).toISOString();
-  return { range: { start: startISO, end: endISO } };
 }

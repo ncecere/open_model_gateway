@@ -145,6 +145,22 @@ func (h *batchHandler) streamBatchFile(c *fiber.Ctx, output bool) error {
 	return c.SendStream(reader)
 }
 
+func parseBatchPagination(c *fiber.Ctx) (int32, int32) {
+	limit := int32(25)
+	offset := int32(0)
+	if val := strings.TrimSpace(c.Query("limit")); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil && parsed > 0 {
+			limit = int32(parsed)
+		}
+	}
+	if val := strings.TrimSpace(c.Query("offset")); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil && parsed >= 0 {
+			offset = int32(parsed)
+		}
+	}
+	return limit, offset
+}
+
 func parseBatchID(c *fiber.Ctx) (uuid.UUID, error) {
 	batchID, err := uuid.Parse(strings.TrimSpace(c.Params("batchID")))
 	if err != nil {

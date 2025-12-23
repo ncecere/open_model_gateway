@@ -111,6 +111,7 @@ func New(container *app.Container, health runtime.HealthReporter) (*Server, erro
 	adminroutes.Register(app, container)
 	userroutes.Register(app, container)
 	publicroutes.Register(app, container)
+	registerOpenAPIRoutes(app)
 	mountEmbeddedUI(app)
 
 	return &Server{

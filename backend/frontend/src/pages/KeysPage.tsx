@@ -56,6 +56,7 @@ import {
   RateLimitCard,
   formatScheduleLabel,
 } from "@/features/api-keys";
+import { useDefaultSelection } from "@/hooks/useDefaultSelection";
 
 const TENANTS_QUERY_KEY = ["tenants", "list"] as const;
 
@@ -101,12 +102,12 @@ export function KeysPage() {
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(
     undefined,
   );
-
-  useEffect(() => {
-    if (!selectedTenantId && tenants.length > 0) {
-      setSelectedTenantId(tenants[0].id);
-    }
-  }, [selectedTenantId, tenants]);
+  useDefaultSelection({
+    items: tenants,
+    selected: selectedTenantId,
+    onChange: setSelectedTenantId,
+    getValue: (tenant) => tenant.id,
+  });
 
   const keysQuery = useQuery({
     queryKey: ["admin-api-keys"],

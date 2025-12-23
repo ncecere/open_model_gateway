@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, X } from "lucide-react";
+import { FormProvider } from "react-hook-form";
 
 import {
   getBudgetDefaults,
@@ -33,50 +33,18 @@ import {
   type AdminKeyRecord,
   type AdminKeyScope,
 } from "@/api/admin-keys";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BudgetSettingsTab } from "@/pages/settings/BudgetSettingsTab";
+import { RateLimitSettingsTab } from "@/pages/settings/RateLimitSettingsTab";
+import { FileSettingsTab } from "@/pages/settings/FileSettingsTab";
+import { BatchSettingsTab } from "@/pages/settings/BatchSettingsTab";
+import { AlertSettingsTab } from "@/pages/settings/AlertSettingsTab";
+import { DefaultModelsTab } from "@/pages/settings/DefaultModelsTab";
+import { AdminKeysTab } from "@/pages/settings/AdminKeysTab";
+import { OverviewSettingsTab } from "@/pages/settings/OverviewSettingsTab";
+import { useSettingsForm } from "@/pages/settings/useSettingsForm";
 
 const REFRESH_OPTIONS = [
   { value: "calendar_month", label: "Calendar month" },
@@ -147,35 +115,8 @@ export function SettingsPage() {
     queryFn: listAdminKeys,
   });
 
-  const [formBudget, setFormBudget] = useState("");
-  const [formThreshold, setFormThreshold] = useState("");
-  const [formSchedule, setFormSchedule] = useState("calendar_month");
-  const [formCooldown, setFormCooldown] = useState("3600");
-  const [formEmails, setFormEmails] = useState("");
-  const [formWebhooks, setFormWebhooks] = useState("");
   const [newDefaultModel, setNewDefaultModel] = useState("");
   const [activeTab, setActiveTab] = useState("budgets");
-  const [formRequestsPerMinute, setFormRequestsPerMinute] = useState("");
-  const [formTokensPerMinute, setFormTokensPerMinute] = useState("");
-  const [formParallelKey, setFormParallelKey] = useState("");
-  const [formParallelTenant, setFormParallelTenant] = useState("");
-  const [fileMaxSize, setFileMaxSize] = useState("");
-  const [fileDefaultTTL, setFileDefaultTTL] = useState("");
-  const [fileMaxTTL, setFileMaxTTL] = useState("");
-  const [batchMaxRequests, setBatchMaxRequests] = useState("");
-  const [batchMaxConcurrency, setBatchMaxConcurrency] = useState("");
-  const [batchDefaultTTL, setBatchDefaultTTL] = useState("");
-  const [batchMaxTTL, setBatchMaxTTL] = useState("");
-  const [smtpHost, setSmtpHost] = useState("");
-  const [smtpPort, setSmtpPort] = useState("");
-  const [smtpUsername, setSmtpUsername] = useState("");
-  const [smtpPassword, setSmtpPassword] = useState("");
-  const [smtpFrom, setSmtpFrom] = useState("");
-  const [smtpUseTLS, setSmtpUseTLS] = useState(true);
-  const [smtpSkipVerify, setSmtpSkipVerify] = useState(false);
-  const [smtpTimeout, setSmtpTimeout] = useState("");
-  const [webhookTimeout, setWebhookTimeout] = useState("");
-  const [webhookRetries, setWebhookRetries] = useState("");
   const [testEmail, setTestEmail] = useState("");
   const [createAdminKeyOpen, setCreateAdminKeyOpen] = useState(false);
   const [issuedAdminToken, setIssuedAdminToken] = useState<string | null>(null);
@@ -185,83 +126,20 @@ export function SettingsPage() {
   const [pendingAdminRevoke, setPendingAdminRevoke] =
     useState<AdminKeyRecord | null>(null);
 
-  useEffect(() => {
-    if (!defaults) {
-      return;
-    }
-    setFormBudget(defaults.default_usd.toString());
-    setFormThreshold(defaults.warning_threshold_perc.toString());
-    setFormSchedule(defaults.refresh_schedule);
-    setFormCooldown((defaults.alert.cooldown_seconds ?? 3600).toString());
-    setFormEmails((defaults.alert.emails ?? []).join(", "));
-    setFormWebhooks((defaults.alert.webhooks ?? []).join(", "));
-  }, [defaults]);
-
   const rateLimitDefaults = rateLimitQuery.data;
   const fileSettings = fileSettingsQuery.data;
   const batchSettings = batchSettingsQuery.data;
+  const alertSettings = alertSettingsQuery.data;
 
-  useEffect(() => {
-    if (!rateLimitDefaults) {
-      return;
-    }
-    setFormRequestsPerMinute(rateLimitDefaults.requests_per_minute.toString());
-    setFormTokensPerMinute(rateLimitDefaults.tokens_per_minute.toString());
-    setFormParallelKey(rateLimitDefaults.parallel_requests_key.toString());
-    setFormParallelTenant(
-      rateLimitDefaults.parallel_requests_tenant.toString(),
-    );
-  }, [rateLimitDefaults]);
-
-  useEffect(() => {
-    if (!fileSettings) {
-      return;
-    }
-    setFileMaxSize(fileSettings.max_size_mb.toString());
-    setFileDefaultTTL(fileSettings.default_ttl_seconds.toString());
-    setFileMaxTTL(fileSettings.max_ttl_seconds.toString());
-  }, [fileSettings]);
-
-  useEffect(() => {
-    if (!batchSettings) {
-      return;
-    }
-    setBatchMaxRequests(batchSettings.max_requests.toString());
-    setBatchMaxConcurrency(batchSettings.max_concurrency.toString());
-    setBatchDefaultTTL(batchSettings.default_ttl_seconds.toString());
-    setBatchMaxTTL(batchSettings.max_ttl_seconds.toString());
-  }, [batchSettings]);
-
-  useEffect(() => {
-    const alertSettings = alertSettingsQuery.data;
-    if (!alertSettings) {
-      return;
-    }
-    setSmtpHost(alertSettings.smtp?.host ?? "");
-    setSmtpPort(
-      alertSettings.smtp?.port != null ? alertSettings.smtp.port.toString() : ""
-    );
-    setSmtpUsername(alertSettings.smtp?.username ?? "");
-    setSmtpPassword(alertSettings.smtp?.password ?? "");
-    setSmtpFrom(alertSettings.smtp?.from ?? "");
-    setSmtpUseTLS(Boolean(alertSettings.smtp?.use_tls));
-    setSmtpSkipVerify(Boolean(alertSettings.smtp?.skip_tls_verify));
-    setSmtpTimeout(
-      alertSettings.smtp?.connect_timeout_seconds != null
-        ? alertSettings.smtp.connect_timeout_seconds.toString()
-        : ""
-    );
-    setWebhookTimeout(
-      alertSettings.webhook?.timeout_seconds != null
-        ? alertSettings.webhook.timeout_seconds.toString()
-        : ""
-    );
-    setWebhookRetries(
-      alertSettings.webhook?.max_retries != null
-        ? alertSettings.webhook.max_retries.toString()
-        : ""
-    );
-  }, [alertSettingsQuery.data]);
+  const settingsForm = useSettingsForm({
+    budgetDefaults: defaults,
+    rateLimitDefaults,
+    fileSettings,
+    batchSettings,
+    alertSettings,
+  });
+  const { form, resetBudget, resetRateLimits, resetFiles, resetBatches } =
+    settingsForm;
 
   const updateMutation = useMutation({
     mutationFn: updateBudgetDefaults,
@@ -416,21 +294,11 @@ export function SettingsPage() {
     );
   }, [modelCatalogQuery.data, defaultModels]);
 
-  const handleReset = () => {
-    if (defaults) {
-      setFormBudget(defaults.default_usd.toString());
-      setFormThreshold(defaults.warning_threshold_perc.toString());
-      setFormSchedule(defaults.refresh_schedule);
-      setFormCooldown((defaults.alert.cooldown_seconds ?? 3600).toString());
-      setFormEmails((defaults.alert.emails ?? []).join(", "));
-      setFormWebhooks((defaults.alert.webhooks ?? []).join(", "));
-    }
-  };
-
   const handleSave = () => {
-    const budgetValue = Number.parseFloat(formBudget);
-    const thresholdValue = Number.parseFloat(formThreshold);
-    const cooldownValue = Number.parseInt(formCooldown, 10);
+    const values = form.getValues();
+    const budgetValue = Number.parseFloat(values.budgetDefaultUsd);
+    const thresholdValue = Number.parseFloat(values.budgetWarningThreshold);
+    const cooldownValue = Number.parseInt(values.budgetAlertCooldown, 10);
     if (!Number.isFinite(budgetValue) || budgetValue <= 0) {
       toast({ variant: "destructive", title: "Budget must be positive" });
       return;
@@ -451,32 +319,19 @@ export function SettingsPage() {
     updateMutation.mutate({
       default_usd: budgetValue,
       warning_threshold: thresholdValue,
-      refresh_schedule: formSchedule,
-      alert_emails: parseListInput(formEmails),
-      alert_webhooks: parseListInput(formWebhooks),
+      refresh_schedule: values.budgetRefreshSchedule,
+      alert_emails: parseListInput(values.budgetAlertEmails),
+      alert_webhooks: parseListInput(values.budgetAlertWebhooks),
       alert_cooldown_seconds: cooldownValue,
     });
   };
 
-  const handleRateLimitReset = () => {
-    if (!rateLimitDefaults) {
-      return;
-    }
-    setFormRequestsPerMinute(
-      rateLimitDefaults.requests_per_minute.toString(),
-    );
-    setFormTokensPerMinute(rateLimitDefaults.tokens_per_minute.toString());
-    setFormParallelKey(rateLimitDefaults.parallel_requests_key.toString());
-    setFormParallelTenant(
-      rateLimitDefaults.parallel_requests_tenant.toString(),
-    );
-  };
-
   const handleRateLimitSave = () => {
-    const rpm = Number.parseInt(formRequestsPerMinute, 10);
-    const tpm = Number.parseInt(formTokensPerMinute, 10);
-    const parallelKey = Number.parseInt(formParallelKey, 10);
-    const parallelTenant = Number.parseInt(formParallelTenant, 10);
+    const values = form.getValues();
+    const rpm = Number.parseInt(values.rateRequestsPerMinute, 10);
+    const tpm = Number.parseInt(values.rateTokensPerMinute, 10);
+    const parallelKey = Number.parseInt(values.rateParallelKey, 10);
+    const parallelTenant = Number.parseInt(values.rateParallelTenant, 10);
     if ([rpm, tpm, parallelKey, parallelTenant].some((value) => !Number.isFinite(value) || value <= 0)) {
       toast({
         variant: "destructive",
@@ -492,19 +347,11 @@ export function SettingsPage() {
     });
   };
 
-  const handleFileSettingsReset = () => {
-    if (!fileSettings) {
-      return;
-    }
-    setFileMaxSize(fileSettings.max_size_mb.toString());
-    setFileDefaultTTL(fileSettings.default_ttl_seconds.toString());
-    setFileMaxTTL(fileSettings.max_ttl_seconds.toString());
-  };
-
   const handleFileSettingsSave = () => {
-    const maxSize = Number.parseInt(fileMaxSize, 10);
-    const defaultTTL = Number.parseInt(fileDefaultTTL, 10);
-    const maxTTL = Number.parseInt(fileMaxTTL, 10);
+    const values = form.getValues();
+    const maxSize = Number.parseInt(values.fileMaxSizeMb, 10);
+    const defaultTTL = Number.parseInt(values.fileDefaultTtlSeconds, 10);
+    const maxTTL = Number.parseInt(values.fileMaxTtlSeconds, 10);
     if (!Number.isFinite(maxSize) || maxSize <= 0) {
       toast({ variant: "destructive", title: "Max size must be positive" });
       return;
@@ -524,21 +371,12 @@ export function SettingsPage() {
     });
   };
 
-  const handleBatchSettingsReset = () => {
-    if (!batchSettings) {
-      return;
-    }
-    setBatchMaxRequests(batchSettings.max_requests.toString());
-    setBatchMaxConcurrency(batchSettings.max_concurrency.toString());
-    setBatchDefaultTTL(batchSettings.default_ttl_seconds.toString());
-    setBatchMaxTTL(batchSettings.max_ttl_seconds.toString());
-  };
-
   const handleBatchSettingsSave = () => {
-    const maxRequests = Number.parseInt(batchMaxRequests, 10);
-    const maxConcurrency = Number.parseInt(batchMaxConcurrency, 10);
-    const defaultTTL = Number.parseInt(batchDefaultTTL, 10);
-    const maxTTL = Number.parseInt(batchMaxTTL, 10);
+    const values = form.getValues();
+    const maxRequests = Number.parseInt(values.batchMaxRequests, 10);
+    const maxConcurrency = Number.parseInt(values.batchMaxConcurrency, 10);
+    const defaultTTL = Number.parseInt(values.batchDefaultTtlSeconds, 10);
+    const maxTTL = Number.parseInt(values.batchMaxTtlSeconds, 10);
     if ([maxRequests, maxConcurrency].some((value) => !Number.isFinite(value) || value <= 0)) {
       toast({ variant: "destructive", title: "Limits must be positive" });
       return;
@@ -556,6 +394,29 @@ export function SettingsPage() {
       max_concurrency: maxConcurrency,
       default_ttl_seconds: defaultTTL,
       max_ttl_seconds: maxTTL,
+    });
+  };
+
+  const handleAlertSave = () => {
+    const values = form.getValues();
+    alertSettingsMutation.mutate({
+      smtp: {
+        host: values.smtpHost,
+        port: Number(values.smtpPort) || 0,
+        username: values.smtpUsername,
+        password: values.smtpPassword,
+        from: values.smtpFrom,
+        use_tls: values.smtpUseTLS,
+        skip_tls_verify: values.smtpSkipVerify,
+        connect_timeout_seconds:
+          Number(values.smtpTimeout) >= 0 ? Number(values.smtpTimeout) : 0,
+      },
+      webhook: {
+        timeout_seconds:
+          Number(values.webhookTimeout) >= 0 ? Number(values.webhookTimeout) : 0,
+        max_retries:
+          Number(values.webhookRetries) >= 0 ? Number(values.webhookRetries) : 0,
+      },
     });
   };
 
@@ -687,898 +548,92 @@ export function SettingsPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="budgets" forceMount>
-          <Card>
-            <CardHeader>
-              <div className="space-y-1">
-                <CardTitle>Budget defaults</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {budgetMetadataDescription
-                    ? `${budgetMetadataDescription} Detailed history view coming soon.`
-                    : "Detailed history view coming soon. Save changes to capture metadata."}
-                </p>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {defaultsLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-6 w-1/3" />
-                  <Skeleton className="h-6 w-1/2" />
-                  <Skeleton className="h-6 w-2/3" />
-                </div>
-              ) : (
-                <>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="default-budget">Default monthly budget (USD)</Label>
-                      <Input
-                        id="default-budget"
-                        value={formBudget}
-                        onChange={(event) => setFormBudget(event.target.value)}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="warning-threshold">Warning threshold (0-1)</Label>
-                      <Input
-                        id="warning-threshold"
-                        value={formThreshold}
-                        onChange={(event) => setFormThreshold(event.target.value)}
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Refresh schedule</Label>
-                      <Select
-                        value={formSchedule}
-                        onValueChange={setFormSchedule}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select schedule" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {REFRESH_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="alert-cooldown">Alert cooldown (seconds)</Label>
-                      <Input
-                        id="alert-cooldown"
-                        value={formCooldown}
-                        onChange={(event) => setFormCooldown(event.target.value)}
-                        type="number"
-                        min="60"
-                      />
-                    </div>
-                    <div className="md:col-span-3 space-y-2">
-                      <Label>Alert emails (comma or line separated)</Label>
-                      <Textarea
-                        value={formEmails}
-                        onChange={(event) => setFormEmails(event.target.value)}
-                        placeholder="alerts@example.com, ops@example.com"
-                        rows={2}
-                      />
-                    </div>
-                    <div className="md:col-span-3 space-y-2">
-                      <Label>Alert webhooks (comma or line separated)</Label>
-                      <Textarea
-                        value={formWebhooks}
-                        onChange={(event) => setFormWebhooks(event.target.value)}
-                        placeholder="https://hooks.slack.com/..."
-                        rows={2}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleReset}
-                      disabled={!defaults}
-                    >
-                      Reset
-                    </Button>
-                    <Button
-                      onClick={handleSave}
-                      disabled={updateMutation.isPending || defaultsLoading}
-                    >
-                      {updateMutation.isPending ? "Saving…" : "Save changes"}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="alerts" forceMount>
-          <Card>
-            <CardHeader>
-              <CardTitle>Alert transports</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Manage SMTP and webhook delivery for budget alerts. Leave fields blank to disable a channel.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {alertSettingsQuery.isLoading ? (
-                <Skeleton className="h-40 w-full" />
-              ) : (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="smtp-host">SMTP host</Label>
-                      <Input
-                        id="smtp-host"
-                        value={smtpHost}
-                        onChange={(event) => setSmtpHost(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="smtp-port">SMTP port</Label>
-                      <Input
-                        id="smtp-port"
-                        type="number"
-                        value={smtpPort}
-                        onChange={(event) => setSmtpPort(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="smtp-username">SMTP username</Label>
-                      <Input
-                        id="smtp-username"
-                        value={smtpUsername}
-                        onChange={(event) => setSmtpUsername(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="smtp-password">SMTP password / token</Label>
-                      <Input
-                        id="smtp-password"
-                        type="password"
-                        value={smtpPassword}
-                        onChange={(event) => setSmtpPassword(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="smtp-from">From address</Label>
-                      <Input
-                        id="smtp-from"
-                        value={smtpFrom}
-                        onChange={(event) => setSmtpFrom(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="smtp-timeout">Connect timeout (seconds)</Label>
-                      <Input
-                        id="smtp-timeout"
-                        type="number"
-                        value={smtpTimeout}
-                        onChange={(event) => setSmtpTimeout(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="flex items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <p className="text-sm font-medium">Use TLS / STARTTLS</p>
-                        <p className="text-xs text-muted-foreground">
-                          Attempts STARTTLS if supported by the server.
-                        </p>
-                      </div>
-                      <Switch checked={smtpUseTLS} onCheckedChange={setSmtpUseTLS} />
-                    </div>
-                    <div className="flex items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <p className="text-sm font-medium">Skip TLS verification</p>
-                        <p className="text-xs text-muted-foreground">
-                          Only enable for local/self-signed servers.
-                        </p>
-                      </div>
-                      <Switch
-                        checked={smtpSkipVerify}
-                        onCheckedChange={setSmtpSkipVerify}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="webhook-timeout">Webhook timeout (seconds)</Label>
-                      <Input
-                        id="webhook-timeout"
-                        type="number"
-                        value={webhookTimeout}
-                        onChange={(event) => setWebhookTimeout(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="webhook-retries">Webhook max retries</Label>
-                      <Input
-                        id="webhook-retries"
-                        type="number"
-                        value={webhookRetries}
-                        onChange={(event) => setWebhookRetries(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => alertSettingsQuery.refetch()}
-                      disabled={alertSettingsQuery.isLoading}
-                    >
-                      Reset
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        alertSettingsMutation.mutate({
-                          smtp: {
-                            host: smtpHost,
-                            port: Number(smtpPort) || 0,
-                            username: smtpUsername,
-                            password: smtpPassword,
-                            from: smtpFrom,
-                            use_tls: smtpUseTLS,
-                            skip_tls_verify: smtpSkipVerify,
-                            connect_timeout_seconds:
-                              Number(smtpTimeout) >= 0 ? Number(smtpTimeout) : 0,
-                          },
-                          webhook: {
-                            timeout_seconds:
-                              Number(webhookTimeout) >= 0 ? Number(webhookTimeout) : 0,
-                            max_retries:
-                              Number(webhookRetries) >= 0 ? Number(webhookRetries) : 0,
-                          },
-                        })
-                      }
-                      disabled={alertSettingsMutation.isPending}
-                    >
-                      {alertSettingsMutation.isPending ? "Saving…" : "Save changes"}
-                    </Button>
-                  </div>
-                </>
-              )}
-              <div className="space-y-2 border-t pt-4">
-                <Label htmlFor="test-email">Send test email</Label>
-                <div className="flex flex-col gap-2 md:flex-row md:items-end">
-                  <div className="space-y-2 md:flex-1">
-                    <Label className="sr-only" htmlFor="test-email">
-                      Recipient email
-                    </Label>
-                    <Input
-                      id="test-email"
-                      placeholder="alerts@example.com"
-                      value={testEmail}
-                      onChange={(event) => setTestEmail(event.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2 md:w-56">
-                    <Label htmlFor="test-email-type">Template</Label>
-                    <Select value={testEmailType} onValueChange={setTestEmailType}>
-                      <SelectTrigger id="test-email-type">
-                        <SelectValue placeholder="Budget alert" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TEST_EMAIL_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!testEmail || testEmailMutation.isPending}
-                    onClick={() =>
-                      testEmailMutation.mutate({
-                        email: testEmail,
-                        type: testEmailType,
-                      })
-                    }
-                  >
-                    {testEmailMutation.isPending ? "Sending…" : "Send test"}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="rate-limits" forceMount>
-          <Card>
-            <CardHeader>
-              <CardTitle>Rate limit defaults</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Define the baseline RPM/TPM/parallel ceilings applied to every API key
-                and tenant unless an override is configured.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {rateLimitLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-6 w-1/3" />
-                  <Skeleton className="h-6 w-1/2" />
-                  <Skeleton className="h-6 w-2/3" />
-                </div>
-              ) : (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="requests-per-minute">Requests per minute</Label>
-                      <Input
-                        id="requests-per-minute"
-                        type="number"
-                        min="1"
-                        value={formRequestsPerMinute}
-                        onChange={(event) => setFormRequestsPerMinute(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="tokens-per-minute">Tokens per minute</Label>
-                      <Input
-                        id="tokens-per-minute"
-                        type="number"
-                        min="1"
-                        value={formTokensPerMinute}
-                        onChange={(event) => setFormTokensPerMinute(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="parallel-key">Parallel requests (per key)</Label>
-                      <Input
-                        id="parallel-key"
-                        type="number"
-                        min="1"
-                        value={formParallelKey}
-                        onChange={(event) => setFormParallelKey(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="parallel-tenant">Parallel requests (per tenant)</Label>
-                      <Input
-                        id="parallel-tenant"
-                        type="number"
-                        min="1"
-                        value={formParallelTenant}
-                        onChange={(event) => setFormParallelTenant(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleRateLimitReset}
-                      disabled={!rateLimitDefaults}
-                    >
-                      Reset
-                    </Button>
-                    <Button
-                      onClick={handleRateLimitSave}
-                      disabled={rateLimitMutation.isPending || rateLimitLoading}
-                    >
-                      {rateLimitMutation.isPending ? "Saving…" : "Save changes"}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="files" forceMount>
-          <Card>
-            <CardHeader>
-              <CardTitle>File uploads</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Define the platform-wide guardrails for file uploads used by batch
-                jobs and fine-tuning workflows.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {fileSettingsLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-6 w-1/3" />
-                  <Skeleton className="h-6 w-1/2" />
-                  <Skeleton className="h-6 w-2/3" />
-                </div>
-              ) : (
-                <>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="file-max-size">Max upload size (MB)</Label>
-                      <Input
-                        id="file-max-size"
-                        type="number"
-                        min="1"
-                        value={fileMaxSize}
-                        onChange={(event) => setFileMaxSize(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="file-default-ttl">Default TTL (seconds)</Label>
-                      <Input
-                        id="file-default-ttl"
-                        type="number"
-                        min="60"
-                        value={fileDefaultTTL}
-                        onChange={(event) => setFileDefaultTTL(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="file-max-ttl">Max TTL (seconds)</Label>
-                      <Input
-                        id="file-max-ttl"
-                        type="number"
-                        min="60"
-                        value={fileMaxTTL}
-                        onChange={(event) => setFileMaxTTL(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleFileSettingsReset}
-                      disabled={!fileSettings}
-                    >
-                      Reset
-                    </Button>
-                    <Button
-                      onClick={handleFileSettingsSave}
-                      disabled={fileSettingsMutation.isPending || fileSettingsLoading}
-                    >
-                      {fileSettingsMutation.isPending ? "Saving…" : "Save changes"}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="batches" forceMount>
-          <Card>
-            <CardHeader>
-              <CardTitle>Batch jobs</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Tune the max requests, concurrency, and retention window enforced
-                for /v1/batches submissions.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {batchSettingsLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-6 w-1/3" />
-                  <Skeleton className="h-6 w-1/2" />
-                  <Skeleton className="h-6 w-2/3" />
-                </div>
-              ) : (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="batch-max-requests">Max requests per batch</Label>
-                      <Input
-                        id="batch-max-requests"
-                        type="number"
-                        min="1"
-                        value={batchMaxRequests}
-                        onChange={(event) => setBatchMaxRequests(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="batch-max-concurrency">Max concurrency</Label>
-                      <Input
-                        id="batch-max-concurrency"
-                        type="number"
-                        min="1"
-                        value={batchMaxConcurrency}
-                        onChange={(event) => setBatchMaxConcurrency(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="batch-default-ttl">Default TTL (seconds)</Label>
-                      <Input
-                        id="batch-default-ttl"
-                        type="number"
-                        min="60"
-                        value={batchDefaultTTL}
-                        onChange={(event) => setBatchDefaultTTL(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="batch-max-ttl">Max TTL (seconds)</Label>
-                      <Input
-                        id="batch-max-ttl"
-                        type="number"
-                        min="60"
-                        value={batchMaxTTL}
-                        onChange={(event) => setBatchMaxTTL(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleBatchSettingsReset}
-                      disabled={!batchSettings}
-                    >
-                      Reset
-                    </Button>
-                    <Button
-                      onClick={handleBatchSettingsSave}
-                      disabled={batchSettingsMutation.isPending || batchSettingsLoading}
-                    >
-                      {batchSettingsMutation.isPending ? "Saving…" : "Save changes"}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="models" forceMount>
-          <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-2">
-                <CardTitle>Default models</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  These aliases are granted automatically to every personal tenant.
-                  Remove access here to hide models from users unless a tenant override explicitly re-enables them.
-                </p>
-              </div>
-              <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-3">
-                <div className="w-full md:w-80">
-                  <Select
-                    value={newDefaultModel}
-                    onValueChange={setNewDefaultModel}
-                    disabled={availableModelOptions.length === 0 || addModelMutation.isPending}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          availableModelOptions.length
-                            ? "Select model"
-                            : "All enabled models already granted"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-72 overflow-y-auto">
-                      {availableModelOptions.map((entry) => (
-                        <SelectItem key={entry.alias} value={entry.alias}>
-                          <div className="flex flex-col text-left">
-                            <span className="font-medium">{entry.alias}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {entry.provider}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  onClick={handleAddModel}
-                  disabled={!newDefaultModel || addModelMutation.isPending}
-                >
-                  {addModelMutation.isPending ? "Adding…" : "Add model"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {modelsLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-6 w-1/3" />
-                  <Skeleton className="h-6 w-1/2" />
-                  <Skeleton className="h-6 w-2/3" />
-                </div>
-              ) : (
-                <>
-                  {defaultModels.length ? (
-                    <div className="rounded-lg border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Alias</TableHead>
-                            <TableHead>Provider</TableHead>
-                            <TableHead>Provider model</TableHead>
-                            <TableHead className="w-20 text-right">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {defaultModels.map((alias) => {
-                            const meta = catalogByAlias.get(alias);
-                            return (
-                              <TableRow key={alias}>
-                                <TableCell className="font-medium">
-                                  {alias}
-                                  {!meta ? (
-                                    <p className="text-xs text-muted-foreground">
-                                      Missing catalog entry
-                                    </p>
-                                  ) : null}
-                                </TableCell>
-                                <TableCell>
-                                  {meta ? (
-                                    <Badge variant="secondary">{meta.provider}</Badge>
-                                  ) : (
-                                    <span className="text-sm text-muted-foreground">—</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
-                                  {meta?.provider_model ?? "—"}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label={`Remove ${alias}`}
-                                    onClick={() => handleRemoveModel(alias)}
-                                    disabled={removeModelMutation.isPending}
-                                  >
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No default models selected yet.
-                    </p>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="admin-keys" forceMount>
-          <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-2">
-                <CardTitle>Admin access tokens</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Create time-bound admin tokens for automation and operational scripts.
-                  Tokens are shown once; store them securely.
-                </p>
-              </div>
-              <Button onClick={() => setCreateAdminKeyOpen(true)}>
-                Create token
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {adminKeysLoading ? (
-                <Skeleton className="h-32 w-full" />
-              ) : adminKeys.length ? (
-                <div className="rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Scope</TableHead>
-                        <TableHead>Prefix</TableHead>
-                        <TableHead>Owner</TableHead>
-                        <TableHead>Expires</TableHead>
-                        <TableHead>Last used</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="w-24 text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {adminKeys.map((key) => {
-                        const status = getAdminKeyStatus(key);
-                        return (
-                          <TableRow key={key.id}>
-                            <TableCell className="font-medium">
-                              {key.name}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="secondary">{key.scope}</Badge>
-                            </TableCell>
-                            <TableCell className="font-mono">
-                              {`sk-${key.prefix}`}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {key.owner_name || key.owner_email || "System"}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {formatAdminKeyDate(key.expires_at)}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {formatAdminKeyDate(key.last_used_at)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  status === "active" ? "secondary" : "destructive"
-                                }
-                              >
-                                {status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled={status !== "active"}
-                                onClick={() => setPendingAdminRevoke(key)}
-                              >
-                                Revoke
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No admin tokens created yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Dialog open={createAdminKeyOpen} onOpenChange={setCreateAdminKeyOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create admin token</DialogTitle>
-                <DialogDescription>
-                  Tokens expire automatically. Choose a scope and expiry window.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-2">
-                  <Label htmlFor="admin-key-name">Name</Label>
-                  <Input
-                    id="admin-key-name"
-                    value={adminKeyName}
-                    onChange={(event) => setAdminKeyName(event.target.value)}
-                    placeholder="Billing automation"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Scope</Label>
-                  <Select
-                    value={adminKeyScope}
-                    onValueChange={(value) =>
-                      setAdminKeyScope(value as AdminKeyScope)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select scope" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Admin (current user)</SelectItem>
-                      <SelectItem value="system">System</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="admin-key-expiry">Expires in (days)</Label>
-                  <Input
-                    id="admin-key-expiry"
-                    type="number"
-                    min="1"
-                    value={adminKeyExpiresDays}
-                    onChange={(event) => setAdminKeyExpiresDays(event.target.value)}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setCreateAdminKeyOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleCreateAdminKey}
-                  disabled={createAdminKeyMutation.isPending}
-                >
-                  {createAdminKeyMutation.isPending ? "Creating…" : "Create token"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {issuedAdminToken ? (
-            <Dialog open onOpenChange={(open) => !open && setIssuedAdminToken(null)}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Admin token issued</DialogTitle>
-                  <DialogDescription>
-                    Copy the token now—this is the only time it will be shown.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-2 py-2">
-                  <Label>Token</Label>
-                  <div className="flex items-center gap-2">
-                    <Input value={issuedAdminToken} readOnly className="font-mono" />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleCopy(issuedAdminToken)}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={() => setIssuedAdminToken(null)}>Done</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          ) : null}
-
-          <AlertDialog
-            open={Boolean(pendingAdminRevoke)}
-            onOpenChange={(open) => !open && setPendingAdminRevoke(null)}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Revoke admin token?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This token will stop working immediately. You cannot undo this action.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    if (pendingAdminRevoke) {
-                      revokeAdminKeyMutation.mutate(pendingAdminRevoke.id);
-                    }
-                  }}
-                >
-                  Revoke
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </TabsContent>
-
-        <TabsContent value="overview" forceMount>
-          <Card>
-            <CardHeader>
-              <CardTitle>Budget workflow</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>
-                Tenant budgets, warning thresholds, alert channels, and model access
-                policies are configured per-tenant from the Tenants page. Those
-                values are persisted in Postgres and enforced by the router on every
-                request.
-              </p>
-              <p>
-                Defaults shown above come from the active configuration and provide
-                the fallback when a tenant does not have its own override.
-              </p>
-              <p>
-                Looking for observability hooks or advanced provider knobs? Those
-                settings still live in configuration for now and will gain UI
-                controls in a future iteration.
-              </p>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <FormProvider {...form}>
+          <BudgetSettingsTab
+            loading={defaultsLoading}
+            hasDefaults={Boolean(defaults)}
+            metadataDescription={budgetMetadataDescription}
+            refreshOptions={REFRESH_OPTIONS}
+            onReset={resetBudget}
+            onSave={handleSave}
+            saving={updateMutation.isPending}
+          />
+          <AlertSettingsTab
+            loading={alertSettingsQuery.isLoading}
+            onReset={() => alertSettingsQuery.refetch()}
+            onSave={handleAlertSave}
+            saving={alertSettingsMutation.isPending}
+            testEmail={testEmail}
+            setTestEmail={setTestEmail}
+            testEmailType={testEmailType}
+            setTestEmailType={setTestEmailType}
+            testEmailOptions={TEST_EMAIL_OPTIONS}
+            sendingTest={testEmailMutation.isPending}
+            onSendTest={() =>
+              testEmailMutation.mutate({
+                email: testEmail,
+                type: testEmailType,
+              })
+            }
+          />
+          <RateLimitSettingsTab
+            loading={rateLimitLoading}
+            hasDefaults={Boolean(rateLimitDefaults)}
+            onReset={resetRateLimits}
+            onSave={handleRateLimitSave}
+            saving={rateLimitMutation.isPending}
+          />
+          <FileSettingsTab
+            loading={fileSettingsLoading}
+            hasDefaults={Boolean(fileSettings)}
+            onReset={resetFiles}
+            onSave={handleFileSettingsSave}
+            saving={fileSettingsMutation.isPending}
+          />
+          <BatchSettingsTab
+            loading={batchSettingsLoading}
+            hasDefaults={Boolean(batchSettings)}
+            onReset={resetBatches}
+            onSave={handleBatchSettingsSave}
+            saving={batchSettingsMutation.isPending}
+          />
+          <DefaultModelsTab
+            loading={modelsLoading}
+            defaultModels={defaultModels}
+            availableModels={availableModelOptions}
+            catalogByAlias={catalogByAlias}
+            newDefaultModel={newDefaultModel}
+            setNewDefaultModel={setNewDefaultModel}
+            onAddModel={handleAddModel}
+            onRemoveModel={handleRemoveModel}
+            addPending={addModelMutation.isPending}
+            removePending={removeModelMutation.isPending}
+          />
+          <AdminKeysTab
+            adminKeys={adminKeys}
+            loading={adminKeysLoading}
+            createOpen={createAdminKeyOpen}
+            setCreateOpen={setCreateAdminKeyOpen}
+            issuedToken={issuedAdminToken}
+            setIssuedToken={setIssuedAdminToken}
+            pendingRevoke={pendingAdminRevoke}
+            setPendingRevoke={setPendingAdminRevoke}
+            adminKeyName={adminKeyName}
+            setAdminKeyName={setAdminKeyName}
+            adminKeyScope={adminKeyScope}
+            setAdminKeyScope={setAdminKeyScope}
+            adminKeyExpiresDays={adminKeyExpiresDays}
+            setAdminKeyExpiresDays={setAdminKeyExpiresDays}
+            createPending={createAdminKeyMutation.isPending}
+            revokePending={revokeAdminKeyMutation.isPending}
+            onCreate={handleCreateAdminKey}
+            onRevoke={(id) => revokeAdminKeyMutation.mutate(id)}
+            onCopy={handleCopy}
+            formatDate={formatAdminKeyDate}
+            getStatus={getAdminKeyStatus}
+          />
+          <OverviewSettingsTab />
+        </FormProvider>
       </Tabs>
     </div>
   );

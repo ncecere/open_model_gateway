@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { useDefaultSelection } from "@/hooks/useDefaultSelection";
 import {
   useCancelUserTenantBatchMutation,
   useUserTenantBatchesQuery,
@@ -53,20 +54,13 @@ export function UserBatchesPage() {
   const [cursorAfter, setCursorAfter] = useState<string | undefined>(undefined);
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([]);
 
-  useEffect(() => {
-    if (!tenantOptions.length) {
-      setSelectedTenantId(undefined);
-      return;
-    }
-    if (selectedTenantId && tenantOptions.some((t) => t.tenant_id === selectedTenantId)) {
-      return;
-    }
-    if (personalTenant) {
-      setSelectedTenantId(personalTenant.tenant_id);
-      return;
-    }
-    setSelectedTenantId(tenantOptions[0]?.tenant_id);
-  }, [selectedTenantId, tenantOptions, personalTenant]);
+  useDefaultSelection({
+    items: tenantOptions,
+    selected: selectedTenantId,
+    onChange: setSelectedTenantId,
+    getValue: (tenant) => tenant.tenant_id,
+    getDefault: () => personalTenant?.tenant_id ?? tenantOptions[0]?.tenant_id,
+  });
 
   const selectValue = selectedTenantId ?? "";
 

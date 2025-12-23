@@ -151,6 +151,7 @@ type ProviderConfig struct {
 	Bedrock          BedrockProviderConfig          `mapstructure:"bedrock"`
 	OpenRouter       OpenRouterProviderConfig       `mapstructure:"openrouter"`
 	Groq             GroqProviderConfig             `mapstructure:"groq"`
+	VLLM             VLLMProviderConfig             `mapstructure:"vllm"`
 
 	// Legacy flat keys (kept for backward compatibility with older configs/env)
 	OpenAIKey           string `mapstructure:"openai_key"`
@@ -488,6 +489,9 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.Providers.Groq.BaseURL) == "" {
 		c.Providers.Groq.BaseURL = "https://api.groq.com/openai/v1"
 	}
+	if strings.TrimSpace(c.Providers.VLLM.Mode) == "" {
+		c.Providers.VLLM.Mode = "openai"
+	}
 
 	if err := c.Files.validate(); err != nil {
 		return err
@@ -762,6 +766,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("providers.azure.api_version", "2024-07-01-preview")
 	v.SetDefault("providers.azure_openai_version", "2024-07-01-preview")
 	v.SetDefault("providers.openrouter.base_url", "https://openrouter.ai/api/v1")
+	v.SetDefault("providers.vllm.mode", "openai")
 }
 
 func applyLegacyTelemetryEnv(v *viper.Viper) {

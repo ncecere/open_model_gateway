@@ -4,6 +4,7 @@ CREATE TYPE tenant_status AS ENUM ('active', 'suspended');
 CREATE TYPE membership_role AS ENUM ('owner', 'admin', 'viewer', 'user');
 CREATE TYPE tenant_kind AS ENUM ('organization', 'personal');
 CREATE TYPE api_key_kind AS ENUM ('service', 'personal');
+CREATE TYPE admin_api_key_scope AS ENUM ('admin', 'system');
 
 CREATE TABLE tenants (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -49,6 +50,27 @@ CREATE TABLE api_keys (
 );
 
 CREATE INDEX idx_api_keys_tenant_created ON api_keys(tenant_id, created_at DESC);
+
+CREATE TABLE admin_api_keys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL UNIQUE,
+    secret_hash TEXT NOT NULL,
+    scope admin_api_key_scope NOT NULL DEFAULT 'admin',
+    owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
+    last_used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT admin_api_keys_owner_check CHECK (
+        (scope = 'admin' AND owner_user_id IS NOT NULL) OR
+        (scope = 'system' AND owner_user_id IS NULL)
+    )
+);
+
+CREATE INDEX idx_admin_api_keys_owner ON admin_api_keys(owner_user_id);
+CREATE INDEX idx_admin_api_keys_creator ON admin_api_keys(created_by_user_id);
 
 CREATE TABLE model_catalog (
     alias              TEXT PRIMARY KEY,
@@ -241,6 +263,56 @@ CREATE INDEX IF NOT EXISTS files_tenant_idx ON files (tenant_id);
 CREATE INDEX IF NOT EXISTS files_expires_at_idx ON files (expires_at);
 CREATE INDEX IF NOT EXISTS files_tenant_created_idx ON files (tenant_id, created_at DESC, id);
 CREATE INDEX IF NOT EXISTS files_purpose_idx ON files (purpose);
+
+CREATE TABLE IF NOT EXISTS usage_exports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    scope TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    format TEXT NOT NULL DEFAULT 'csv',
+    granularity TEXT NOT NULL DEFAULT 'daily',
+    timezone TEXT NOT NULL DEFAULT 'UTC',
+    period_start TIMESTAMPTZ NOT NULL,
+    period_end TIMESTAMPTZ NOT NULL,
+    tenant_ids UUID[],
+    requested_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    file_id UUID REFERENCES files(id) ON DELETE SET NULL,
+    file_tenant_id UUID REFERENCES tenants(id) ON DELETE SET NULL,
+    row_count INTEGER,
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS usage_exports_status_idx ON usage_exports(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS usage_exports_requested_by_idx ON usage_exports(requested_by);
+
+CREATE TABLE IF NOT EXISTS billing_webhooks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT,
+    url TEXT NOT NULL,
+    secret TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS billing_webhooks_tenant_idx ON billing_webhooks(tenant_id);
+
+CREATE TABLE IF NOT EXISTS billing_webhook_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    webhook_id UUID NOT NULL REFERENCES billing_webhooks(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    period_start TIMESTAMPTZ NOT NULL,
+    period_end TIMESTAMPTZ NOT NULL,
+    payload JSONB NOT NULL,
+    success BOOLEAN NOT NULL DEFAULT FALSE,
+    status_code INTEGER,
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS billing_webhook_events_tenant_idx ON billing_webhook_events(tenant_id);
+CREATE INDEX IF NOT EXISTS billing_webhook_events_webhook_idx ON billing_webhook_events(webhook_id);
 
 CREATE TABLE IF NOT EXISTS batches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,5 +1,7 @@
 # Usage Exports & Billing Hooks
 
+> Status: Core APIs and background processing are implemented. UI surfaces and scheduled exports are still pending.
+
 ## Summary
 Finance and RevOps teams need self-serve access to normalized token/spend data without touching the production database. We will expose tenant-scoped exports (CSV/Parquet) plus optional webhook pushes so downstream billing systems (Chargebee, NetSuite, Snowflake, etc.) can ingest Open Model Gateway usage automatically.
 
@@ -30,8 +32,8 @@ Finance and RevOps teams need self-serve access to normalized token/spend data w
 - **Backend**: new export service, controller handlers, webhook payload structs, background job (cron or queue).
 - **Database**: materialized views or temp tables to speed up long-range exports; `usage_exports` table to track status/metadata.
 - **Files service**: new purpose + TTL defaults.
-- **Frontend**: admin + user portal panels showing export history, download buttons, and webhook configuration.
-- **Docs/Samples**: update `docs/runtime/usage.md` (TBD) and add curl examples for triggering exports/webhooks.
+- **Frontend**: admin + user portal panels showing export history, download buttons, and webhook configuration (pending).
+- **Docs/Samples**: see `docs/runtime/usage.md` for current payloads and curl examples.
 
 ## Risks & Considerations
 - Large exports may exceed request timeouts → perform work asynchronously and poll status.
@@ -39,7 +41,6 @@ Finance and RevOps teams need self-serve access to normalized token/spend data w
 - Hook payloads should be idempotent and signed (HMAC) to avoid duplicate billing entries.
 
 ## Next Steps
-1. Design DB schema (`usage_exports`, `billing_webhooks`).
-2. Implement async export job + polling APIs.
-3. Add webhook dispatcher + retries.
-4. Build portal UI and documentation.
+1. Build portal UI for exports/webhooks.
+2. Add scheduled monthly exports.
+3. Expand webhook payloads or add per-model billing breakdowns if required by finance.

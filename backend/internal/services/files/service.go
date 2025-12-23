@@ -34,6 +34,7 @@ const (
 	PurposeModeration       = "moderation"
 	PurposeResponses        = "responses"
 	PurposeFineTuneResults  = "fine-tune-results"
+	PurposeUsageExport      = "usage_export"
 )
 
 var allowedPurposes = map[string]struct{}{
@@ -45,6 +46,7 @@ var allowedPurposes = map[string]struct{}{
 	PurposeModeration:       {},
 	PurposeResponses:        {},
 	PurposeFineTuneResults:  {},
+	PurposeUsageExport:      {},
 }
 
 // Service coordinates file metadata + blob storage.

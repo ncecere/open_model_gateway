@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { ChevronDown, Download } from "lucide-react";
 
+import { api } from "@/api/client";
 import {
   useModelDailyUsage,
   useTenantDailyUsage,
@@ -48,8 +50,10 @@ import { ChartCard } from "@/ui/kit/ChartCard";
 import { QueryAlert } from "@/features/usage";
 import { formatUsageDate } from "@/lib/dates";
 import { formatTokensShort } from "@/lib/numbers";
+import { getBrowserTimezone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { useDirectoryData } from "@/providers/DirectoryProvider";
+import { useToast } from "@/hooks/use-toast";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -67,6 +71,21 @@ const formatSpendValue = (usd?: number, cents?: number) =>
         : 0,
   );
 
+const EXPORT_POLL_INTERVAL_MS = 2000;
+const EXPORT_POLL_ATTEMPTS = 30;
+
+type UsageExportResponse = {
+  id: string;
+  status: string;
+  download_url?: string;
+  error?: string;
+};
+
+const sleep = (ms: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
 const METRIC_OPTIONS: { value: UsageComparisonMetric; label: string }[] = [
   { value: "spend", label: "Spend" },
   { value: "tokens", label: "Tokens" },
@@ -80,6 +99,7 @@ export function UsagePage() {
     models,
     tenantsLoading,
   } = useDirectoryData();
+  const { toast } = useToast();
 
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>();
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
@@ -90,6 +110,7 @@ export function UsagePage() {
   const [tenantMetric, setTenantMetric] = useState<UsageComparisonMetric>("spend");
   const [modelMetric, setModelMetric] = useState<UsageComparisonMetric>("spend");
   const [userMetric, setUserMetric] = useState<UsageComparisonMetric>("spend");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!tenants.length) {
@@ -302,15 +323,109 @@ export function UsagePage() {
   const selectedUser = users.find((user) => user.id === selectedUserId);
   const selectedModel = models.find((model) => model.alias === selectedModelAlias);
 
-  const handleExport = () => {
-    const url = new URL("/usage/export", window.location.origin);
-    if (activeRange && !rangeError) {
-      url.searchParams.set("start", activeRange.start);
-      url.searchParams.set("end", activeRange.end);
-    } else {
-      url.searchParams.set("period", "7d");
+  const handleExport = async () => {
+    if (exporting) {
+      return;
     }
-    window.open(url.toString(), "_blank");
+    setExporting(true);
+
+    const basePayload: Record<string, unknown> = {
+      timezone: getBrowserTimezone(),
+      format: "csv",
+      granularity: "daily",
+    };
+    if (activeRange && !rangeError) {
+      basePayload.start = activeRange.start;
+      basePayload.end = activeRange.end;
+    } else {
+      basePayload.period = "7d";
+    }
+
+    const createExport = async (tenantIds?: string[]) => {
+      const payload = { ...basePayload } as Record<string, unknown>;
+      if (tenantIds?.length) {
+        payload.tenant_ids = tenantIds;
+      }
+      const { data } = await api.post<UsageExportResponse>("/usage-exports", payload);
+      return data;
+    };
+
+    try {
+      let exportResp: UsageExportResponse | undefined;
+      try {
+        exportResp = await createExport();
+      } catch (err) {
+        if (
+          isAxiosError(err) &&
+          err.response?.status === 400 &&
+          selectedTenantId
+        ) {
+          const message =
+            err.response?.data?.error ||
+            err.response?.data?.message ||
+            err.message;
+          if (typeof message === "string" && message.includes("tenant_ids required")) {
+            exportResp = await createExport([selectedTenantId]);
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+
+      if (!exportResp) {
+        return;
+      }
+
+      toast({
+        title: "Export queued",
+        description: "Preparing a CSV export. We'll open it once ready.",
+      });
+
+      let latest: UsageExportResponse | null = null;
+      for (let attempt = 0; attempt < EXPORT_POLL_ATTEMPTS; attempt += 1) {
+        await sleep(EXPORT_POLL_INTERVAL_MS);
+        const { data } = await api.get<UsageExportResponse>(
+          `/usage-exports/${exportResp.id}`,
+        );
+        latest = data;
+        if (data.status === "ready") {
+          break;
+        }
+        if (data.status === "failed") {
+          throw new Error(data.error || "Export failed");
+        }
+      }
+
+      if (latest?.status === "ready") {
+        const rawUrl = latest.download_url || `/admin/usage-exports/${exportResp.id}/content`;
+        const downloadUrl = rawUrl.startsWith("http")
+          ? rawUrl
+          : new URL(rawUrl, window.location.origin).toString();
+        window.open(downloadUrl, "_blank");
+        toast({
+          title: "Export ready",
+          description: "Your CSV export is downloading.",
+        });
+      } else {
+        toast({
+          title: "Export queued",
+          description: "The export is still processing. Check back in a moment.",
+        });
+      }
+    } catch (err) {
+      if (!isAxiosError(err)) {
+        toast({
+          variant: "destructive",
+          title: "Export failed",
+          description:
+            err instanceof Error ? err.message : "Unable to prepare export.",
+        });
+      }
+    } finally {
+      setExporting(false);
+    }
   };
 
   const timezone = usageQuery.data?.timezone ?? "UTC";
@@ -354,7 +469,12 @@ export function UsagePage() {
                 />
               </div>
             </div>
-            <Button variant="outline" onClick={handleExport} className="md:self-end">
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              className="md:self-end"
+              disabled={Boolean(rangeError) || exporting}
+            >
               <Download className="mr-2 h-4 w-4" /> Export CSV
             </Button>
           </div>

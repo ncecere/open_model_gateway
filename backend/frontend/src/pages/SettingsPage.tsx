@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { Copy, X } from "lucide-react";
 
 import {
   getBudgetDefaults,
@@ -26,6 +26,13 @@ import {
   updateFileSettings,
   sendTestAlertEmail,
 } from "@/api/runtime-settings";
+import {
+  createAdminKey,
+  listAdminKeys,
+  revokeAdminKey,
+  type AdminKeyRecord,
+  type AdminKeyScope,
+} from "@/api/admin-keys";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -44,6 +51,24 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -117,6 +142,10 @@ export function SettingsPage() {
     queryKey: ["alert-settings"],
     queryFn: getAlertSettings,
   });
+  const adminKeysQuery = useQuery({
+    queryKey: ["admin-keys"],
+    queryFn: listAdminKeys,
+  });
 
   const [formBudget, setFormBudget] = useState("");
   const [formThreshold, setFormThreshold] = useState("");
@@ -148,6 +177,13 @@ export function SettingsPage() {
   const [webhookTimeout, setWebhookTimeout] = useState("");
   const [webhookRetries, setWebhookRetries] = useState("");
   const [testEmail, setTestEmail] = useState("");
+  const [createAdminKeyOpen, setCreateAdminKeyOpen] = useState(false);
+  const [issuedAdminToken, setIssuedAdminToken] = useState<string | null>(null);
+  const [adminKeyName, setAdminKeyName] = useState("");
+  const [adminKeyScope, setAdminKeyScope] = useState<AdminKeyScope>("admin");
+  const [adminKeyExpiresDays, setAdminKeyExpiresDays] = useState("30");
+  const [pendingAdminRevoke, setPendingAdminRevoke] =
+    useState<AdminKeyRecord | null>(null);
 
   useEffect(() => {
     if (!defaults) {
@@ -317,6 +353,42 @@ export function SettingsPage() {
         variant: "destructive",
         title: "Failed to send test email",
         description: error instanceof Error ? error.message : undefined,
+      });
+    },
+  });
+
+  const createAdminKeyMutation = useMutation({
+    mutationFn: createAdminKey,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-keys"] });
+      setIssuedAdminToken(data.token);
+      setCreateAdminKeyOpen(false);
+      setAdminKeyName("");
+      setAdminKeyScope("admin");
+      setAdminKeyExpiresDays("30");
+      toast({ title: "Admin key issued" });
+    },
+    onError: (error: unknown) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to create admin key",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    },
+  });
+
+  const revokeAdminKeyMutation = useMutation({
+    mutationFn: (id: string) => revokeAdminKey(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-keys"] });
+      setPendingAdminRevoke(null);
+      toast({ title: "Admin key revoked" });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Failed to revoke admin key",
+        description: "Try again in a moment.",
       });
     },
   });
@@ -529,6 +601,64 @@ export function SettingsPage() {
     removeModelMutation.mutate(alias.trim());
   };
 
+  const adminKeys = adminKeysQuery.data ?? [];
+  const adminKeysLoading = adminKeysQuery.isLoading;
+
+  const handleCreateAdminKey = () => {
+    const name = adminKeyName.trim();
+    const days = Number.parseInt(adminKeyExpiresDays, 10);
+    if (!name) {
+      toast({ variant: "destructive", title: "Name is required" });
+      return;
+    }
+    if (!Number.isFinite(days) || days <= 0) {
+      toast({ variant: "destructive", title: "Expiry must be positive" });
+      return;
+    }
+    createAdminKeyMutation.mutate({
+      name,
+      scope: adminKeyScope,
+      expires_in_seconds: days * 24 * 60 * 60,
+    });
+  };
+
+  const handleCopy = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast({ title: "Copied to clipboard" });
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Copy failed",
+        description: "Copy the value manually.",
+      });
+    }
+  };
+
+  const formatAdminKeyDate = (value?: string | null) => {
+    if (!value) {
+      return "—";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "—";
+    }
+    return date.toLocaleString();
+  };
+
+  const getAdminKeyStatus = (key: AdminKeyRecord) => {
+    if (key.revoked_at) {
+      return "revoked";
+    }
+    if (key.expires_at) {
+      const expiresAt = new Date(key.expires_at);
+      if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() < Date.now()) {
+        return "expired";
+      }
+    }
+    return "active";
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -546,13 +676,14 @@ export function SettingsPage() {
         onValueChange={setActiveTab}
         className="space-y-6"
       >
-        <TabsList className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <TabsList className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
           <TabsTrigger value="budgets">Budgets</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="rate-limits">Rate limits</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
           <TabsTrigger value="batches">Batches</TabsTrigger>
           <TabsTrigger value="models">Default models</TabsTrigger>
+          <TabsTrigger value="admin-keys">Admin tokens</TabsTrigger>
           <TabsTrigger value="overview">Overview</TabsTrigger>
         </TabsList>
 
@@ -1215,6 +1346,213 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="admin-keys" forceMount>
+          <Card>
+            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-2">
+                <CardTitle>Admin access tokens</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Create time-bound admin tokens for automation and operational scripts.
+                  Tokens are shown once; store them securely.
+                </p>
+              </div>
+              <Button onClick={() => setCreateAdminKeyOpen(true)}>
+                Create token
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {adminKeysLoading ? (
+                <Skeleton className="h-32 w-full" />
+              ) : adminKeys.length ? (
+                <div className="rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Scope</TableHead>
+                        <TableHead>Prefix</TableHead>
+                        <TableHead>Owner</TableHead>
+                        <TableHead>Expires</TableHead>
+                        <TableHead>Last used</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-24 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {adminKeys.map((key) => {
+                        const status = getAdminKeyStatus(key);
+                        return (
+                          <TableRow key={key.id}>
+                            <TableCell className="font-medium">
+                              {key.name}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{key.scope}</Badge>
+                            </TableCell>
+                            <TableCell className="font-mono">
+                              {`sk-${key.prefix}`}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {key.owner_name || key.owner_email || "System"}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatAdminKeyDate(key.expires_at)}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatAdminKeyDate(key.last_used_at)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  status === "active" ? "secondary" : "destructive"
+                                }
+                              >
+                                {status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={status !== "active"}
+                                onClick={() => setPendingAdminRevoke(key)}
+                              >
+                                Revoke
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No admin tokens created yet.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Dialog open={createAdminKeyOpen} onOpenChange={setCreateAdminKeyOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create admin token</DialogTitle>
+                <DialogDescription>
+                  Tokens expire automatically. Choose a scope and expiry window.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label htmlFor="admin-key-name">Name</Label>
+                  <Input
+                    id="admin-key-name"
+                    value={adminKeyName}
+                    onChange={(event) => setAdminKeyName(event.target.value)}
+                    placeholder="Billing automation"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Scope</Label>
+                  <Select
+                    value={adminKeyScope}
+                    onValueChange={(value) =>
+                      setAdminKeyScope(value as AdminKeyScope)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select scope" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin (current user)</SelectItem>
+                      <SelectItem value="system">System</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="admin-key-expiry">Expires in (days)</Label>
+                  <Input
+                    id="admin-key-expiry"
+                    type="number"
+                    min="1"
+                    value={adminKeyExpiresDays}
+                    onChange={(event) => setAdminKeyExpiresDays(event.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setCreateAdminKeyOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateAdminKey}
+                  disabled={createAdminKeyMutation.isPending}
+                >
+                  {createAdminKeyMutation.isPending ? "Creating…" : "Create token"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {issuedAdminToken ? (
+            <Dialog open onOpenChange={(open) => !open && setIssuedAdminToken(null)}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Admin token issued</DialogTitle>
+                  <DialogDescription>
+                    Copy the token now—this is the only time it will be shown.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2 py-2">
+                  <Label>Token</Label>
+                  <div className="flex items-center gap-2">
+                    <Input value={issuedAdminToken} readOnly className="font-mono" />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleCopy(issuedAdminToken)}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button onClick={() => setIssuedAdminToken(null)}>Done</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          ) : null}
+
+          <AlertDialog
+            open={Boolean(pendingAdminRevoke)}
+            onOpenChange={(open) => !open && setPendingAdminRevoke(null)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Revoke admin token?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This token will stop working immediately. You cannot undo this action.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (pendingAdminRevoke) {
+                      revokeAdminKeyMutation.mutate(pendingAdminRevoke.id);
+                    }
+                  }}
+                >
+                  Revoke
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </TabsContent>
 
         <TabsContent value="overview" forceMount>

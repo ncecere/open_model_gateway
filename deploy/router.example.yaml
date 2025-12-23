@@ -103,6 +103,11 @@ providers:
     base_url: "https://api.groq.com/openai/v1"
     api_key: ""
     region: ""
+  vllm:
+    base_url: "http://localhost:8000/v1"
+    mode: "openai"              # openai or tgi
+    api_key: ""
+    auth_header: "Authorization"
 
 files:
   storage: "local"           # local or s3
@@ -294,6 +299,39 @@ model_catalog:
       audio_timestamp_granularities: "word,segment"
       audio_streaming: "true"
       price_audio_minute_cents: "60" # $0.60 per minute of input audio
+
+  - alias: "llama-3-vllm"
+    provider: "vllm"
+    provider_model: "meta-llama/Meta-Llama-3-8B-Instruct"
+    model_type: "llm"
+    context_window: 8192
+    max_output_tokens: 2048
+    modalities: ["text"]
+    supports_tools: true
+    price_input: 0.15
+    price_output: 0.45
+    currency: "USD"
+    deployment: "llama-3-vllm"
+    endpoint: "http://localhost:8000/v1"
+    metadata:
+      vllm_mode: "openai"
+
+  - alias: "llama-3-tgi"
+    provider: "vllm"
+    provider_model: "meta-llama/Meta-Llama-3-8B-Instruct"
+    model_type: "llm"
+    context_window: 8192
+    max_output_tokens: 2048
+    modalities: ["text"]
+    supports_tools: false
+    price_input: 0.15
+    price_output: 0.45
+    currency: "USD"
+    deployment: "llama-3-tgi"
+    endpoint: "http://localhost:8080"
+    metadata:
+      vllm_mode: "tgi"
+      auth_header: "Authorization"
 
   - alias: "partner-gpt-image"
     provider: "openai-compatible"

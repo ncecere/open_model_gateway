@@ -18,6 +18,8 @@ const (
 	adminAuthHeaderPrefix  = "bearer "
 	adminContextUserKey    = adminContextKey("open-model-gateway/admin-user")
 	adminContextUserIDKey  = adminContextKey("open-model-gateway/admin-user-id")
+	adminContextKeyIDKey   = adminContextKey("open-model-gateway/admin-api-key-id")
+	adminContextKeyScope   = adminContextKey("open-model-gateway/admin-api-key-scope")
 	adminAuthorizationName = "Authorization"
 )
 
@@ -35,9 +37,19 @@ func adminAuthMiddleware(container *app.Container) fiber.Handler {
 			return httputil.WriteError(c, fiber.StatusUnauthorized, "admin authorization required")
 		}
 
-		user, err := container.AdminAuth.AuthorizeAccessToken(userContext(c), token)
+		ctx := userContext(c)
+		user, err := container.AdminAuth.AuthorizeAccessToken(ctx, token)
 		if err != nil {
-			return httputil.WriteError(c, fiber.StatusUnauthorized, "invalid or expired token")
+			if container.AdminAPIKeys == nil {
+				return httputil.WriteError(c, fiber.StatusUnauthorized, "invalid or expired token")
+			}
+			keyUser, key, keyErr := container.AdminAPIKeys.Authorize(ctx, token)
+			if keyErr != nil {
+				return httputil.WriteError(c, fiber.StatusUnauthorized, "invalid or expired token")
+			}
+			user = keyUser
+			ctx = context.WithValue(ctx, adminContextKeyIDKey, key.ID)
+			ctx = context.WithValue(ctx, adminContextKeyScope, string(key.Scope))
 		}
 
 		userID, err := fromPgUUID(user.ID)
@@ -45,7 +57,7 @@ func adminAuthMiddleware(container *app.Container) fiber.Handler {
 			return httputil.WriteError(c, fiber.StatusInternalServerError, "invalid user identifier")
 		}
 
-		ctx := context.WithValue(userContext(c), adminContextUserKey, user)
+		ctx = context.WithValue(ctx, adminContextUserKey, user)
 		ctx = context.WithValue(ctx, adminContextUserIDKey, userID)
 		c.SetUserContext(ctx)
 		c.Locals("adminUserID", userID.String())

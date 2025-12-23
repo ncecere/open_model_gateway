@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/redis/go-redis/v9"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
 	"github.com/ncecere/open_model_gateway/backend/internal/redisclient"
+	exportsvc "github.com/ncecere/open_model_gateway/backend/internal/services/exports"
 )
 
 // Builder orchestrates staged runtime construction. As additional runtime
@@ -208,6 +210,9 @@ func (b *Builder) buildJobs(container *app.Container) {
 	stage.start = func(ctx context.Context) {
 		if container.Batches != nil {
 			go batchworker.New(container, executor.New(container)).Run(ctx)
+		}
+		if container.Exports != nil {
+			go exportsvc.NewWorker(container.Exports, slog.Default()).Run(ctx)
 		}
 		if container.Files != nil && b.config != nil {
 			startFileSweeper(ctx, container.Files, b.config.Files)

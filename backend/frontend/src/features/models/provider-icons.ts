@@ -9,6 +9,7 @@ import OpenAICompatIcon from "@/assets/providers/openai_compatable.svg";
 import OpenRouterIconLight from "@/assets/providers/openrouter_light.svg";
 import OpenRouterIconDark from "@/assets/providers/openrouter_dark.svg";
 import GroqIcon from "@/assets/providers/groq.svg";
+import VLLMIcon from "@/assets/providers/vllm.svg";
 
 const PROVIDER_ICON_SETS: Record<string, { light: string; dark: string }> = {
   anthropic: {
@@ -42,6 +43,10 @@ const PROVIDER_ICON_SETS: Record<string, { light: string; dark: string }> = {
   groq: {
     light: GroqIcon,
     dark: GroqIcon,
+  },
+  vllm: {
+    light: VLLMIcon,
+    dark: VLLMIcon,
   },
 };
 

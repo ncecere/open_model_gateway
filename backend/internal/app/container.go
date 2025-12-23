@@ -29,6 +29,7 @@ import (
 	runtimebudgets "github.com/ncecere/open_model_gateway/backend/internal/runtime/budgets"
 	runtimeratelimits "github.com/ncecere/open_model_gateway/backend/internal/runtime/ratelimits"
 	runtimetype "github.com/ncecere/open_model_gateway/backend/internal/runtime/tenants"
+	adminapikeyssvc "github.com/ncecere/open_model_gateway/backend/internal/services/adminapikeys"
 	adminauditsvc "github.com/ncecere/open_model_gateway/backend/internal/services/adminaudit"
 	adminbudgetsvc "github.com/ncecere/open_model_gateway/backend/internal/services/adminbudget"
 	admincatalogsvc "github.com/ncecere/open_model_gateway/backend/internal/services/admincatalog"
@@ -40,6 +41,8 @@ import (
 	adminusersvc "github.com/ncecere/open_model_gateway/backend/internal/services/adminuser"
 	auditservice "github.com/ncecere/open_model_gateway/backend/internal/services/audit"
 	batchsvc "github.com/ncecere/open_model_gateway/backend/internal/services/batches"
+	billinghooks "github.com/ncecere/open_model_gateway/backend/internal/services/billinghooks"
+	exportsvc "github.com/ncecere/open_model_gateway/backend/internal/services/exports"
 	filesvc "github.com/ncecere/open_model_gateway/backend/internal/services/files"
 	tenantservice "github.com/ncecere/open_model_gateway/backend/internal/services/tenant"
 	usageService "github.com/ncecere/open_model_gateway/backend/internal/services/usage"
@@ -62,7 +65,10 @@ type Container struct {
 	AdminRBAC            *adminrbacsvc.Service
 	AdminConfig          *adminconfigsvc.Service
 	AdminAudit           *adminauditsvc.Service
+	AdminAPIKeys         *adminapikeyssvc.Service
 	Batches              *batchsvc.Service
+	Exports              *exportsvc.Service
+	BillingWebhooks      *billinghooks.Service
 	DefaultModels        *catalog.DefaultModelService
 	UsageService         *usageService.Service
 	TenantService        *tenantservice.Service
@@ -263,8 +269,15 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 		Files:                filesService,
 		AdminConfig:          adminConfigService,
 		Batches:              batchesService,
-		TelemetryCancel:      telemetryCancel,
-		ReportingLocation:    reportingLoc,
+		Exports: func() *exportsvc.Service {
+			if filesService == nil {
+				return nil
+			}
+			return exportsvc.NewService(queries, filesService, reportingLoc)
+		}(),
+		BillingWebhooks:   billinghooks.NewService(queries, cfg.Budgets.Alert.Webhook, nil),
+		TelemetryCancel:   telemetryCancel,
+		ReportingLocation: reportingLoc,
 	}
 
 	personalSvc.SetTenantModelUpdater(func(id uuid.UUID, aliases []string) {
@@ -277,6 +290,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	container.AdminTenants = admintenantsvc.NewService(cfg, queries, reportingLoc, pool, personalSvc, adminAuth, container.SetTenantModels, container.UpdateTenantRateLimit, container.UpdateAPIKeyRateLimit)
 	container.AdminRBAC = adminrbacsvc.NewService(queries)
 	container.AdminAudit = adminauditsvc.NewService(auditservice.NewService(queries))
+	container.AdminAPIKeys = adminapikeyssvc.NewService(queries)
 
 	if err := container.loadTenantModelAccess(ctx); err != nil {
 		return nil, err

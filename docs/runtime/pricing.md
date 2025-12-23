@@ -59,6 +59,8 @@ When multiple image tiers exist, the pricing cache matches **all** metadata keys
 | `usage` | No | Highlights policy constraints like "sandbox only". |
 | `sku` | No | Reference label mirroring the provider’s SKU naming. |
 
+If no `quality` is provided on an image request, the router assumes `standard` when selecting tiers. This keeps image billing aligned with the UI default.
+
 ---
 
 #### Map usage buckets

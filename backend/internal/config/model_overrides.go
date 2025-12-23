@@ -12,15 +12,16 @@ type ProviderOverrides struct {
 	Anthropic        *AnthropicProviderConfig        `mapstructure:"anthropic" json:"anthropic,omitempty"`
 	OpenRouter       *OpenRouterProviderConfig       `mapstructure:"openrouter" json:"openrouter,omitempty"`
 	Groq             *GroqProviderConfig             `mapstructure:"groq" json:"groq,omitempty"`
+	VLLM             *VLLMProviderConfig             `mapstructure:"vllm" json:"vllm,omitempty"`
 	Retry            *ProviderRetryConfig            `mapstructure:"retry" json:"retry,omitempty"`
 	Tokenizer        string                          `mapstructure:"tokenizer" json:"tokenizer,omitempty"`
 }
 
 // ProviderRetryConfig allows per-entry overrides for retry/backoff.
 type ProviderRetryConfig struct {
-	MaxAttempts      int           `mapstructure:"max_attempts" json:"max_attempts"`
-	InitialBackoff   time.Duration `mapstructure:"initial_backoff" json:"initial_backoff"`
-	BackoffMultiplier float64      `mapstructure:"backoff_multiplier" json:"backoff_multiplier"`
+	MaxAttempts       int           `mapstructure:"max_attempts" json:"max_attempts"`
+	InitialBackoff    time.Duration `mapstructure:"initial_backoff" json:"initial_backoff"`
+	BackoffMultiplier float64       `mapstructure:"backoff_multiplier" json:"backoff_multiplier"`
 }
 
 type AzureProviderConfig struct {
@@ -83,4 +84,11 @@ type GroqProviderConfig struct {
 	APIKey  string `mapstructure:"api_key" json:"api_key"`
 	BaseURL string `mapstructure:"base_url" json:"base_url"`
 	Region  string `mapstructure:"region" json:"region"`
+}
+
+type VLLMProviderConfig struct {
+	BaseURL    string `mapstructure:"base_url" json:"base_url"`
+	Mode       string `mapstructure:"mode" json:"mode"`
+	APIKey     string `mapstructure:"api_key" json:"api_key"`
+	AuthHeader string `mapstructure:"auth_header" json:"auth_header"`
 }

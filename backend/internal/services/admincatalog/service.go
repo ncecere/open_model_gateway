@@ -153,6 +153,15 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 				payload.APIKey = strings.TrimSpace(cfg.APIKey)
 			}
 		}
+	case "vllm":
+		if cfg := payload.ProviderOverrides.VLLM; cfg != nil {
+			if payload.Endpoint == "" {
+				payload.Endpoint = strings.TrimSpace(cfg.BaseURL)
+			}
+			if payload.APIKey == "" {
+				payload.APIKey = strings.TrimSpace(cfg.APIKey)
+			}
+		}
 	case "bedrock":
 		if cfg := payload.ProviderOverrides.Bedrock; cfg != nil && payload.Region == "" {
 			payload.Region = strings.TrimSpace(cfg.Region)

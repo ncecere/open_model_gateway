@@ -172,6 +172,33 @@ const GROQ_METADATA: MetadataSection[] = [
   },
 ];
 
+const VLLM_METADATA: MetadataSection[] = [
+  {
+    id: "vllm-mode",
+    title: "vLLM / TGI settings",
+    description:
+      "Configure whether this entry targets vLLM's OpenAI-compatible API or Hugging Face TGI.",
+    fields: [
+      {
+        key: "vllm_mode",
+        label: "Mode",
+        input: "select",
+        options: [
+          { label: "OpenAI-compatible", value: "openai" },
+          { label: "TGI (/generate)", value: "tgi" },
+        ],
+      },
+      {
+        key: "auth_header",
+        label: "Auth header",
+        placeholder: "Authorization",
+        description:
+          "Optional header name for TGI auth (Authorization, X-Api-Key, etc.).",
+      },
+    ],
+  },
+];
+
 const PROVIDER_METADATA_SECTIONS: Record<string, MetadataSection[]> = {
   openai: [
     {
@@ -198,6 +225,7 @@ const PROVIDER_METADATA_SECTIONS: Record<string, MetadataSection[]> = {
   openrouter: OPENROUTER_METADATA,
   open_router: OPENROUTER_METADATA,
   groq: GROQ_METADATA,
+  vllm: VLLM_METADATA,
   bedrock: [
     {
       id: "bedrock-behavior",

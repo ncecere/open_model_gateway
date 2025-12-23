@@ -3,6 +3,8 @@ package user
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -76,4 +78,16 @@ func timeFromPg(ts pgtype.Timestamptz) (time.Time, error) {
 		return time.Time{}, errors.New("invalid timestamp")
 	}
 	return ts.Time, nil
+}
+
+func parsePositiveInt(raw string, fallback int) int {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(clean)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }

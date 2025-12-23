@@ -81,6 +81,13 @@ export interface GroqProviderConfig {
   region?: string;
 }
 
+export interface VLLMProviderConfig {
+  api_key?: string;
+  base_url?: string;
+  mode?: string;
+  auth_header?: string;
+}
+
 export interface ProviderOverrides {
   azure?: AzureProviderConfig;
   vertex?: VertexProviderConfig;
@@ -90,6 +97,7 @@ export interface ProviderOverrides {
   anthropic?: AnthropicProviderConfig;
   openrouter?: OpenRouterProviderConfig;
   groq?: GroqProviderConfig;
+  vllm?: VLLMProviderConfig;
 }
 
 export interface AnthropicProviderConfig {
@@ -275,6 +283,9 @@ export async function upsertModel(payload: ModelCatalogUpsertRequest) {
   }
   if (provider_overrides?.groq) {
     body.groq = provider_overrides.groq;
+  }
+  if (provider_overrides?.vllm) {
+    body.vllm = provider_overrides.vllm;
   }
   if (pricing_tiers) {
     body.pricing_tiers = pricing_tiers;

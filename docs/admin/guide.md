@@ -93,6 +93,32 @@ Set pricing overrides per catalog entry with `price_image_cents`, `price_image_e
 - User portal (`/`) allows non-admin accounts to access personal tenants, API keys, usage dashboards, and batch artifacts.
 - API endpoints under `/admin/**` and `/user/**` mirror the UI functionality; use them for automation.
 
+### Admin API tokens
+
+Admin endpoints can be automated without browser sessions by issuing Admin API tokens from **Settings -> Admin tokens**.
+
+- **Scopes**: `admin` tokens are bound to the current admin user. `system` tokens are super-admin only and are intended for shared operational tooling.
+- **Expiration**: every token has an explicit TTL (required) and is shown only once when created.
+- **Usage**: tokens authenticate the same `/admin/**` endpoints used by the UI, including usage exports and billing webhooks.
+
+Create a token via API (admin session token required):
+
+```bash
+curl -sS -X POST http://localhost:8090/admin/admin-keys \
+  -H "Authorization: Bearer $ADMIN_SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"ops-export","scope":"system","expires_in_seconds":2592000}'
+```
+
+Use the returned token in subsequent admin calls:
+
+```bash
+curl -sS http://localhost:8090/admin/usage-exports \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+See `docs/runtime/usage.md` for usage export and billing webhook payloads.
+
 ### Files & Storage
 
 - `files.*` config controls storage:

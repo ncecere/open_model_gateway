@@ -12,6 +12,48 @@ import (
 	decimal "github.com/shopspring/decimal"
 )
 
+type AdminApiKeyScope string
+
+const (
+	AdminApiKeyScopeAdmin  AdminApiKeyScope = "admin"
+	AdminApiKeyScopeSystem AdminApiKeyScope = "system"
+)
+
+func (e *AdminApiKeyScope) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AdminApiKeyScope(s)
+	case string:
+		*e = AdminApiKeyScope(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AdminApiKeyScope: %T", src)
+	}
+	return nil
+}
+
+type NullAdminApiKeyScope struct {
+	AdminApiKeyScope AdminApiKeyScope `json:"admin_api_key_scope"`
+	Valid            bool             `json:"valid"` // Valid is true if AdminApiKeyScope is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAdminApiKeyScope) Scan(value interface{}) error {
+	if value == nil {
+		ns.AdminApiKeyScope, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AdminApiKeyScope.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAdminApiKeyScope) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AdminApiKeyScope), nil
+}
+
 type ApiKeyKind string
 
 const (
@@ -182,6 +224,20 @@ func (ns NullTenantStatus) Value() (driver.Value, error) {
 	return string(ns.TenantStatus), nil
 }
 
+type AdminApiKey struct {
+	ID              pgtype.UUID        `json:"id"`
+	Name            string             `json:"name"`
+	Prefix          string             `json:"prefix"`
+	SecretHash      string             `json:"secret_hash"`
+	Scope           AdminApiKeyScope   `json:"scope"`
+	OwnerUserID     pgtype.UUID        `json:"owner_user_id"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 type AdminAuditLog struct {
 	ID           pgtype.UUID        `json:"id"`
 	UserID       pgtype.UUID        `json:"user_id"`
@@ -257,6 +313,30 @@ type BatchItem struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	StartedAt   pgtype.Timestamptz `json:"started_at"`
 	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
+type BillingWebhook struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Name      pgtype.Text        `json:"name"`
+	Url       string             `json:"url"`
+	Secret    pgtype.Text        `json:"secret"`
+	Enabled   bool               `json:"enabled"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type BillingWebhookEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	WebhookID   pgtype.UUID        `json:"webhook_id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	PeriodStart pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd   pgtype.Timestamptz `json:"period_end"`
+	Payload     []byte             `json:"payload"`
+	Success     bool               `json:"success"`
+	StatusCode  pgtype.Int4        `json:"status_code"`
+	Error       pgtype.Text        `json:"error"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type BudgetAlertEvent struct {
@@ -446,6 +526,27 @@ type TenantRateLimit struct {
 	ParallelRequests  int32              `json:"parallel_requests"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type UsageExport struct {
+	ID           pgtype.UUID        `json:"id"`
+	Scope        string             `json:"scope"`
+	Status       string             `json:"status"`
+	Format       string             `json:"format"`
+	Granularity  string             `json:"granularity"`
+	Timezone     string             `json:"timezone"`
+	PeriodStart  pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd    pgtype.Timestamptz `json:"period_end"`
+	TenantIds    []pgtype.UUID      `json:"tenant_ids"`
+	RequestedBy  pgtype.UUID        `json:"requested_by"`
+	FileID       pgtype.UUID        `json:"file_id"`
+	FileTenantID pgtype.UUID        `json:"file_tenant_id"`
+	RowCount     pgtype.Int4        `json:"row_count"`
+	Error        pgtype.Text        `json:"error"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	StartedAt    pgtype.Timestamptz `json:"started_at"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
 }
 
 type UsageRecord struct {

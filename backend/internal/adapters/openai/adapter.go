@@ -26,6 +26,7 @@ type Options struct {
 	BaseURL      string
 	Organization string
 	Extra        []option.RequestOption
+	AllowNoKey   bool
 }
 
 // Adapter wraps the official OpenAI SDK for native + compatible deployments.
@@ -36,11 +37,15 @@ type Adapter struct {
 
 // New creates an OpenAI adapter using the provided API key and optional base URL/organization.
 func New(opts Options) (*Adapter, error) {
-	if strings.TrimSpace(opts.APIKey) == "" {
+	apiKey := strings.TrimSpace(opts.APIKey)
+	if apiKey == "" && !opts.AllowNoKey {
 		return nil, errors.New("openai: api key required")
 	}
 
-	requestOpts := []option.RequestOption{option.WithAPIKey(opts.APIKey)}
+	requestOpts := make([]option.RequestOption, 0, 2)
+	if apiKey != "" {
+		requestOpts = append(requestOpts, option.WithAPIKey(apiKey))
+	}
 	if strings.TrimSpace(opts.BaseURL) != "" {
 		requestOpts = append(requestOpts, option.WithBaseURL(strings.TrimRight(opts.BaseURL, "/")))
 	}

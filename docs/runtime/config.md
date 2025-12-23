@@ -148,12 +148,15 @@ Shared credential fallbacks for adapters:
 - `openai_compatible.base_url` + `api_key`
 - `openrouter.base_url`, `api_key`, `referer`, `app_name`
 - `groq.base_url`, `api_key`, `region`
+- `vllm.base_url`, `mode`, `api_key`, `auth_header`
 
 These values seed provider factories; individual catalog entries can override them via `metadata` or provider-specific sub-blocks.
 
 The OpenRouter block defaults to `https://openrouter.ai/api/v1` with blank attribution headers. Catalog entries continue to be curated manually through config/UI/API—there is no automated discovery, so the config simply provides shared credentials/headers.
 
 The Groq block simply sets default credentials for Groq's OpenAI-compatible endpoint (`https://api.groq.com/openai/v1` by default) and an optional `region` hint forwarded via `X-Groq-Region`. Catalog entries remain the source of truth for Groq models—there is no automatic discovery.
+
+The vLLM block targets self-hosted deployments. Set `providers.vllm.mode` to `openai` when vLLM exposes `/v1/chat/completions` and `/v1/embeddings`, or to `tgi` when pointing at Hugging Face Text Generation Inference (`/generate` + `/generate_stream`). Per-entry overrides live in `metadata.vllm_mode` and `metadata.auth_header`, and you can still override `endpoint`/`api_key` per catalog entry.
 
 ## Files (`files.*`)
 

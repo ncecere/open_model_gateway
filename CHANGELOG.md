@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.23] - 2025-12-23
+### Added
+- Usage exports (CSV/Parquet) with async processing, admin/user APIs, file-backed downloads, and Admin Usage page export flows.
+- Billing webhooks with signed payloads, event tracking, and admin/user CRUD + dispatch endpoints for monthly summaries.
+- Admin API tokens with admin/system scopes, required expiry, audit logging, and Settings UI management.
+- vLLM provider adapter (OpenAI-compatible + TGI modes) with config defaults and UI icon support.
+
+### Changed
+- OpenAI SDK adapter can be configured without an API key for self-hosted gateways.
+
+### Documentation
+- Added and refreshed docs for usage exports, billing webhooks, vLLM provider setup, and updated router/config examples.
+
 ## [v0.1.22] - 2025-12-22
 ### Added
 - Image pricing now supports per-megapixel billing (with size-based estimation and input-image fallback for edits/variations), image operation buckets (`image_generation`, `image_edit`, `image_variation`), and metadata-based tier selection for image quality/resolution/operation.

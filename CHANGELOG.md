@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.24] - 2025-12-23
+### Added
+- Static OpenAPI spec with `/openapi.yaml`, `/openapi.json`, and Scalar UI at `/docs`.
+- Embedded OpenAPI spec for the router binary plus expanded endpoint grouping and examples.
+- User-facing documentation set under `user_docs/` (getting started, models, tenants/users, keys, budgets/rate limits).
+- Shared usage helpers in the frontend (filters, daily tables, range hook, formatters).
+- Shared default-selection hook for consistent dropdown defaults across admin/user pages.
+- Settings tabs refactor with `react-hook-form` and per-tab components.
+
+### Changed
+- Split OpenAI public routes into endpoint-focused handlers/types.
+- Split admin tenant handlers into focused files (routes/types/budgets/keys/memberships/etc.).
+- Split usage service into focused files (admin/user/compare/daily/helpers/types/window).
+- Split batch worker execution into endpoint-specific files with shared helpers.
+- Added executor helpers for route selection and capability filtering to reduce duplication.
+- Refactored admin and user usage pages to use shared helpers and consistent ranges.
+
 ## [v0.1.23] - 2025-12-23
 ### Added
 - Usage exports (CSV/Parquet) with async processing, admin/user APIs, file-backed downloads, and Admin Usage page export flows.

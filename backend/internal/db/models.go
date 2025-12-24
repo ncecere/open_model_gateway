@@ -403,6 +403,7 @@ type ModelCatalog struct {
 	PriceOutput        decimal.Decimal    `json:"price_output"`
 	Currency           string             `json:"currency"`
 	Enabled            bool               `json:"enabled"`
+	TenantAssignable   bool               `json:"tenant_assignable"`
 	ProviderConfigJson []byte             `json:"provider_config_json"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	Deployment         string             `json:"deployment"`
@@ -506,11 +507,14 @@ type TenantBudgetOverride struct {
 }
 
 type TenantMembership struct {
-	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Role      MembershipRole     `json:"role"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Role             MembershipRole     `json:"role"`
+	BudgetUsd        decimal.Decimal    `json:"budget_usd"`
+	WarningThreshold decimal.Decimal    `json:"warning_threshold"`
+	TokenCap         int64              `json:"token_cap"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 type TenantModel struct {

@@ -14,6 +14,7 @@ interface ModelCatalogDTO {
   price_output: string;
   currency: string;
   enabled: boolean;
+  tenant_assignable: boolean;
   updated_at: string;
   deployment: string;
   endpoint: string;
@@ -128,6 +129,7 @@ export interface ModelCatalogEntry {
   price_output: number;
   currency: string;
   enabled: boolean;
+  tenant_assignable: boolean;
   updated_at: string;
   deployment: string;
   endpoint: string;
@@ -158,6 +160,7 @@ export interface ModelCatalogUpsertRequest {
   price_output: number;
   currency: string;
   enabled: boolean;
+  tenant_assignable: boolean;
   deployment: string;
   endpoint: string;
   api_key: string;
@@ -226,6 +229,7 @@ function mapCatalogEntry(entry: ModelCatalogDTO): ModelCatalogEntry {
     price_output: parseDecimal(entry.price_output),
     currency: entry.currency,
     enabled: entry.enabled,
+    tenant_assignable: entry.tenant_assignable,
     updated_at: entry.updated_at,
     deployment: entry.deployment,
     endpoint: entry.endpoint,

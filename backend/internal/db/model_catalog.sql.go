@@ -22,7 +22,7 @@ func (q *Queries) DeleteModelCatalogEntry(ctx context.Context, alias string) err
 }
 
 const getModelByAlias = `-- name: GetModelByAlias :one
-SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
 FROM model_catalog
 WHERE alias = $1
 `
@@ -44,6 +44,7 @@ func (q *Queries) GetModelByAlias(ctx context.Context, alias string) (ModelCatal
 		&i.PriceOutput,
 		&i.Currency,
 		&i.Enabled,
+		&i.TenantAssignable,
 		&i.ProviderConfigJson,
 		&i.UpdatedAt,
 		&i.Deployment,
@@ -58,7 +59,7 @@ func (q *Queries) GetModelByAlias(ctx context.Context, alias string) (ModelCatal
 }
 
 const listEnabledModels = `-- name: ListEnabledModels :many
-SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
 FROM model_catalog
 WHERE enabled = true
 ORDER BY alias
@@ -87,6 +88,7 @@ func (q *Queries) ListEnabledModels(ctx context.Context) ([]ModelCatalog, error)
 			&i.PriceOutput,
 			&i.Currency,
 			&i.Enabled,
+			&i.TenantAssignable,
 			&i.ProviderConfigJson,
 			&i.UpdatedAt,
 			&i.Deployment,
@@ -108,7 +110,7 @@ func (q *Queries) ListEnabledModels(ctx context.Context) ([]ModelCatalog, error)
 }
 
 const listModelCatalog = `-- name: ListModelCatalog :many
-SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
 FROM model_catalog
 ORDER BY alias
 `
@@ -136,6 +138,7 @@ func (q *Queries) ListModelCatalog(ctx context.Context) ([]ModelCatalog, error) 
 			&i.PriceOutput,
 			&i.Currency,
 			&i.Enabled,
+			&i.TenantAssignable,
 			&i.ProviderConfigJson,
 			&i.UpdatedAt,
 			&i.Deployment,
@@ -157,7 +160,7 @@ func (q *Queries) ListModelCatalog(ctx context.Context) ([]ModelCatalog, error) 
 }
 
 const listModelCatalogByAliases = `-- name: ListModelCatalogByAliases :many
-SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
 FROM model_catalog
 WHERE alias = ANY($1::text[])
 `
@@ -185,6 +188,7 @@ func (q *Queries) ListModelCatalogByAliases(ctx context.Context, dollar_1 []stri
 			&i.PriceOutput,
 			&i.Currency,
 			&i.Enabled,
+			&i.TenantAssignable,
 			&i.ProviderConfigJson,
 			&i.UpdatedAt,
 			&i.Deployment,
@@ -220,6 +224,7 @@ INSERT INTO model_catalog (
     price_output,
     currency,
     enabled,
+    tenant_assignable,
     deployment,
     endpoint,
     api_key,
@@ -231,7 +236,7 @@ INSERT INTO model_catalog (
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
 )
 ON CONFLICT (alias)
 DO UPDATE SET
@@ -247,6 +252,7 @@ DO UPDATE SET
     price_output = EXCLUDED.price_output,
     currency = EXCLUDED.currency,
     enabled = EXCLUDED.enabled,
+    tenant_assignable = EXCLUDED.tenant_assignable,
     deployment = EXCLUDED.deployment,
     endpoint = EXCLUDED.endpoint,
     api_key = EXCLUDED.api_key,
@@ -256,7 +262,7 @@ DO UPDATE SET
     weight = EXCLUDED.weight,
     provider_config_json = EXCLUDED.provider_config_json,
     updated_at = NOW()
-RETURNING alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+RETURNING alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
 `
 
 type UpsertModelCatalogEntryParams struct {
@@ -273,6 +279,7 @@ type UpsertModelCatalogEntryParams struct {
 	PriceOutput        decimal.Decimal `json:"price_output"`
 	Currency           string          `json:"currency"`
 	Enabled            bool            `json:"enabled"`
+	TenantAssignable   bool            `json:"tenant_assignable"`
 	Deployment         string          `json:"deployment"`
 	Endpoint           string          `json:"endpoint"`
 	ApiKey             string          `json:"api_key"`
@@ -298,6 +305,7 @@ func (q *Queries) UpsertModelCatalogEntry(ctx context.Context, arg UpsertModelCa
 		arg.PriceOutput,
 		arg.Currency,
 		arg.Enabled,
+		arg.TenantAssignable,
 		arg.Deployment,
 		arg.Endpoint,
 		arg.ApiKey,
@@ -322,6 +330,7 @@ func (q *Queries) UpsertModelCatalogEntry(ctx context.Context, arg UpsertModelCa
 		&i.PriceOutput,
 		&i.Currency,
 		&i.Enabled,
+		&i.TenantAssignable,
 		&i.ProviderConfigJson,
 		&i.UpdatedAt,
 		&i.Deployment,

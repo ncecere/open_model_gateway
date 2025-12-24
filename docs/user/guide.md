@@ -76,7 +76,10 @@ Front-end overlays can call this endpoint to draw multi-tenant or tenant+model c
 - Every tenant you belong to appears as a card plus a tabular list. Click **Manage** to view budgets, remaining spend, and membership details.
 - Owners and admins can invite teammates by supplying an email + role (owner, admin, viewer, or user) and optionally an initial password for local auth. Invites immediately create the membership so the new user can log in with their personal tenant.
 - Existing memberships can be refreshed or removed from the same dialog (admins may edit non-owner roles; only owners can grant/remove the owner role).
-- Membership tables show who invited whom, the assigned role, and whether an entry corresponds to your own account.
+- Membership tables show the assigned role, member-level budget (if set), and whether an entry corresponds to your own account.
+- Owners/admins can set member budgets (USD cap, warning threshold, token cap) that act as ceilings for keys issued by that member.
+- Owners/admins can adjust tenant rate limits (RPM/TPM/concurrency) up to the global ceiling.
+- Owners/admins can attach or detach approved model aliases; metadata edits remain admin-only.
 
 ## OpenAI-Compatible APIs
 

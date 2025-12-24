@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.25] - 2025-12-24
+### Added
+- Fine-grained tenant RBAC capabilities for owner/admin/member/viewer with middleware enforcement and audit logging on user actions.
+- Per-member budget fields (USD cap, warning threshold, token cap) plus budget enforcement in request context.
+- Tenant-level limits management in the user portal (read/update/reset) with ceiling enforcement.
+- Tenant model attach/detach support for approved catalog aliases, including a tenant-assignable flag in the model catalog.
+- Admin tenants page refresh with summary cards, modal-based memberships, and tabbed tenant edit dialog (Overview/Alerts/Models/Members).
+
+### Changed
+- User portal tenant details now use tabbed management with scrollable sections and unified modal sizing.
+- User tenant list now returns budget usage/limit data so budget meters match the admin view.
+- User portal counts and personal API keys now exclude personal tenants/tenant keys from shared views.
+- Admin tenant actions replace "Manage members" with a delete (suspend) flow.
+
+### Fixed
+- Tenant UI tables now reserve space for budget columns and reduce crowding between budget/role data.
+
 ## [v0.1.24] - 2025-12-23
 ### Added
 - Static OpenAPI spec with `/openapi.yaml`, `/openapi.json`, and Scalar UI at `/docs`.

@@ -38,6 +38,7 @@ This guide explains how to issue, use, and rotate both.
 - **Scope**: determines which tenant receives usage and budget accounting.
 
 Key limits cannot exceed tenant-level caps. Tenant caps cannot exceed global defaults.
+If a tenant member has a member-level budget, any keys they issue are capped by that budget.
 
 ## Use an API Key
 

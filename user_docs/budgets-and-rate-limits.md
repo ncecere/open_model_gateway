@@ -8,10 +8,12 @@ Budgets apply in this order:
 
 1. Global defaults (Admin Settings).
 2. Tenant overrides.
-3. API key overrides.
+3. Member budgets (per-tenant membership).
+4. API key overrides.
 
 The most restrictive limit wins. Tenant caps act as a ceiling; per-key limits
 cannot exceed tenant limits.
+Member budgets cap any keys issued by that member within the tenant.
 
 ## Set Budget Defaults
 
@@ -63,6 +65,7 @@ threshold is crossed and when the budget is exceeded.
 
 - **Lower a tenant ceiling** during an incident, then restore it later.
 - **Give a single key more headroom** without increasing the tenant cap.
+- **Give a member a stricter budget** without changing tenant-wide spend.
 - **Disable alerts** by setting the warning threshold to 1.0.
 
 ## Troubleshooting

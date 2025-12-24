@@ -24,12 +24,17 @@ func Register(app *fiber.App, container *app.Container) {
 	group.Patch("/profile", handler.updateProfile)
 	group.Post("/profile/password", handler.changePassword)
 	group.Get("/tenants", handler.tenants)
-	group.Get("/tenants/:tenantID/summary", handler.tenantSummary)
+	group.Get("/tenants/:tenantID/summary",
+		handler.requireTenantMembership("tenantID"),
+		handler.tenantSummary,
+	)
 	handler.registerAPIKeyRoutes(group)
 	handler.registerUsageRoutes(group)
 	handler.registerUsageExportRoutes(group)
 	handler.registerFileRoutes(group)
 	handler.registerBillingWebhookRoutes(group)
+	handler.registerTenantLimitRoutes(group)
+	handler.registerTenantModelRoutes(group)
 	group.Get("/models", handler.listModels)
 	handler.registerBatchRoutes(group)
 	handler.registerTenantManagementRoutes(group)

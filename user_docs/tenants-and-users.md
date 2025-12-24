@@ -21,8 +21,10 @@ Suspended tenants cannot run `/v1` requests; their keys are blocked until reacti
 Tenant access is limited by the model catalog and default model settings.
 
 1. Open **Admin -> Settings** and confirm default models are set.
-2. In **Admin -> Tenants**, open a tenant and review model access.
+2. In **Admin -> Models**, mark tenant-assignable aliases that tenants may attach.
+3. In **Admin -> Tenants**, open a tenant and review model access.
 3. Add or remove model aliases as needed.
+4. Tenant owners/admins can also attach or detach approved aliases from the user portal.
 
 ## Add Users to a Tenant
 

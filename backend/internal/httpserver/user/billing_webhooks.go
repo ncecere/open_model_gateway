@@ -10,8 +10,9 @@ import (
 
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
-	"github.com/ncecere/open_model_gateway/backend/internal/timeutil"
+	"github.com/ncecere/open_model_gateway/backend/internal/rbac"
 	billinghooks "github.com/ncecere/open_model_gateway/backend/internal/services/billinghooks"
+	"github.com/ncecere/open_model_gateway/backend/internal/timeutil"
 )
 
 type userBillingWebhookCreateRequest struct {
@@ -79,12 +80,8 @@ func (h *userHandler) listBillingWebhooks(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
-	role, err := h.lookupTenantRole(c.Context(), user, tenantID)
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant access denied")
-	}
-	if !canManageBillingWebhooks(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient permissions")
+	if _, err := h.checkTenantCapability(c.Context(), user, tenantID, rbac.CapabilityManageBillingWebhooks); err != nil {
+		return writeTenantCapabilityError(c, err)
 	}
 	webhooks, err := h.container.BillingWebhooks.ListByTenant(c.Context(), tenantID)
 	if err != nil {
@@ -109,12 +106,8 @@ func (h *userHandler) createBillingWebhook(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
-	role, err := h.lookupTenantRole(c.Context(), user, tenantID)
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant access denied")
-	}
-	if !canManageBillingWebhooks(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient permissions")
+	if _, err := h.checkTenantCapability(c.Context(), user, tenantID, rbac.CapabilityManageBillingWebhooks); err != nil {
+		return writeTenantCapabilityError(c, err)
 	}
 	enabled := true
 	if req.Enabled != nil {
@@ -129,6 +122,13 @@ func (h *userHandler) createBillingWebhook(c *fiber.Ctx) error {
 	})
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
+	}
+	if err := recordUserAudit(c, h.container, "billing_webhook.create", "billing_webhook", webhook.ID.String(), fiber.Map{
+		"tenant_id": webhook.TenantID.String(),
+		"name":      webhook.Name,
+		"url":       webhook.URL,
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(mapUserBillingWebhook(webhook))
 }
@@ -149,12 +149,8 @@ func (h *userHandler) updateBillingWebhook(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusNotFound, "webhook not found")
 	}
-	role, err := h.lookupTenantRole(c.Context(), user, current.TenantID)
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant access denied")
-	}
-	if !canManageBillingWebhooks(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient permissions")
+	if _, err := h.checkTenantCapability(c.Context(), user, current.TenantID, rbac.CapabilityManageBillingWebhooks); err != nil {
+		return writeTenantCapabilityError(c, err)
 	}
 	var req userBillingWebhookUpdateRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -185,6 +181,13 @@ func (h *userHandler) updateBillingWebhook(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
+	if err := recordUserAudit(c, h.container, "billing_webhook.update", "billing_webhook", updated.ID.String(), fiber.Map{
+		"tenant_id": updated.TenantID.String(),
+		"name":      updated.Name,
+		"url":       updated.URL,
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
 	return c.JSON(mapUserBillingWebhook(updated))
 }
 
@@ -204,14 +207,17 @@ func (h *userHandler) deleteBillingWebhook(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusNotFound, "webhook not found")
 	}
-	role, err := h.lookupTenantRole(c.Context(), user, current.TenantID)
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant access denied")
-	}
-	if !canManageBillingWebhooks(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient permissions")
+	if _, err := h.checkTenantCapability(c.Context(), user, current.TenantID, rbac.CapabilityManageBillingWebhooks); err != nil {
+		return writeTenantCapabilityError(c, err)
 	}
 	if err := h.container.BillingWebhooks.Delete(c.Context(), id); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if err := recordUserAudit(c, h.container, "billing_webhook.delete", "billing_webhook", current.ID.String(), fiber.Map{
+		"tenant_id": current.TenantID.String(),
+		"name":      current.Name,
+		"url":       current.URL,
+	}); err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(fiber.Map{"deleted": true})
@@ -233,12 +239,8 @@ func (h *userHandler) listBillingWebhookEvents(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusNotFound, "webhook not found")
 	}
-	role, err := h.lookupTenantRole(c.Context(), user, current.TenantID)
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant access denied")
-	}
-	if !canManageBillingWebhooks(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient permissions")
+	if _, err := h.checkTenantCapability(c.Context(), user, current.TenantID, rbac.CapabilityManageBillingWebhooks); err != nil {
+		return writeTenantCapabilityError(c, err)
 	}
 	limit := int32(parsePositiveInt(c.Query("limit"), 25))
 	offset := int32(parsePositiveInt(c.Query("offset"), 0))
@@ -265,12 +267,8 @@ func (h *userHandler) dispatchBillingWebhook(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusNotFound, "webhook not found")
 	}
-	role, err := h.lookupTenantRole(c.Context(), user, current.TenantID)
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusForbidden, "tenant access denied")
-	}
-	if !canManageBillingWebhooks(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient permissions")
+	if _, err := h.checkTenantCapability(c.Context(), user, current.TenantID, rbac.CapabilityManageBillingWebhooks); err != nil {
+		return writeTenantCapabilityError(c, err)
 	}
 	var req userBillingWebhookDispatchRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -286,6 +284,13 @@ func (h *userHandler) dispatchBillingWebhook(c *fiber.Ctx) error {
 	}
 	events, err := h.container.BillingWebhooks.DispatchSummary(c.Context(), current.TenantID, window.Start(), window.End())
 	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if err := recordUserAudit(c, h.container, "billing_webhook.dispatch", "billing_webhook", current.ID.String(), fiber.Map{
+		"tenant_id": current.TenantID.String(),
+		"period":    req.Period,
+		"timezone":  req.Timezone,
+	}); err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(fiber.Map{"events": mapUserBillingWebhookEvents(events)})
@@ -345,7 +350,7 @@ func parseTenantScope(raw string) (uuid.UUID, error) {
 }
 
 func canManageBillingWebhooks(role db.MembershipRole) bool {
-	return role == db.MembershipRoleOwner || role == db.MembershipRoleAdmin
+	return rbac.HasCapability(role, rbac.CapabilityManageBillingWebhooks)
 }
 
 func resolveUserDispatchWindow(period, timezone string, start, end *time.Time, loc *time.Location) (timeutil.Window, error) {

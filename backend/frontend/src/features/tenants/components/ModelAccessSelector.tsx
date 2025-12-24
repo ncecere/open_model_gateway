@@ -13,6 +13,8 @@ interface ModelAccessSelectorProps {
   onClear: () => void;
   isLoading?: boolean;
   disabled?: boolean;
+  containerClassName?: string;
+  listClassName?: string;
 }
 
 export function ModelAccessSelector({
@@ -25,11 +27,13 @@ export function ModelAccessSelector({
   onClear,
   isLoading,
   disabled,
+  containerClassName,
+  listClassName,
 }: ModelAccessSelectorProps) {
   const selectionSummary = `${selected.length} of ${models.length} models selected`;
 
   return (
-    <div className="space-y-3">
+    <div className={["space-y-3", containerClassName].filter(Boolean).join(" ")}>
       <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -71,7 +75,14 @@ export function ModelAccessSelector({
           No models available. Add catalog entries first.
         </p>
       ) : (
-        <div className="max-h-60 divide-y overflow-y-auto rounded-md border">
+        <div
+          className={[
+            "max-h-60 divide-y overflow-y-auto rounded-md border",
+            listClassName,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           {models.map((entry) => {
             const checked = selected.includes(entry.alias);
             return (

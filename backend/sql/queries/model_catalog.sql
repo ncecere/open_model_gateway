@@ -13,6 +13,7 @@ INSERT INTO model_catalog (
     price_output,
     currency,
     enabled,
+    tenant_assignable,
     deployment,
     endpoint,
     api_key,
@@ -24,7 +25,7 @@ INSERT INTO model_catalog (
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
 )
 ON CONFLICT (alias)
 DO UPDATE SET
@@ -40,6 +41,7 @@ DO UPDATE SET
     price_output = EXCLUDED.price_output,
     currency = EXCLUDED.currency,
     enabled = EXCLUDED.enabled,
+    tenant_assignable = EXCLUDED.tenant_assignable,
     deployment = EXCLUDED.deployment,
     endpoint = EXCLUDED.endpoint,
     api_key = EXCLUDED.api_key,

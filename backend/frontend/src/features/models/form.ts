@@ -89,7 +89,6 @@ function mapPricingTiersToForm(
 
 export function createEmptyModelForm(): ModelFormState {
   return {
-
     alias: "",
     provider: "azure",
     provider_model: "",
@@ -110,6 +109,7 @@ export function createEmptyModelForm(): ModelFormState {
     customMetadata: [],
     weight: "",
     enabled: true,
+    tenant_assignable: false,
     provider_overrides: {},
     pricing_tiers: createEmptyPricingTiers(),
   };
@@ -156,6 +156,7 @@ export function mapEntryToForm(entry: ModelCatalogEntry): ModelFormState {
     customMetadata,
     weight: entry.weight,
     enabled: entry.enabled,
+    tenant_assignable: entry.tenant_assignable,
     provider_overrides: {
       ...entry.provider_overrides,
       vertex: entry.provider_overrides?.vertex

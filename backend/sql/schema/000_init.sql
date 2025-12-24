@@ -29,6 +29,9 @@ CREATE TABLE tenant_memberships (
     tenant_id  UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role       membership_role NOT NULL,
+    budget_usd NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (budget_usd >= 0),
+    warning_threshold NUMERIC NOT NULL DEFAULT 0 CHECK (warning_threshold >= 0 AND warning_threshold <= 1),
+    token_cap BIGINT NOT NULL DEFAULT 0 CHECK (token_cap >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (tenant_id, user_id)
 );
@@ -86,6 +89,7 @@ CREATE TABLE model_catalog (
     price_output       NUMERIC(12,6) NOT NULL,
     currency           TEXT NOT NULL DEFAULT 'USD',
     enabled            BOOLEAN NOT NULL DEFAULT TRUE,
+    tenant_assignable  BOOLEAN NOT NULL DEFAULT FALSE,
     provider_config_json JSONB NOT NULL DEFAULT '{}'::JSONB,
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

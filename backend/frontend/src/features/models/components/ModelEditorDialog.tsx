@@ -243,33 +243,34 @@ export function ModelEditorDialog({
         ? (vertexOverride.vertex_location?.trim() ?? "")
         : form.region.trim();
 
-    const payload: ModelCatalogUpsertRequest = {
-      alias: form.alias.trim(),
-      provider: form.provider.trim(),
-      provider_model: form.provider_model.trim(),
-      model_type: form.model_type || "llm",
-      context_window: Number(form.context_window) || 0,
-      max_output_tokens: Number(form.max_output_tokens) || 0,
-      modalities: form.modalities,
-      supports_tools: form.supports_tools,
-      price_input: form.price_input ? Number.parseFloat(form.price_input) : 0,
-      price_output: form.price_output
-        ? Number.parseFloat(form.price_output)
-        : 0,
-      currency: form.currency.trim() || "USD",
-      deployment: resolvedDeployment,
-      endpoint: form.endpoint.trim(),
-      api_key: form.api_key.trim(),
-      api_version: form.api_version.trim(),
-      region: derivedRegion,
-      metadata: buildMetadataPayload(form),
-      weight: Number(form.weight) || 100,
-      enabled: form.enabled,
-      provider_overrides:
-        Object.keys(provider_overrides).length > 0
-          ? provider_overrides
-          : undefined,
-    };
+      const payload: ModelCatalogUpsertRequest = {
+        alias: form.alias.trim(),
+        provider: form.provider.trim(),
+        provider_model: form.provider_model.trim(),
+        model_type: form.model_type || "llm",
+        context_window: Number(form.context_window) || 0,
+        max_output_tokens: Number(form.max_output_tokens) || 0,
+        modalities: form.modalities,
+        supports_tools: form.supports_tools,
+        price_input: form.price_input ? Number.parseFloat(form.price_input) : 0,
+        price_output: form.price_output
+          ? Number.parseFloat(form.price_output)
+          : 0,
+        currency: form.currency.trim() || "USD",
+        deployment: resolvedDeployment,
+        endpoint: form.endpoint.trim(),
+        api_key: form.api_key.trim(),
+        api_version: form.api_version.trim(),
+        region: derivedRegion,
+        metadata: buildMetadataPayload(form),
+        weight: Number(form.weight) || 100,
+        enabled: form.enabled,
+        tenant_assignable: form.tenant_assignable,
+        provider_overrides:
+          Object.keys(provider_overrides).length > 0
+            ? provider_overrides
+            : undefined,
+      };
 
     const pricingPayload = buildPricingPayload(form);
     if (pricingPayload) {
@@ -548,6 +549,26 @@ export function ModelEditorDialog({
                 checked={form.enabled}
                 onCheckedChange={(checked) =>
                   onChange({ ...form, enabled: Boolean(checked) })
+                }
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border p-4 sm:col-span-2">
+              <div>
+                <Label htmlFor="tenant-assignable" className="mb-1 block">
+                  Tenant-assignable
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Allow tenant admins to attach this alias.
+                </p>
+              </div>
+              <Switch
+                id="tenant-assignable"
+                checked={form.tenant_assignable}
+                onCheckedChange={(checked) =>
+                  onChange({
+                    ...form,
+                    tenant_assignable: Boolean(checked),
+                  })
                 }
               />
             </div>

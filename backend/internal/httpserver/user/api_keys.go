@@ -19,6 +19,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 	"github.com/ncecere/open_model_gateway/backend/internal/limits"
+	"github.com/ncecere/open_model_gateway/backend/internal/rbac"
 	usageservice "github.com/ncecere/open_model_gateway/backend/internal/services/usage"
 )
 
@@ -80,11 +81,26 @@ func (h *userHandler) registerAPIKeyRoutes(group fiber.Router) {
 	group.Post("/api-keys/:apiKeyID/revoke", h.revokeAPIKey)
 	group.Get("/api-keys/:apiKeyID/usage", h.getAPIKeyUsage)
 
-	group.Get("/tenants/:tenantID/api-keys", h.listTenantAPIKeys)
-	group.Post("/tenants/:tenantID/api-keys", h.createTenantAPIKey)
-	group.Post("/tenants/:tenantID/api-keys/:apiKeyID/rotate", h.rotateTenantAPIKey)
-	group.Post("/tenants/:tenantID/api-keys/:apiKeyID/revoke", h.revokeTenantAPIKey)
-	group.Get("/tenants/:tenantID/api-keys/:apiKeyID/usage", h.getTenantAPIKeyUsage)
+	group.Get("/tenants/:tenantID/api-keys",
+		h.requireTenantMembership("tenantID"),
+		h.listTenantAPIKeys,
+	)
+	group.Post("/tenants/:tenantID/api-keys",
+		h.requireTenantCapability("tenantID", rbac.CapabilityManageTenantKeys),
+		h.createTenantAPIKey,
+	)
+	group.Post("/tenants/:tenantID/api-keys/:apiKeyID/rotate",
+		h.requireTenantCapability("tenantID", rbac.CapabilityManageTenantKeys),
+		h.rotateTenantAPIKey,
+	)
+	group.Post("/tenants/:tenantID/api-keys/:apiKeyID/revoke",
+		h.requireTenantCapability("tenantID", rbac.CapabilityManageTenantKeys),
+		h.revokeTenantAPIKey,
+	)
+	group.Get("/tenants/:tenantID/api-keys/:apiKeyID/usage",
+		h.requireTenantMembership("tenantID"),
+		h.getTenantAPIKeyUsage,
+	)
 }
 
 func (h *userHandler) listAPIKeys(c *fiber.Ctx) error {
@@ -341,12 +357,13 @@ func (h *userHandler) listTenantAPIKeys(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
 	}
-	role, err := h.lookupTenantRole(c.Context(), user, tenantUUID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
+	summary, ok := tenantSummaryFromLocals(c)
+	if !ok || summary.TenantID != tenantUUID {
+		var err error
+		summary, err = h.checkTenantMembership(c.Context(), user, tenantUUID)
+		if err != nil {
+			return writeTenantCapabilityError(c, err)
 		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	records, err := h.container.Queries.ListAPIKeysByTenant(c.Context(), toPgUUID(tenantUUID))
 	if err != nil {
@@ -361,7 +378,7 @@ func (h *userHandler) listTenantAPIKeys(c *fiber.Ctx) error {
 		responses = append(responses, resp)
 	}
 	return c.JSON(fiber.Map{
-		"role":     string(role),
+		"role":     string(summary.Role),
 		"api_keys": responses,
 	})
 }
@@ -377,16 +394,6 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 	tenantUUID, err := uuid.Parse(strings.TrimSpace(c.Params("tenantID")))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
-	}
-	role, err := h.lookupTenantRole(c.Context(), user, tenantUUID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	if !canManageTenantKeys(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient role")
 	}
 	var req createUserAPIKeyRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -410,6 +417,19 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 	}
 	if err := validateQuotaForLimit(req.Quota, budgetLimit); err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
+	}
+	if req.Quota != nil && req.Quota.BudgetUSD > 0 {
+		membership, err := h.container.Queries.GetTenantMembership(c.Context(), db.GetTenantMembershipParams{
+			TenantID: toPgUUID(tenantUUID),
+			UserID:   user.ID,
+		})
+		if err == nil {
+			if memberBudget, ok := membership.BudgetUsd.Float64(); ok && memberBudget > 0 && req.Quota.BudgetUSD > memberBudget {
+				return httputil.WriteError(c, fiber.StatusBadRequest, "quota exceeds member budget")
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+		}
 	}
 	rateLimitCfg, err := validateAPIKeyRateLimit(h.container, tenantUUID, req.RateLimits)
 	if err != nil {
@@ -441,6 +461,17 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 			return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 		}
 	}
+	keyID, err := uuidFromPg(record.ID)
+	if err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if err := recordUserAudit(c, h.container, "api_key.create", "api_key", keyID.String(), fiber.Map{
+		"tenant_id": tenantUUID.String(),
+		"name":      record.Name,
+		"prefix":    record.Prefix,
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
 	resp, err := h.buildUserAPIKeyResponse(c.Context(), record)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
@@ -453,23 +484,13 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 }
 
 func (h *userHandler) revokeTenantAPIKey(c *fiber.Ctx) error {
-	user, ok := userFromContext(c.UserContext())
+	_, ok := userFromContext(c.UserContext())
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
 	tenantUUID, err := uuid.Parse(strings.TrimSpace(c.Params("tenantID")))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
-	}
-	role, err := h.lookupTenantRole(c.Context(), user, tenantUUID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	if !canManageTenantKeys(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient role")
 	}
 	keyUUID, err := uuid.Parse(strings.TrimSpace(c.Params("apiKeyID")))
 	if err != nil {
@@ -493,6 +514,12 @@ func (h *userHandler) revokeTenantAPIKey(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
+	if err := recordUserAudit(c, h.container, "api_key.revoke", "api_key", keyUUID.String(), fiber.Map{
+		"tenant_id": tenantUUID.String(),
+		"prefix":    revoked.Prefix,
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
 	resp, err := h.buildUserAPIKeyResponse(c.Context(), revoked)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
@@ -502,7 +529,7 @@ func (h *userHandler) revokeTenantAPIKey(c *fiber.Ctx) error {
 }
 
 func (h *userHandler) rotateTenantAPIKey(c *fiber.Ctx) error {
-	user, ok := userFromContext(c.UserContext())
+	_, ok := userFromContext(c.UserContext())
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
@@ -512,16 +539,6 @@ func (h *userHandler) rotateTenantAPIKey(c *fiber.Ctx) error {
 	tenantUUID, err := uuid.Parse(strings.TrimSpace(c.Params("tenantID")))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
-	}
-	role, err := h.lookupTenantRole(c.Context(), user, tenantUUID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	if !canManageTenantKeys(role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient role")
 	}
 	keyUUID, err := uuid.Parse(strings.TrimSpace(c.Params("apiKeyID")))
 	if err != nil {
@@ -554,6 +571,12 @@ func (h *userHandler) rotateTenantAPIKey(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
+	if err := recordUserAudit(c, h.container, "api_key.rotate", "api_key", keyUUID.String(), fiber.Map{
+		"tenant_id": tenantUUID.String(),
+		"prefix":    rotated.Prefix,
+	}); err != nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
 
 	return c.JSON(createUserAPIKeyResponse{
 		APIKey: resp,
@@ -563,19 +586,13 @@ func (h *userHandler) rotateTenantAPIKey(c *fiber.Ctx) error {
 }
 
 func (h *userHandler) getTenantAPIKeyUsage(c *fiber.Ctx) error {
-	user, ok := userFromContext(c.UserContext())
+	_, ok := userFromContext(c.UserContext())
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
 	tenantUUID, err := uuid.Parse(strings.TrimSpace(c.Params("tenantID")))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
-	}
-	if _, err := h.lookupTenantRole(c.Context(), user, tenantUUID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	keyUUID, err := uuid.Parse(strings.TrimSpace(c.Params("apiKeyID")))
 	if err != nil {
@@ -631,7 +648,7 @@ func (h *userHandler) lookupTenantRole(ctx context.Context, user db.User, tenant
 }
 
 func canManageTenantKeys(role db.MembershipRole) bool {
-	return role == db.MembershipRoleAdmin || role == db.MembershipRoleOwner
+	return rbac.HasCapability(role, rbac.CapabilityManageTenantKeys)
 }
 
 func (h *userHandler) buildUserAPIKeyResponse(ctx context.Context, record db.ApiKey) (userAPIKeyResponse, error) {

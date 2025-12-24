@@ -55,6 +55,7 @@ Refine the existing role system (owner, admin, member/viewer) so tenants can man
 1. Allow owners/admins to create tenant-level guardrail policies derived from global templates.
 2. Enforce that tenants cannot modify global guardrails.
 3. UI + API for listing/applying tenant guardrails.
+> **Deferred:** Guardrails are not implemented yet. Revisit this phase once guardrails storage and templates land.
 
 ### Phase 5 – Documentation & Testing
 1. Update admin/user guides describing role abilities and restrictions.

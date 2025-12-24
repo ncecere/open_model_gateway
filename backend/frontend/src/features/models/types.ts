@@ -40,6 +40,7 @@ export type ModelFormState = {
   customMetadata: CustomMetadataEntry[];
   weight: number | "";
   enabled: boolean;
+  tenant_assignable: boolean;
   provider_overrides: ProviderOverrides;
   pricing_tiers: PricingTiersFormState;
 };

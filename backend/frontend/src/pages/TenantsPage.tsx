@@ -33,13 +33,13 @@ import { getRateLimitDefaults } from "@/api/rate-limits";
 import { useToast } from "@/hooks/use-toast";
 import type { AdminUser } from "@/api/users";
 import { listUsers } from "@/api/users";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   TenantDirectoryCard,
   TenantSummaryHeader,
   TenantCreateDialog,
   TenantEditDialog,
   TenantMembershipDialog,
-  TenantMembershipSection,
   TENANTS_QUERY_KEY,
   TENANTS_DASHBOARD_KEY,
   useTenantDirectoryQuery,
@@ -133,6 +133,7 @@ export function TenantsPage() {
   });
 
   const tenants = tenantsQuery.data?.tenants ?? [];
+  const suspendedCount = tenants.filter((tenant) => tenant.status === "suspended").length;
   const {
     searchTerm: tenantSearch,
     setSearchTerm: setTenantSearch,
@@ -420,21 +421,6 @@ export function TenantsPage() {
     }
   };
 
-  const [membershipTenantId, setMembershipTenantId] = useState<
-    string | undefined
-  >(undefined);
-  useEffect(() => {
-    if (!membershipTenantId && tenants.length > 0) {
-      setMembershipTenantId(tenants[0].id);
-    }
-  }, [membershipTenantId, tenants]);
-
-  const membershipsQuery = useQuery({
-    queryKey: MEMBERSHIPS_QUERY_KEY(membershipTenantId),
-    queryFn: () => listTenantMemberships(membershipTenantId as string),
-    enabled: Boolean(membershipTenantId),
-  });
-
   const upsertMembershipMutation = useMutation({
     mutationFn: ({
       tenantId,
@@ -479,12 +465,19 @@ export function TenantsPage() {
   const membershipDialog = useMembershipDialog(userDirectory);
 
   const editDialog = useTenantEditDialog();
+  const [editTab, setEditTab] = useState("overview");
   const [editModelsLoading, setEditModelsLoading] = useState(false);
   const [editBudgetLoading, setEditBudgetLoading] = useState(false);
   const [editBudgetHadOverride, setEditBudgetHadOverride] = useState(false);
   const [editRateLoading, setEditRateLoading] = useState(false);
   const [editRateHadOverride, setEditRateHadOverride] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
+
+  const membershipsQuery = useQuery({
+    queryKey: MEMBERSHIPS_QUERY_KEY(editDialog.tenant?.id),
+    queryFn: () => listTenantMemberships(editDialog.tenant?.id as string),
+    enabled: Boolean(editDialog.open && editDialog.tenant?.id),
+  });
 
   useEffect(() => {
     if (!editDialog.open || !editDialog.tenant) {
@@ -611,14 +604,14 @@ export function TenantsPage() {
     membershipsQuery.data?.memberships ?? [];
 
   const handleInviteMember = async () => {
-    if (!membershipTenantId) return;
+    if (!editDialog.tenant?.id) return;
     if (!membershipDialog.email.trim()) {
       toast({ variant: "destructive", title: "Email required" });
       return;
     }
     try {
       await upsertMembershipMutation.mutateAsync({
-        tenantId: membershipTenantId,
+        tenantId: editDialog.tenant.id,
         payload: { email: membershipDialog.email.trim(), role: membershipDialog.role },
       });
       membershipDialog.setEmail("");
@@ -631,13 +624,23 @@ export function TenantsPage() {
 
   const openEditTenantDialog = (tenant: TenantRecord) => {
     editDialog.setTenant(tenant);
+    setEditTab("overview");
     editDialog.setOpen(true);
   };
 
-  const handleManageMembers = (tenantId: string) => {
-    setMembershipTenantId(tenantId);
-    const section = document.getElementById("tenant-memberships");
-    section?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const handleDeleteTenant = async (tenant: TenantRecord) => {
+    if (tenant.status === "suspended") {
+      toast({ title: "Tenant already suspended" });
+      return;
+    }
+    try {
+      await updateStatusMutation.mutateAsync({
+        tenantId: tenant.id,
+        status: "suspended",
+      });
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const handleSaveTenantDetails = async () => {
@@ -788,6 +791,23 @@ export function TenantsPage() {
         refreshing={tenantsQuery.isFetching}
         onCreate={() => createDialog.setOpen(true)}
       />
+      <section className="grid gap-4 md:grid-cols-3">
+        <OverviewCard
+          label="Total tenants"
+          value={tenants.length}
+          help="Active and suspended tenants"
+        />
+        <OverviewCard
+          label="Active"
+          value={activeCount}
+          help="Tenants currently active"
+        />
+        <OverviewCard
+          label="Suspended"
+          value={suspendedCount}
+          help="Tenants paused for review"
+        />
+      </section>
       <TenantCreateDialog
         dialog={createDialog}
         statusOptions={TENANT_STATUSES}
@@ -815,37 +835,16 @@ export function TenantsPage() {
         onStatusChange={handleTenantStatusChange}
         isStatusUpdating={updateStatusMutation.isPending}
         onEditTenant={openEditTenantDialog}
-        onManageMembers={handleManageMembers}
+        onDeleteTenant={handleDeleteTenant}
         budgetDefaults={budgetDefaults}
       />
-
-      <div id="tenant-memberships">
-        <TenantMembershipSection
-          tenants={tenants}
-          selectedTenantId={membershipTenantId}
-          onTenantChange={setMembershipTenantId}
-          memberships={selectedMemberships}
-          isLoading={membershipsQuery.isLoading}
-          onInviteClick={() =>
-            membershipTenantId && membershipDialog.setOpen(true)
-          }
-          onRemoveMember={(member) => {
-            if (!membershipTenantId) return;
-            removeMembershipMutation.mutate({
-              tenantId: membershipTenantId,
-              userId: member.user_id,
-            });
-          }}
-          isRemoving={removeMembershipMutation.isPending}
-        />
-      </div>
 
       <TenantMembershipDialog
         dialog={membershipDialog}
         isSubmitting={upsertMembershipMutation.isPending}
         usersLoading={usersQuery.isLoading}
         tenants={tenants}
-        selectedTenantId={membershipTenantId}
+        selectedTenantId={editDialog.tenant?.id}
         onSubmit={handleInviteMember}
       />
 
@@ -864,8 +863,43 @@ export function TenantsPage() {
         onSelectAllModels={handleSelectAllEditModels}
         onClearModels={handleClearEditModels}
         onSubmit={handleSaveTenantDetails}
+        memberships={selectedMemberships}
+        membershipsLoading={membershipsQuery.isLoading}
+        onInviteMember={() => membershipDialog.setOpen(true)}
+        onRemoveMember={(member) => {
+          if (!editDialog.tenant?.id) return;
+          removeMembershipMutation.mutate({
+            tenantId: editDialog.tenant.id,
+            userId: member.user_id,
+          });
+        }}
+        isRemovingMember={removeMembershipMutation.isPending}
+        activeTab={editTab}
+        onTabChange={setEditTab}
       />
     </div>
+  );
+}
+
+function OverviewCard({
+  label,
+  value,
+  help,
+}: {
+  label: string;
+  value: number;
+  help: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm text-muted-foreground">{label}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-2xl font-semibold">{value}</p>
+        <p className="text-xs text-muted-foreground">{help}</p>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -132,6 +132,14 @@ func (s *Service) GetTenantSummary(ctx context.Context, user db.User, tenantID u
 	}, nil
 }
 
+// GetBudgetSummary returns budget usage data for a tenant.
+func (s *Service) GetBudgetSummary(ctx context.Context, tenantID uuid.UUID) (BudgetSummary, error) {
+	if s == nil || s.queries == nil {
+		return BudgetSummary{}, errors.New("tenant service not initialized")
+	}
+	return s.buildBudgetSummary(ctx, tenantID)
+}
+
 func (s *Service) buildBudgetSummary(ctx context.Context, tenantID uuid.UUID) (BudgetSummary, error) {
 	limit := s.cfg.Budgets.DefaultUSD
 	warn := s.cfg.Budgets.WarningThresholdPerc

@@ -18,22 +18,25 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { BudgetMeter } from "@/ui/kit/BudgetMeter";
-import { MoreHorizontal, Pencil, Users } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -55,7 +58,7 @@ interface TenantDirectoryCardProps {
   onStatusChange: (tenantId: string, status: TenantStatus) => Promise<void>;
   isStatusUpdating: boolean;
   onEditTenant: (tenant: TenantRecord) => void;
-  onManageMembers: (tenantId: string) => void;
+  onDeleteTenant: (tenant: TenantRecord) => void;
   budgetDefaults?: BudgetDefaults;
 }
 
@@ -73,7 +76,7 @@ export function TenantDirectoryCard({
   onStatusChange,
   isStatusUpdating,
   onEditTenant,
-  onManageMembers,
+  onDeleteTenant,
   budgetDefaults,
 }: TenantDirectoryCardProps) {
   return (
@@ -137,80 +140,101 @@ export function TenantDirectoryCard({
             No tenants match the current filters.
           </p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Budget</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {displayTenants.map((tenant) => (
-                <TableRow key={tenant.id}>
-                  <TableCell className="font-medium">{tenant.name}</TableCell>
-                  <TableCell>
-                    <Select
-                      value={tenant.status}
-                      onValueChange={(value) =>
-                        onStatusChange(tenant.id, value as TenantStatus)
-                      }
-                      disabled={isStatusUpdating}
-                    >
-                      <SelectTrigger className="w-[140px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {statusOptions.map((status) => (
-                          <SelectItem key={status} value={status}>
-                            {status}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell className="min-w-[220px]">
-                    <BudgetMeter
-                      used={tenant.budget_used_usd ?? 0}
-                      limit={
-                        tenant.budget_limit_usd ?? budgetDefaults?.default_usd ?? 0
-                      }
-                      warningThreshold={
-                        tenant.warning_threshold ??
-                        budgetDefaults?.warning_threshold_perc ??
-                        0.8
-                      }
-                    />
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {dateFormatter.format(new Date(tenant.created_at))}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem onSelect={() => onEditTenant(tenant)}>
-                          <Pencil className="mr-2 h-4 w-4" /> Edit tenant
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => onManageMembers(tenant.id)}
-                        >
-                          <Users className="mr-2 h-4 w-4" /> Manage members
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase text-muted-foreground">
+                  <th className="pb-3 font-medium">Name</th>
+                  <th className="pb-3 font-medium">Status</th>
+                  <th className="pb-3 font-medium min-w-[220px]">Budget</th>
+                  <th className="pb-3 font-medium">Created</th>
+                  <th className="pb-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayTenants.map((tenant) => (
+                  <tr key={tenant.id} className="border-t text-sm">
+                    <td className="py-3 font-medium">{tenant.name}</td>
+                    <td className="py-3">
+                      <Select
+                        value={tenant.status}
+                        onValueChange={(value) =>
+                          onStatusChange(tenant.id, value as TenantStatus)
+                        }
+                        disabled={isStatusUpdating}
+                      >
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusOptions.map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {status}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="py-3 pr-4 min-w-[220px]">
+                      <BudgetMeter
+                        used={tenant.budget_used_usd ?? 0}
+                        limit={
+                          tenant.budget_limit_usd ?? budgetDefaults?.default_usd ?? 0
+                        }
+                        warningThreshold={
+                          tenant.warning_threshold ??
+                          budgetDefaults?.warning_threshold_perc ??
+                          0.8
+                        }
+                      />
+                    </td>
+                    <td className="py-3 text-sm text-muted-foreground">
+                      {dateFormatter.format(new Date(tenant.created_at))}
+                    </td>
+                    <td className="py-3 text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuItem onSelect={() => onEditTenant(tenant)}>
+                            <Pencil className="mr-2 h-4 w-4" /> Edit tenant
+                          </DropdownMenuItem>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <DropdownMenuItem
+                                onSelect={(event) => event.preventDefault()}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete tenant
+                              </DropdownMenuItem>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete tenant</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will suspend the tenant and revoke access to its resources. This action can be undone by reactivating the tenant.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => onDeleteTenant(tenant)}>
+                                  Delete tenant
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </CardContent>
     </Card>

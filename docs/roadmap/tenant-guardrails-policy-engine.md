@@ -128,3 +128,4 @@ assignments:
 - [ ] Integration hooks in HTTP handlers/executor pipeline.
 - [ ] Admin API + UI + documentation.
 - [ ] Telemetry + audit dashboards for guardrail events.
+> **Note:** The guardrails system is not implemented yet. This roadmap remains blocked until guardrail storage, templates, and enforcement are available.

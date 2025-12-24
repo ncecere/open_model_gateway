@@ -20,6 +20,8 @@ the catalog to determine provider, pricing, and capabilities.
    - **Modalities** (text, image, audio, embedding).
    - **Supports tools** (tool calling, functions).
 5. Provider-specific metadata (examples below).
+6. Optional: mark **Tenant-assignable** to allow tenant owners/admins to attach
+   this alias in the user portal.
 6. Save. The model becomes available for routing immediately.
 
 ## Validate the Model
@@ -44,6 +46,7 @@ the catalog to determine provider, pricing, and capabilities.
 - `context_window`, `max_output_tokens`
 - `modalities` (text, image, audio, embedding)
 - `supports_tools`
+- `tenant_assignable` (allows tenant-level attach/detach)
 - provider metadata (API versions, regions, image settings, etc.)
 
 ## Provider Metadata Examples

@@ -20,6 +20,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/batchdto"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/rbac"
 	admincatalogsvc "github.com/ncecere/open_model_gateway/backend/internal/services/admincatalog"
 	tenantservice "github.com/ncecere/open_model_gateway/backend/internal/services/tenant"
 	usageservice "github.com/ncecere/open_model_gateway/backend/internal/services/usage"
@@ -46,13 +47,16 @@ type userProfileResponse struct {
 }
 
 type userTenantResponse struct {
-	TenantID   string    `json:"tenant_id"`
-	Name       string    `json:"name"`
-	Status     string    `json:"status"`
-	Role       string    `json:"role"`
-	JoinedAt   time.Time `json:"joined_at"`
-	CreatedAt  time.Time `json:"created_at"`
-	IsPersonal bool      `json:"is_personal"`
+	TenantID         string    `json:"tenant_id"`
+	Name             string    `json:"name"`
+	Status           string    `json:"status"`
+	Role             string    `json:"role"`
+	JoinedAt         time.Time `json:"joined_at"`
+	CreatedAt        time.Time `json:"created_at"`
+	IsPersonal       bool      `json:"is_personal"`
+	BudgetUsedUSD    float64   `json:"budget_used_usd"`
+	BudgetLimitUSD   float64   `json:"budget_limit_usd"`
+	WarningThreshold float64   `json:"warning_threshold"`
 }
 
 type tenantSummaryResponse struct {
@@ -229,25 +233,47 @@ func (h *userHandler) tenants(c *fiber.Ctx) error {
 		} else if name == "" {
 			name = fmt.Sprintf("Tenant %s", m.TenantID.String())
 		}
+		budget, err := h.tenantSvc.GetBudgetSummary(c.Context(), m.TenantID)
+		if err != nil {
+			return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+		}
 		out = append(out, userTenantResponse{
-			TenantID:   m.TenantID.String(),
-			Name:       name,
-			Status:     string(m.Status),
-			Role:       string(m.Role),
-			JoinedAt:   m.JoinedAt,
-			CreatedAt:  m.CreatedAt,
-			IsPersonal: m.IsPersonal,
+			TenantID:         m.TenantID.String(),
+			Name:             name,
+			Status:           string(m.Status),
+			Role:             string(m.Role),
+			JoinedAt:         m.JoinedAt,
+			CreatedAt:        m.CreatedAt,
+			IsPersonal:       m.IsPersonal,
+			BudgetUsedUSD:    budget.UsedUSD,
+			BudgetLimitUSD:   budget.LimitUSD,
+			WarningThreshold: budget.WarningThreshold,
 		})
 	}
 	return c.JSON(fiber.Map{"tenants": out})
 }
 
 func (h *userHandler) registerBatchRoutes(group fiber.Router) {
-	group.Get("/tenants/:tenantID/batches", h.userListBatches)
-	group.Get("/tenants/:tenantID/batches/:batchID", h.userGetBatch)
-	group.Post("/tenants/:tenantID/batches/:batchID/cancel", h.userCancelBatch)
-	group.Get("/tenants/:tenantID/batches/:batchID/output", h.userDownloadBatchOutput)
-	group.Get("/tenants/:tenantID/batches/:batchID/errors", h.userDownloadBatchErrors)
+	group.Get("/tenants/:tenantID/batches",
+		h.requireTenantMembership("tenantID"),
+		h.userListBatches,
+	)
+	group.Get("/tenants/:tenantID/batches/:batchID",
+		h.requireTenantMembership("tenantID"),
+		h.userGetBatch,
+	)
+	group.Post("/tenants/:tenantID/batches/:batchID/cancel",
+		h.requireTenantCapability("tenantID", rbac.CapabilityManageBatches),
+		h.userCancelBatch,
+	)
+	group.Get("/tenants/:tenantID/batches/:batchID/output",
+		h.requireTenantMembership("tenantID"),
+		h.userDownloadBatchOutput,
+	)
+	group.Get("/tenants/:tenantID/batches/:batchID/errors",
+		h.requireTenantMembership("tenantID"),
+		h.userDownloadBatchErrors,
+	)
 }
 
 func (h *userHandler) userListBatches(c *fiber.Ctx) error {
@@ -267,12 +293,13 @@ func (h *userHandler) userListBatches(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
 	}
 
-	summary, err := h.tenantSvc.GetTenantSummary(c.Context(), user, tenantUUID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
+	summary, ok := tenantSummaryFromLocals(c)
+	if !ok || summary.TenantID != tenantUUID {
+		var err error
+		summary, err = h.checkTenantMembership(c.Context(), user, tenantUUID)
+		if err != nil {
+			return writeTenantCapabilityError(c, err)
 		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 
 	limit, offset := parseUserBatchPagination(c)
@@ -294,7 +321,7 @@ func (h *userHandler) userListBatches(c *fiber.Ctx) error {
 }
 
 func (h *userHandler) userGetBatch(c *fiber.Ctx) error {
-	user, ok := userFromContext(c.UserContext())
+	_, ok := userFromContext(c.UserContext())
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
@@ -306,13 +333,6 @@ func (h *userHandler) userGetBatch(c *fiber.Ctx) error {
 	if !ok {
 		return nil
 	}
-	if _, err := h.tenantSvc.GetTenantSummary(c.Context(), user, tenantUUID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-
 	record, err := h.container.Batches.Get(c.UserContext(), tenantUUID, batchUUID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -324,7 +344,7 @@ func (h *userHandler) userGetBatch(c *fiber.Ctx) error {
 }
 
 func (h *userHandler) userCancelBatch(c *fiber.Ctx) error {
-	user, ok := userFromContext(c.UserContext())
+	_, ok := userFromContext(c.UserContext())
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
@@ -336,22 +356,17 @@ func (h *userHandler) userCancelBatch(c *fiber.Ctx) error {
 	if !ok {
 		return nil
 	}
-	summary, err := h.tenantSvc.GetTenantSummary(c.Context(), user, tenantUUID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	if !canManageBatches(summary.Role) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "insufficient permissions to cancel batches")
-	}
 
 	record, err := h.container.Batches.Cancel(c.UserContext(), tenantUUID, batchUUID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "batch not found or cannot transition")
 		}
+		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+	}
+	if err := recordUserAudit(c, h.container, "batch.cancel", "batch", batchUUID.String(), fiber.Map{
+		"tenant_id": tenantUUID.String(),
+	}); err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(batchdto.FromBatch(record))
@@ -366,7 +381,7 @@ func (h *userHandler) userDownloadBatchErrors(c *fiber.Ctx) error {
 }
 
 func (h *userHandler) userStreamBatchFile(c *fiber.Ctx, output bool) error {
-	user, ok := userFromContext(c.UserContext())
+	_, ok := userFromContext(c.UserContext())
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
@@ -377,12 +392,6 @@ func (h *userHandler) userStreamBatchFile(c *fiber.Ctx, output bool) error {
 	tenantUUID, batchUUID, ok := h.parseUserBatchParams(c)
 	if !ok {
 		return nil
-	}
-	if _, err := h.tenantSvc.GetTenantSummary(c.Context(), user, tenantUUID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 
 	batch, err := h.container.Batches.Get(c.UserContext(), tenantUUID, batchUUID)
@@ -465,7 +474,7 @@ func parseUserBatchPagination(c *fiber.Ctx) (int32, int32) {
 }
 
 func canManageBatches(role db.MembershipRole) bool {
-	return role == db.MembershipRoleOwner || role == db.MembershipRoleAdmin
+	return rbac.HasCapability(role, rbac.CapabilityManageBatches)
 }
 
 func (h *userHandler) tenantSummary(c *fiber.Ctx) error {

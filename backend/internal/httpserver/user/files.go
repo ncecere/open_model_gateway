@@ -1,7 +1,6 @@
 package user
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 	filesvc "github.com/ncecere/open_model_gateway/backend/internal/services/files"
@@ -31,8 +29,14 @@ type userFileResponse struct {
 }
 
 func (h *userHandler) registerFileRoutes(group fiber.Router) {
-	group.Get("/tenants/:tenantID/files", h.listTenantFiles)
-	group.Get("/tenants/:tenantID/files/:fileID/content", h.downloadTenantFile)
+	group.Get("/tenants/:tenantID/files",
+		h.requireTenantMembership("tenantID"),
+		h.listTenantFiles,
+	)
+	group.Get("/tenants/:tenantID/files/:fileID/content",
+		h.requireTenantMembership("tenantID"),
+		h.downloadTenantFile,
+	)
 	group.Get("/files/settings", h.fileSettings)
 }
 
@@ -55,11 +59,10 @@ func (h *userHandler) listTenantFiles(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
 	}
 
-	if _, err := h.tenantSvc.GetTenantSummary(c.Context(), user, tenantUUID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
+	if summary, ok := tenantSummaryFromLocals(c); !ok || summary.TenantID != tenantUUID {
+		if _, err := h.checkTenantMembership(c.Context(), user, tenantUUID); err != nil {
+			return writeTenantCapabilityError(c, err)
 		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 
 	limit := parsePositiveQueryInt(c, "limit", 50, 200)
@@ -114,11 +117,10 @@ func (h *userHandler) downloadTenantFile(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tenant id")
 	}
-	if _, err := h.tenantSvc.GetTenantSummary(c.Context(), user, tenantUUID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httputil.WriteError(c, fiber.StatusForbidden, "membership required")
+	if summary, ok := tenantSummaryFromLocals(c); !ok || summary.TenantID != tenantUUID {
+		if _, err := h.checkTenantMembership(c.Context(), user, tenantUUID); err != nil {
+			return writeTenantCapabilityError(c, err)
 		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 	fileID, err := uuid.Parse(strings.TrimSpace(c.Params("fileID")))
 	if err != nil {

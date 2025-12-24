@@ -490,9 +490,12 @@ export function UserApiKeysPage() {
     }
   };
 
-  const keys = personalKeys ?? [];
-  const activeKeys = keys.filter((key) => !key.revoked);
-  const revokedKeys = keys.filter((key) => key.revoked);
+  const personalOnlyKeys =
+    personalTenantId && personalKeys
+      ? personalKeys.filter((key) => key.tenant_id === personalTenantId)
+      : [];
+  const activeKeys = personalOnlyKeys.filter((key) => !key.revoked);
+  const revokedKeys = personalOnlyKeys.filter((key) => key.revoked);
   const revokedRows: RevokedRow[] = useMemo(() => {
     const tenantRevoked = allTenantKeyQueries.flatMap((query, index) => {
       const tenantMeta = tenantOptions[index];

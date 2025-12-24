@@ -9,12 +9,13 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	decimal "github.com/shopspring/decimal"
 )
 
 const addTenantMembership = `-- name: AddTenantMembership :one
 INSERT INTO tenant_memberships (tenant_id, user_id, role)
 VALUES ($1, $2, $3)
-RETURNING id, tenant_id, user_id, role, created_at
+RETURNING id, tenant_id, user_id, role, budget_usd, warning_threshold, token_cap, created_at
 `
 
 type AddTenantMembershipParams struct {
@@ -31,13 +32,16 @@ func (q *Queries) AddTenantMembership(ctx context.Context, arg AddTenantMembersh
 		&i.TenantID,
 		&i.UserID,
 		&i.Role,
+		&i.BudgetUsd,
+		&i.WarningThreshold,
+		&i.TokenCap,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getTenantMembership = `-- name: GetTenantMembership :one
-SELECT id, tenant_id, user_id, role, created_at
+SELECT id, tenant_id, user_id, role, budget_usd, warning_threshold, token_cap, created_at
 FROM tenant_memberships
 WHERE tenant_id = $1 AND user_id = $2
 `
@@ -55,6 +59,9 @@ func (q *Queries) GetTenantMembership(ctx context.Context, arg GetTenantMembersh
 		&i.TenantID,
 		&i.UserID,
 		&i.Role,
+		&i.BudgetUsd,
+		&i.WarningThreshold,
+		&i.TokenCap,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -66,6 +73,9 @@ SELECT
     tm.tenant_id,
     tm.user_id,
     tm.role,
+    tm.budget_usd,
+    tm.warning_threshold,
+    tm.token_cap,
     tm.created_at,
     u.email AS user_email,
     u.name AS user_name,
@@ -77,14 +87,17 @@ ORDER BY u.email
 `
 
 type ListTenantMembersRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	Role          MembershipRole     `json:"role"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UserEmail     string             `json:"user_email"`
-	UserName      string             `json:"user_name"`
-	UserCreatedAt pgtype.Timestamptz `json:"user_created_at"`
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Role             MembershipRole     `json:"role"`
+	BudgetUsd        decimal.Decimal    `json:"budget_usd"`
+	WarningThreshold decimal.Decimal    `json:"warning_threshold"`
+	TokenCap         int64              `json:"token_cap"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UserEmail        string             `json:"user_email"`
+	UserName         string             `json:"user_name"`
+	UserCreatedAt    pgtype.Timestamptz `json:"user_created_at"`
 }
 
 func (q *Queries) ListTenantMembers(ctx context.Context, tenantID pgtype.UUID) ([]ListTenantMembersRow, error) {
@@ -101,6 +114,9 @@ func (q *Queries) ListTenantMembers(ctx context.Context, tenantID pgtype.UUID) (
 			&i.TenantID,
 			&i.UserID,
 			&i.Role,
+			&i.BudgetUsd,
+			&i.WarningThreshold,
+			&i.TokenCap,
 			&i.CreatedAt,
 			&i.UserEmail,
 			&i.UserName,
@@ -191,7 +207,7 @@ const updateTenantMembershipRole = `-- name: UpdateTenantMembershipRole :one
 UPDATE tenant_memberships
 SET role = $3
 WHERE tenant_id = $1 AND user_id = $2
-RETURNING id, tenant_id, user_id, role, created_at
+RETURNING id, tenant_id, user_id, role, budget_usd, warning_threshold, token_cap, created_at
 `
 
 type UpdateTenantMembershipRoleParams struct {
@@ -208,6 +224,42 @@ func (q *Queries) UpdateTenantMembershipRole(ctx context.Context, arg UpdateTena
 		&i.TenantID,
 		&i.UserID,
 		&i.Role,
+		&i.BudgetUsd,
+		&i.WarningThreshold,
+		&i.TokenCap,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateTenantMembershipBudget = `-- name: UpdateTenantMembershipBudget :one
+UPDATE tenant_memberships
+SET budget_usd = $3,
+    warning_threshold = $4,
+    token_cap = $5
+WHERE tenant_id = $1 AND user_id = $2
+RETURNING id, tenant_id, user_id, role, budget_usd, warning_threshold, token_cap, created_at
+`
+
+type UpdateTenantMembershipBudgetParams struct {
+	TenantID         pgtype.UUID     `json:"tenant_id"`
+	UserID           pgtype.UUID     `json:"user_id"`
+	BudgetUsd        decimal.Decimal `json:"budget_usd"`
+	WarningThreshold decimal.Decimal `json:"warning_threshold"`
+	TokenCap         int64           `json:"token_cap"`
+}
+
+func (q *Queries) UpdateTenantMembershipBudget(ctx context.Context, arg UpdateTenantMembershipBudgetParams) (TenantMembership, error) {
+	row := q.db.QueryRow(ctx, updateTenantMembershipBudget, arg.TenantID, arg.UserID, arg.BudgetUsd, arg.WarningThreshold, arg.TokenCap)
+	var i TenantMembership
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.Role,
+		&i.BudgetUsd,
+		&i.WarningThreshold,
+		&i.TokenCap,
 		&i.CreatedAt,
 	)
 	return i, err

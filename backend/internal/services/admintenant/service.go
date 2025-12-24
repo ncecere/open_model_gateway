@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	decimal "github.com/shopspring/decimal"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/accounts"
 	"github.com/ncecere/open_model_gateway/backend/internal/auth"
@@ -401,11 +402,14 @@ func (s *Service) RevokeAPIKey(ctx context.Context, tenantID, apiKeyID uuid.UUID
 
 // Membership represents membership details.
 type Membership struct {
-	TenantID uuid.UUID
-	UserID   uuid.UUID
-	Email    string
-	Role     db.MembershipRole
-	Created  time.Time
+	TenantID         uuid.UUID
+	UserID           uuid.UUID
+	Email            string
+	Role             db.MembershipRole
+	BudgetUsd        decimal.Decimal
+	WarningThreshold decimal.Decimal
+	TokenCap         int64
+	Created          time.Time
 }
 
 // ListMemberships fetches tenant members.
@@ -432,11 +436,14 @@ func (s *Service) ListMemberships(ctx context.Context, tenantID uuid.UUID) ([]Me
 			return nil, err
 		}
 		out = append(out, Membership{
-			TenantID: tid,
-			UserID:   uid,
-			Email:    row.UserEmail,
-			Role:     row.Role,
-			Created:  created,
+			TenantID:         tid,
+			UserID:           uid,
+			Email:            row.UserEmail,
+			Role:             row.Role,
+			BudgetUsd:        row.BudgetUsd,
+			WarningThreshold: row.WarningThreshold,
+			TokenCap:         row.TokenCap,
+			Created:          created,
 		})
 	}
 	return out, nil
@@ -477,11 +484,14 @@ func (s *Service) UpsertMembership(ctx context.Context, tenantID uuid.UUID, emai
 		return Membership{}, err
 	}
 	return Membership{
-		TenantID: tenantUUID,
-		UserID:   userUUID,
-		Email:    user.Email,
-		Role:     role,
-		Created:  created,
+		TenantID:         tenantUUID,
+		UserID:           userUUID,
+		Email:            user.Email,
+		Role:             role,
+		BudgetUsd:        membership.BudgetUsd,
+		WarningThreshold: membership.WarningThreshold,
+		TokenCap:         membership.TokenCap,
+		Created:          created,
 	}, nil
 }
 

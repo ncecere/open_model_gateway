@@ -63,6 +63,8 @@ func BuildRequestContext(ctx context.Context, container *Container, record db.Ap
 	alertLastLevel := ""
 	var alertLastSent time.Time
 	hasOverride := false
+	memberBudget := 0.0
+	memberWarn := 0.0
 
 	if override, err := container.Queries.GetTenantBudgetOverride(ctx, record.TenantID); err == nil {
 		if budget, ok := override.BudgetUsd.Float64(); ok {
@@ -93,6 +95,21 @@ func BuildRequestContext(ctx context.Context, container *Container, record db.Ap
 		alertsEnabled = true
 	}
 
+	if record.OwnerUserID.Valid {
+		membership, err := container.Queries.GetTenantMembership(ctx, db.GetTenantMembershipParams{
+			TenantID: record.TenantID,
+			UserID:   record.OwnerUserID,
+		})
+		if err == nil {
+			if budget, ok := membership.BudgetUsd.Float64(); ok && budget > 0 {
+				memberBudget = budget
+			}
+			if warn, ok := membership.WarningThreshold.Float64(); ok && warn > 0 {
+				memberWarn = warn
+			}
+		}
+	}
+
 	limit := int64(math.Round(quota.BudgetUSD * 100))
 	if limit <= 0 {
 		if tenantBudget > 0 {
@@ -101,10 +118,18 @@ func BuildRequestContext(ctx context.Context, container *Container, record db.Ap
 			limit = int64(math.Round(container.Config.Budgets.DefaultUSD * 100))
 		}
 	}
+	if memberBudget > 0 {
+		memberLimit := int64(math.Round(memberBudget * 100))
+		if memberLimit > 0 && memberLimit < limit {
+			limit = memberLimit
+		}
+	}
 
 	warn := quota.WarningThreshold
 	if warn <= 0 {
-		if tenantWarn > 0 {
+		if memberWarn > 0 {
+			warn = memberWarn
+		} else if tenantWarn > 0 {
 			warn = tenantWarn
 		} else {
 			warn = container.Config.Budgets.WarningThresholdPerc

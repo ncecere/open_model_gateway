@@ -108,9 +108,12 @@ export function ModelTable({
                   ) : null}
                   <div className="flex flex-col">
                     <span>{model.alias}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {model.provider}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{model.provider}</span>
+                      {model.tenant_assignable ? (
+                        <Badge variant="secondary">Tenant</Badge>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </TableCell>

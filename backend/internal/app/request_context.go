@@ -67,10 +67,10 @@ func BuildRequestContext(ctx context.Context, container *Container, record db.Ap
 	memberWarn := 0.0
 
 	if override, err := container.Queries.GetTenantBudgetOverride(ctx, record.TenantID); err == nil {
-		if budget, ok := override.BudgetUsd.Float64(); ok {
+		if budget, _ := override.BudgetUsd.Float64(); budget > 0 {
 			tenantBudget = int64(math.Round(budget * 100))
 		}
-		if w, ok := override.WarningThreshold.Float64(); ok {
+		if w, _ := override.WarningThreshold.Float64(); w > 0 {
 			tenantWarn = w
 		}
 		schedule = config.NormalizeBudgetRefreshSchedule(override.RefreshSchedule)
@@ -101,10 +101,10 @@ func BuildRequestContext(ctx context.Context, container *Container, record db.Ap
 			UserID:   record.OwnerUserID,
 		})
 		if err == nil {
-			if budget, ok := membership.BudgetUsd.Float64(); ok && budget > 0 {
+			if budget, _ := membership.BudgetUsd.Float64(); budget > 0 {
 				memberBudget = budget
 			}
-			if warn, ok := membership.WarningThreshold.Float64(); ok && warn > 0 {
+			if warn, _ := membership.WarningThreshold.Float64(); warn > 0 {
 				memberWarn = warn
 			}
 		}

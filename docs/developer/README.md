@@ -1,170 +1,98 @@
 # Developer Guide
 
-Everything required to work on Open Model Gateway locally.
+This guide describes how to extend Open Model Gateway, from architecture concepts to day-to-day workflows, contribution expectations, and deployment surfaces.
 
-## Prerequisites
+## Clarify purpose and goals
 
-- Go 1.25+
-- Bun 1.1+ (manages the Vite/React frontend)
-- Docker (optional but recommended for Postgres + Redis)
-- `make`, `git`, `sqlc` and `goose` (install via `go install` if they are not already on your PATH)
+- Provide an OpenAI-compatible proxy that routes requests across OpenAI, Azure, Anthropic, Bedrock, Vertex, OpenRouter, Groq, and other OpenAI-style providers.
+- Guarantee tenant isolation with virtual API keys, scoped roles, per-tenant model entitlements, and budget/rate-limit enforcement.
+- Capture usage telemetry (tokens, costs, errors, latency) and emit OTEL/Prometheus signals for downstream monitoring.
+- Deliver React/Vite portals so operators and end users can manage tenants, models, limits, alerts, and usage without CLI access.
 
-## First-Time Setup
+## Architecture overview
+
+| Layer | Description |
+|-------|-------------|
+| Go/Fiber backend | `cmd/routerd` boots config, migrations, provider registry, HTTP servers for `/v1`, `/admin`, and `/user`, plus background workers (health monitor, usage pipeline, telemetry exporters). |
+| Postgres | Stores tenants, users, API keys, rate/budget overrides, usage rows, provider incidents, audit logs, and system settings (managed via Goose + SQLC). |
+| Redis | Tracks rate-limit counters, idempotency tokens, provider health snapshots, and distributed locks for usage/budget enforcement. |
+| Providers | Adapter interfaces (chat, embeddings, images, audio, files, batches) fan out to OpenAI, Azure, Anthropic, Bedrock, Vertex, OpenRouter, Groq, or any OpenAI-compatible upstream with routing weights, failover cooldowns, and retry policies. |
+| React/Vite frontend | Admin/user portals share UI kit primitives, call the backend with JWT or session cookies, and surface dashboards for usage, budgets, provider health, models, keys, and tenants. |
+| Observability | OTLP exporters ship traces/metrics/logs; Prometheus `/metrics` exposes gauge/counter panels for health, rate-limit, and budget state. |
+
+## Configuration structure
+
+- Source of truth: YAML file (typically `deploy/router.local.yaml`) merged with environment variables (`ROUTER_*`).
+- Key sections: `server`, `database`, `redis`, `providers.<slug>`, `model_catalog`, `rate_limits`, `budgets`, `bootstrap`, `observability`, `health`, `admin`.
+- Provider definitions register through `internal/providers` and optionally load secret overrides from ENV (e.g., `ROUTER_PROVIDERS_AZURE_OPENAI_KEY`).
+- `bootstrap` is idempotent; edits re-sync tenants, keys, default models, and limits on restart.
+- Store per-environment overlays (dev/stage/prod) under `deploy/` or `docs/runtime/` to keep reviewed configs alongside the repo.
+
+## Daily workflows
+
+### Local prerequisites
 
 ```bash
-git clone https://github.com/.../open_model_gateway.git
-cd open_model_gateway
-cp docs/runtime/router.example.yaml deploy/router.local.yaml
-make compose-up        # spins up Postgres (5432) + Redis (6379)
+make compose-up          # Postgres + Redis via Docker
 bun install --cwd backend/frontend
+cp docs/runtime/router.example.yaml deploy/router.local.yaml
+export ROUTER_CONFIG_FILE=$(pwd)/deploy/router.local.yaml
 ```
 
-Update `deploy/router.local.yaml` with the secrets you want to use locally (there is no default admin password). The backend reads `ROUTER_CONFIG_FILE`, `ROUTER_DB_URL`, and `ROUTER_REDIS_URL`; the Makefile wires these to `deploy/router.local.yaml`, `postgres://...`, and `redis://...`.
+### Run the stack
 
-## Running the Stack
+- `make run-backend` builds the UI and runs `go run ./cmd/routerd` with config/env helpers.
+- `make run-backend CONFIG=/path/to/custom.yaml` swaps configs; use `ROUTER_DB_URL` / `ROUTER_REDIS_URL` overrides for remote services.
+- Frontend HMR: `cd backend/frontend && bun run dev --host` then point `VITE_GATEWAY_BASE_URL` to the running backend.
 
-The easiest workflow is:
+### Code generation & database changes
 
-```bash
-make run-backend
-```
+1. Update SQL in `sql/queries/*.sql` or create migrations via `goose -dir migrations create feature_name sql`.
+2. Run `sqlc generate` from `backend/` (targets `internal/db`).
+3. Re-run `go test ./internal/...` to confirm updated structs compile.
+4. Seed fixtures through `backend/cmd/generateproviderfixtures` if provider metadata changes.
 
-This target:
+### Testing strategy
 
-1. Builds the frontend (`bun run build`) and copies the artifacts into `backend/internal/httpserver/ui/dist/`.
-2. Runs `go run ./cmd/routerd` with the config/database/redis URLs from the Makefile variables.
+- Unit: `make test-backend` (runs `go test ./...` under `backend/` with race detector optional via `GOFLAGS="-race"`).
+- Integration: `make test-admin-ui` (Vitest) and `make test-e2e` (Playwright) once the frontend assets build.
+- Contract: `backend/cmd/inspectroutes` ensures `/v1` parity with OpenAI; `Code_Examples/` smoke scripts should run clean before PRs.
+- Lint (pending CI wiring): `golangci-lint run` and `bun run lint` for the frontend. Document extra linters under `docs/developer/linting.md` if added.
 
-The admin portal is available at `http://localhost:8090/admin`, the user portal at `/`, and OpenAI-compatible APIs under `/v1/*`.
+## Contribution expectations
 
-To stop support services:
+- Branch naming: `feat/<area>-<slug>`, `fix/<bug-id>`, or `docs/<topic>`; reference work items when available.
+- Keep PRs scoped (backend vs frontend vs docs) and mention cross-cutting impacts in the description.
+- Always run `make test-backend` and the relevant frontend tests before pushing; attach output snippets in the PR.
+- Document new config knobs or provider behaviors in `docs/runtime/config.md` and `docs/architecture/providers/adding.md`.
+- Update `Code_Examples/` when adding endpoints or headers so operators have copy/pasteable snippets.
+- Use `docs:`-prefixed commit messages for documentation-only changes to keep history readable.
 
-```bash
-make compose-down
-```
+## Deployment targets
 
-## Hot Reload Options
+| Target | Notes |
+|--------|-------|
+| Single binary | Ships with embedded UI and migrations. Suitable for VM/bare-metal installs where operators manage Postgres/Redis externally. Use `ROUTER_CONFIG_FILE` + ENV secrets. |
+| Docker Compose | `deploy/docker-compose.yml` orchestrates router + Postgres + Redis + OTEL collector for local or small prod environments. Includes `docker-compose.dev.yml` for source builds. |
+| Kubernetes (DIY) | Use the published GHCR image, mount `router.yaml` via ConfigMap/Secret, and supply Postgres/Redis services. Observability integrates via OTLP + Prometheus annotations. Helm/Terraform scaffolds will land under `deploy/` per roadmap. |
+| Managed DB/cache | Point `ROUTER_DB_URL` and `ROUTER_REDIS_URL` at managed services; disable `database.run_migrations` if migrations happen elsewhere. |
 
-- Frontend: run `cd backend/frontend && bun run dev` for Vite HMR, and point API calls at `http://localhost:8090`.
-- Backend: install [`air`](https://github.com/cosmtrek/air) or similar. A simple approach is to run `go run ./cmd/routerd` directly (without `make run-backend`) when you do not need to rebuild the UI.
+## Documentation organization guidance
 
-## Smoke Tests
-
-Use the seeded API key from `deploy/router.local.yaml` (or `ROUTER_BOOTSTRAP_*`) for quick verification.
-
-### Images API (generate / edit / variation)
-
-```bash
-API_KEY="sk-demo.my-secret"
-
-# Generation
-curl http://localhost:8090/v1/images/generations \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "gpt-image-1",
-        "prompt": "A neon Go gopher piloting a bioluminescent submersible"
-      }' | jq -r '.data[0].b64_json' | base64 --decode > neon-gopher.png
-
-# Edit (mask optional)
-curl http://localhost:8090/v1/images/edits \
-  -H "Authorization: Bearer $API_KEY" \
-  -F "model=gpt-image-1" \
-  -F "prompt=Fill the blank canvas with a watercolor skyline" \
-  -F "image=@./examples/base.png" \
-  -F "mask=@./examples/mask.png" \
-  -o edit.ndjson
-
-# Variation
-curl http://localhost:8090/v1/images/variations \
-  -H "Authorization: Bearer $API_KEY" \
-  -F "model=gpt-image-1" \
-  -F "image=@./examples/base.png" \
-  -F "n=2" \
-  -o variation.ndjson
-```
-
-OpenAI + OpenAI-compatible adapters honor edits/variations; Azure, Bedrock, and Vertex handlers will return `image_operation_unsupported` so clients can fall back gracefully.
-
-### Batches API
-
-```bash
-cat <<'EOF' > batch.sample.jsonl
-{"custom_id":"smoke-1","method":"POST","url":"/v1/chat/completions","body":{"model":"gpt-5-mini","messages":[{"role":"system","content":"You are a haiku bot."},{"role":"user","content":"Write one about routers."}],"max_tokens":64}}
-{"custom_id":"smoke-2","method":"POST","url":"/v1/chat/completions","body":{"model":"gpt-5-mini","messages":[{"role":"system","content":"You are a teacher."},{"role":"user","content":"Explain JSONL briefly."}],"max_tokens":64}}
-EOF
-
-FILE_ID=$(curl -s http://localhost:8090/v1/files \
-  -H "Authorization: Bearer $API_KEY" \
-  -F "purpose=batch" \
-  -F "file=@batch.sample.jsonl" | jq -r '.id')
-
-BATCH_ID=$(curl -s http://localhost:8090/v1/batches \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-        "input_file_id": "'"$FILE_ID"'",
-        "endpoint": "/v1/chat/completions",
-        "completion_window": "24h",
-        "metadata": {"label": "dev smoke"}
-      }' | jq -r '.id')
-
-curl -s http://localhost:8090/v1/batches/$BATCH_ID -H "Authorization: Bearer $API_KEY" | jq
-curl -s http://localhost:8090/v1/batches/$BATCH_ID/output -H "Authorization: Bearer $API_KEY" -o batch_${BATCH_ID}.jsonl
-curl -s http://localhost:8090/v1/batches/$BATCH_ID/errors -H "Authorization: Bearer $API_KEY" -o batch_errors_${BATCH_ID}.jsonl
-```
-
-The user portal mirrors these operations; the Batches tab now defaults to a user’s personal tenant and keeps downloads in-page.
-
-### Audio Text-to-Speech
-
-```bash
-curl http://localhost:8090/v1/audio/speech \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -o speech.mp3 \
-  -d '{
-        "model": "gpt-4o-mini-tts",
-        "input": "Open Model Gateway now speaks!",
-        "voice": "alloy",
-        "format": "mp3"
-      }'
-```
-
-The endpoint currently returns binary audio (mp3 by default). Streaming responses (`"stream": true`) are on the roadmap.
-
-## Tests & Tooling
-
-```bash
-make test-backend         # go test ./... under backend/
-cd backend && goose status
-cd backend && sqlc generate
-```
-
-- `backend/sql/queries/*.sql` define the SQLC contract. Change queries, then run `sqlc generate`.
-- Goose migrations live in `backend/migrations/`. Use `goose create name sql` and commit the generated file.
-- The batch worker, providers, and HTTP handlers all have unit tests under `backend/internal/...`.
-
-## Coding Standards
-
-- Stick to Go 1.25 formatting (`gofmt` or `goimports`) and TypeScript’s ESLint rules (run `bun run lint` when available).
-- Keep configuration additions documented in `docs/runtime/router.example.yaml` and `docs/runtime/config.md`.
-- When adding a new provider, follow the checklist in `docs/architecture/providers/adding.md`.
-- Frontend code uses the shadcn UI kit, React Query, and the app router pattern (`src/apps/{admin,user}`). Shared components live under `src/components` or `src/ui`.
-
-## Useful Scripts
-
-| Command | Description |
-| --- | --- |
-| `make compose-up` | Starts Postgres + Redis via Docker Compose. |
-| `make build-ui` | Builds the frontend and copies assets into the embedded Go FS. |
-| `make run-backend CONFIG=/path/to/config.yaml` | Runs routerd with a different config file. |
-| `bun run generate-icons` | Example of the Bun ecosystem; adjust as needed. |
+- `docs/developer/` should host process docs (this guide), lint/test references, and architecture deep dives. Suggested structure:
+  - `docs/developer/README.md` – overview (this file).
+  - `docs/developer/workflows.md` – optional drill-down on SQLC, providers, telemetry (future split).
+  - `docs/developer/contributing.md` – reuse contribution section when policies grow.
+- `docs/admin/runtime/` remains the authoritative config reference (sample YAMLs + explanations).
+- `docs/developer/backend.md` and `docs/developer/providers/` capture backend + provider diagrams/notes; keep onboarding steps centralized there.
+- `docs/admin/` now owns admin, tenant, and user guides (see subfolders). Cross-link from README + developer docs whenever exposing UX flows.
+- Keep `Code_Examples/` in sync with docs by referencing script names in guides (e.g., `curl/chat.sh`, `curl/admin-tenants.sh`).
 
 ## Troubleshooting
 
-- **Startup fails with missing migrations**: run `make compose-down && make compose-up` to recreate the database volumes, or point `database.migrations_dir` at the correct directory.
-- **`authorization required` on `/user/*` endpoints**: ensure cookies are being sent. The UI relies on `httpOnly` admin/user session cookies; direct `curl` calls require a `Bearer` token.
-- **Frontend changes not visible**: rerun `make run-backend` or `make build-ui` so the embedded assets are refreshed.
-- **`address already in use :8090`**: stop stray router processes via `pkill -f cmd/routerd` or identify the PID with `lsof -i tcp:8090` / `kill <pid>` before rerunning `make run-backend`.
+- **Router fails on boot**: confirm migrations ran (`goose status`) and `bootstrap` data references existing tenants/providers.
+- **Provider 5xx spikes**: inspect `/admin/providers` UI or Redis health cache, adjust routing weights, or disable the provider in the catalog.
+- **Budget denies unexpected calls**: check `usage_budget` tables, confirm UTC vs tenant timezone conversions, and ensure rate/budget overrides were synced after config edits.
+- **Frontend auth loops**: ensure HTTPS termination preserves cookies (`Secure`, `SameSite=None`) and that admin/user session secrets differ between environments.
 
-Feel free to add more scripts/targets in the Makefile as the project grows.
+Reach out in `agents.md` for open questions or to log new research tasks (e.g., tokenizer libraries, retry policies).

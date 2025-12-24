@@ -5,19 +5,15 @@ import (
 	"fmt"
 	"sync"
 
-	_ "embed"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/yokeTH/gofiber-scalar/scalar/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/ncecere/open_model_gateway/backend/openapi"
 )
 
-// NOTE: Keep this embedded copy in sync with docs/openapi/openapi.yaml.
-//
-//go:embed openapi/openapi.yaml
-var openAPISpecYAML []byte
-
 var (
+	openAPISpecYAML     = openapi.SpecYAML
 	openAPISpecJSON     []byte
 	openAPISpecJSONOnce sync.Once
 	openAPISpecJSONErr  error

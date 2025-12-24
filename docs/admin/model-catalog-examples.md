@@ -22,7 +22,7 @@ You can explicitly override the inferred capabilities by adding metadata flags t
 
 | Metadata Key        | Description                                      |
 | ------------------- | ------------------------------------------------ |
-| `cap_image_input`   | Set to `"true"` or `"false"` to force-enable/disable image inputs.
+| `cap_image_input`   | Set to `"true"` or `"false"` to force-enable/disable image inputs. |
 | `cap_audio_input`   | Same for audio inputs (speech-to-text, etc.).    |
 | `cap_video_input`   | Reserve for providers that accept video frames.  |
 

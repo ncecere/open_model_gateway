@@ -128,3 +128,17 @@
 - Built provider telemetry/alerting pipeline (Redis sampler, SLI evaluator, incident persistence, dispatcher) with admin Provider Health views, docs, and routing down-weighting degraded deployments.
 - Added user-facing API key rotation for both personal and tenant scopes, reissuing secrets while preserving budgets/rate overrides and surfacing rotate/reveal flows in the portals.
 - Introduced structured provider config blocks (`providers.openai`, `providers.azure`, `providers.bedrock`, `providers.vertex`, `providers.anthropic`, `providers.openrouter`, `providers.groq`) supplying default endpoints/API versions while honoring legacy overrides; sample configs/docs updated.
+
+## Current State Notes
+- Frontend lives under `backend/frontend/` with separate admin/user Vite entrypoints in `src/apps/`.
+- User portal supports self-serve dashboards, usage, API keys, tenant management, and models scoped by membership.
+- Tenant guardrails remain deferred pending the policy engine workstream.
+
+## Recent Progress (2025-12-24)
+- Completed Fine-Grained Tenant RBAC: role capability map, middleware enforcement, audit logging, and tenant-scoped authorization gates.
+- Added per-member budget fields with enforcement, user APIs to manage member budgets, and UI controls in the user portal.
+- Added tenant limits APIs (RPM/TPM/concurrency) with ceiling enforcement, plus user portal UI for edits and resets.
+- Enabled tenant model attach/detach flow with admin-controlled `tenant_assignable` catalog flags and tenant-scoped routing.
+- Expanded user portal tenant management with tabbed modals, model access toggles, and budget/limit summaries.
+- Refreshed admin Tenants UI to align with user portal styling and moved memberships into the tenant edit modal tabs.
+- Updated user portal key/tenant stats to exclude personal tenants from shared counts and key lists.

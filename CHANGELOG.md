@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 - Static OpenAPI spec with `/openapi.yaml`, `/openapi.json`, and Scalar UI at `/docs`.
 - Embedded OpenAPI spec for the router binary plus expanded endpoint grouping and examples.
-- User-facing documentation set under `user_docs/` (getting started, models, tenants/users, keys, budgets/rate limits).
+- User-facing documentation set under `docs/` (getting started, models, tenants/users, keys, budgets/rate limits).
 - Shared usage helpers in the frontend (filters, daily tables, range hook, formatters).
 - Shared default-selection hook for consistent dropdown defaults across admin/user pages.
 - Settings tabs refactor with `react-hook-form` and per-tab components.

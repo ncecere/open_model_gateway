@@ -1,216 +1,125 @@
 # <img src="backend/frontend/src/assets/system/open_model_gateway.svg" alt="Open Model Gateway logo" width="64" height="64" style="vertical-align:middle;margin-right:8px;"> Open Model Gateway
 
-Open Model Gateway is a programmable inference router that exposes an OpenAI-compatible API surface with tenant isolation, usage metering, and multi-provider failover. The project coordinates a Go/Fiber backend, a React/Vite admin UI, and supporting infrastructure (Postgres, Redis, OTEL/Prometheus) to deliver an enterprise-grade LLM gateway.
+Open Model Gateway is a programmable inference router that speaks the OpenAI API while adding tenant isolation, multi-provider routing, budget controls, and usage metering.
 
-## Repository Layout
+## Overview
+
+- Go/Fiber backend handles routing, rate/budget enforcement, usage logging, and provider failover.
+- React/Vite admin + user portals surface tenant management, API key issuance, model catalogs, and telemetry views.
+- Postgres tracks tenants, usage, incidents, and budget states; Redis backs rate limits, idempotency, and health probes.
+- OTEL + Prometheus exporters provide traces/metrics so downstream observability stacks can ingest router health.
+
+The gateway proxies OpenAI-style requests to OpenAI, Azure OpenAI, Anthropic, AWS Bedrock, Vertex, OpenRouter, Groq, or any OpenAI-compatible deployment while keeping tenants isolated.
+
+## When to use
+
+- Need consistent OpenAI-compatible endpoints with automatic failover across multiple providers/regions.
+- Want to enforce per-tenant/per-key budgets, rate limits, and alerting without re-implementing accounting.
+- Require virtual API keys plus admin/user portals for issuing secrets, rotating credentials, and auditing actions.
+- Need detailed cost/usage telemetry exported through OTEL/Prometheus while keeping infra self-hosted.
+
+## Key capabilities
+
+- OpenAI-compatible `/v1/*` surface (chat, embeddings, moderations, images, audio, files, batches, responses) plus `/admin/*` automation APIs.
+- Provider catalog that merges static config + persisted overrides with health-aware weighted routing and failover cooldowns.
+- Tenant isolation enforced via API keys and admin access tokens, including per-key budgets, per-tenant rate limits, and alerting hooks.
+- Usage metering and cost computation persisted per request, exposed via headers and exported through OTEL/Prometheus for dashboards.
+- React/Vite admin + user portals for catalog edits, tenant onboarding, API-key issuance, and spend visibility without touching YAML.
+
+## Repository layout
 
 ```
 /
-├── backend/          # Go 1.25 router service (Fiber, SQLC, Redis, OTEL)
-│   └── frontend/     # React + Vite admin & user portals (built via Bun)
-├── deploy/           # Local tooling (docker-compose, router.local.yaml, OTEL config)
-├── migrations/       # Database migrations (managed via Goose)
-├── agents.md         # Agent coordination journal (working log)
-├── prd.md            # Product requirements document
-└── docs/             # Supplemental documentation (config, architecture, UI)
-    └── runtime/router.example.yaml
+├── backend/          # Go router, providers, SQLC layer, embedded UI assets
+│   └── frontend/     # React/Vite admin + user portals built with Bun
+├── deploy/           # Docker Compose stacks, OTEL configs, router.example.yaml
+├── migrations/       # Goose migrations synced with sql/ schema
+├── docs/             # Developer references plus admin, tenant, and end-user playbooks
+├── Code_Examples/    # Copy/paste curl/Python/TypeScript samples
+└── agents.md         # Coordination log
 ```
 
-## Current Capabilities (v1 backlog in flight)
+## Prerequisites
 
-- OpenAI-compatible public API:
-  - `GET /v1/models`
-  - `POST /v1/chat/completions` (including SSE streaming)
-- `POST /v1/embeddings`
-- `POST /v1/moderations`
-- `POST /v1/images/generations` (Azure/OpenAI/Vertex/Bedrock Titan images, base64 responses)
-- `POST /v1/audio/{transcriptions,translations,speech}` (Whisper + GPT-4o-mini-tts text-to-speech)
-- Provider routing & failover:
-  - Model catalog merge between static config and persisted overrides
-  - Azure OpenAI adapter (chat + embeddings) as the first supported provider
-  - Weighted routing with health-state tracking and failover cooldowns
-- Tenant access control:
-  - Virtual API keys (`sk-<prefix>.<secret>`) with hash verification
-  - Redis-backed idempotency cache and rate limiting (RPM per model alias)
-- Budget enforcement with configurable default limits, per-tenant overrides, rolling/weekly windows, and alert routing (email/webhook with cooldowns)
-- Usage metering:
-  - Request + usage tables populated per call (tokens, latency, cost)
-  - Cost computation derived from model catalog pricing (per 1K tokens)
-  - Budget status headers (`X-Budget-*`) returned on every response
-- Admin surface (protected by JWT access tokens):
-  - Auth: local credentials + OIDC SSO, refresh token rotation, secure cookies
-  - Model catalog CRUD (aliases, deployments, pricing metadata)
-  - Tenant CRUD (create, status updates) and API key lifecycle (issue/revoke)
-  - Per-user profile preferences including theme selection (light/dark/system) shared across admin & user portals
-- Config loader with YAML + `.env` merge and strict validation of runtime defaults.
+| Component | Requirement |
+|-----------|-------------|
+| Go toolchain | 1.25+ (router build/test)
+| Bun | 1.1+ (frontend build + dev server)
+| Postgres | 14+ (schema uses generated columns + enums)
+| Redis | 7+ (rate limits, idempotency, health cache)
+| Tooling | `goose`, `sqlc`, `make`, Docker (optional for stack)
 
-See [`CHANGELOG.md`](CHANGELOG.md) for notable updates and [`docs/backend-status.md`](docs/backend-status.md) for a detailed feature inventory and upcoming tasks.
+Install helper CLIs:
 
-## Installation
+```bash
+go install github.com/pressly/goose/v3/cmd/goose@latest
+go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+```
 
-You can either download a prebuilt release bundle (router binary + migrations + sample config) or run the full stack via Docker Compose. Both flows expect Postgres, Redis, and a config file that defines provider credentials and bootstrap data.
+## Install & deploy
 
-### Option A: Download a Release Bundle
+### Binary release workflow
 
-1. Grab the latest archive from the [GitHub Releases page](https://github.com/ncecere/open_model_gateway/releases) (each tag publishes `open-model-gateway_<tag>_linux_amd64.tar.gz`).
-2. Unpack it somewhere on your host:
+1. Download the latest `open-model-gateway_<tag>_<os>_<arch>.tar.gz` from [Releases](https://github.com/ncecere/open_model_gateway/releases).
+2. Extract into `/opt/open-model-gateway` (or another directory) and copy `deploy/router.local.yaml` to your desired config path.
+3. Set environment overrides (database URL, Redis URL, OTEL target, provider credentials):
 
    ```bash
-   tar -xzf open-model-gateway_<tag>_linux_amd64.tar.gz -C /opt/open-model-gateway
+   export ROUTER_CONFIG_FILE=/opt/open-model-gateway/router.yaml
+   export ROUTER_DB_URL=postgres://user:pass@db:5432/open_gateway?sslmode=disable
+   export ROUTER_REDIS_URL=redis://cache:6379/0
    ```
 
-   The tarball contains the `router` binary, `backend/migrations`, and `deploy/router.local.yaml` as a starting config.
-
-3. Edit `/opt/open-model-gateway/deploy/router.local.yaml` (or copy it elsewhere) to supply your database URLs, Redis URL, OTEL endpoint, provider keys, and bootstrap tenants.
-
-4. Run the binary, pointing at the config file:
+4. Run the binary; migrations run on boot when `database.run_migrations` is true:
 
    ```bash
    cd /opt/open-model-gateway
-   ROUTER_CONFIG_FILE=/path/to/router.yaml \
-   ROUTER_DB_URL=postgres://user:pass@host:5432/open_gateway?sslmode=disable \
-   ROUTER_REDIS_URL=redis://host:6379/0 \
    ./router
    ```
 
-   Migrations execute on boot when `database.run_migrations` is `true`. You can also run the bundled SQL with Goose by pointing it at `backend/migrations`.
+### Docker Compose workflow
 
-### Option B: Run via Docker Compose
-
-The production `deploy/docker-compose.yml` file uses the published GHCR image (`ghcr.io/ncecere/open_model_gateway:latest`) alongside Postgres, Redis, and the OTEL collector. After filling out `deploy/router.local.yaml`, run:
-
-```bash
-cd deploy
-docker compose up -d
-```
-
-This will build the multi-stage image defined in the root `Dockerfile`, seed the migrations inside the container, and expose the admin/public APIs on `http://localhost:8090`. The router service automatically reads `/config/router.yaml`, which is a bind-mount of `deploy/router.local.yaml`.
-
-For local development and testing changes before publishing a new container, use `docker-compose.dev.yml` (which builds from the local Dockerfile):
-
-```bash
-cd deploy
-docker compose -f docker-compose.dev.yml up --build
-```
-
-### Multi-architecture images (amd64 + arm64)
-
-The Dockerfile now targets BuildKit platforms so you can publish both Intel/AMD and Apple Silicon images in one shot:
-
-```bash
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/<org>/open_model_gateway:latest \
-  .
-```
-
-Use `--push` to push the manifest list to GHCR once authenticated.
-
-Refer to [`docs/deployment/releases.md`](docs/deployment/releases.md) for more detail on the release/packaging pipeline and the GitHub Container Registry images.
-
-## License
-
-This project is distributed under the [GLWT (Good Luck With That) Public License](LICENSE). Use it however you like—but entirely at your own risk.
-
-## Getting Started
-
-### Prerequisites
-
-- Go **1.25** or newer
-- Bun (for the React admin UI; WIP)
-- PostgreSQL 14+
-- Redis 7+
-- `goose` and `sqlc` binaries on your `PATH`:
-
-  ```bash
-  go install github.com/pressly/goose/v3/cmd/goose@latest
-  go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-  ```
-
-### Backend Bootstrap (Source Build)
-
-1. Copy `docs/runtime/router.example.yaml` to `deploy/router.local.yaml` (or provide your own `ROUTER_CONFIG_FILE`).
-2. Populate required secrets:
+1. Update `deploy/router.local.yaml` with bootstrap tenants, budgets, provider keys, and OTEL endpoints.
+2. From `deploy/`, launch the stack:
 
    ```bash
-   export ROUTER_DB_URL="postgres://user:pass@localhost:5432/open_gateway?sslmode=disable"
-   export ROUTER_REDIS_URL="redis://localhost:6379/0"
-   export ROUTER_ADMIN_SESSION_JWT_SECRET="change-me"
+   docker compose up -d
    ```
 
-   Optional provider/env overrides include `ROUTER_PROVIDERS_AZURE_OPENAI_ENDPOINT`, `ROUTER_PROVIDERS_AZURE_OPENAI_KEY`, etc.
+   - `router` container reads `/config/router.yaml` (bind-mount of `router.local.yaml`).
+   - Postgres, Redis, and OTEL collector stand up alongside the router.
+   - Use `docker compose -f docker-compose.dev.yml up --build` to rebuild from local sources.
 
-3. Run the router service:
+3. For multi-arch images, run `docker buildx build --platform linux/amd64,linux/arm64 --push ghcr.io/<org>/open_model_gateway:latest .`.
 
-   ```bash
-   cd backend
-   go run ./cmd/routerd
-   ```
+Refer to `docs/deployment/releases.md` for publishing and `deploy/docker-compose.dev.yml` for local iteration flags.
 
-   Migrations execute automatically on boot when `database.run_migrations` is `true`. To run them manually:
+## Configuration highlights
 
-   ```bash
-   goose -dir migrations postgres "$ROUTER_DB_URL" up
-   ```
+| Section | Purpose |
+|---------|---------|
+| `server` | Listener, idle/read/write timeouts, streaming idle guard, graceful shutdown delay. |
+| `database` | Connection string, pool sizes, migration directory, run-on-boot toggle. |
+| `redis` | URL/db for rate limits, idempotency, and provider health cache. |
+| `providers.<slug>` | API base URLs, keys, retry knobs for OpenAI, Azure, Anthropic, Bedrock, Vertex, OpenRouter, Groq, Hugging Face. |
+| `model_catalog` | Aliases, provider bindings, weights, per-model pricing, modality metadata. |
+| `rate_limits` | Default RPM/TPM/parallel caps plus overrides seeded via `bootstrap.rate_limits`. |
+| `budgets` | Default USD budget, refresh cadence (rolling/weekly/calendar), alert channels (email/webhook) + cooldowns. |
+| `bootstrap` | Declarative tenants, admin users, memberships, keys, per-tenant limits/budgets, and default models. |
+| `observability` | OTLP exporter toggle/endpoint, Prometheus `/metrics`, sampling settings. |
 
-4. Verify the health check:
+See `docs/runtime/router.example.yaml` for a fully annotated reference plus comments for each field.
 
-   ```
-   curl http://localhost:8080/healthz
-   ```
+## Quick verification
 
-### Bootstrap Users & API Keys
-
-`deploy/router.local.yaml` demonstrates the optional `bootstrap` section:
-
-```
-bootstrap:
-  tenants:
-    - name: "demo"
-  admin_users:
-    - email: "admin@example.com"
-      name: "Demo Admin"
-      password: "admin-password"
-  api_keys:
-    - tenant: "demo"
-      prefix: "demo"
-      secret: "my-secret"
-      name: "Demo API Key"
-      rate_limit:
-        requests_per_minute: 60
-        tokens_per_minute: 60000
-        parallel_requests: 5
-  memberships:
-    - tenant: "demo"
-      email: "admin@example.com"
-      role: "owner"
-  tenant_limits:
-    - tenant: "demo"
-      limits:
-        requests_per_minute: 120
-        tokens_per_minute: 120000
-        parallel_requests: 20
-  tenant_budgets:
-    - tenant: "demo"
-      budget_usd: 150.0
-      warning_threshold: 0.75
-      refresh_schedule: "weekly"
-      alert_emails:
-        - "finance@example.com"
-      alert_cooldown: "90m"
-```
-
-On startup the router ensures tenants exist, seeds admin users (hashing the plaintext password), creates API keys (storing the hashed secret), grants memberships (owner/admin/viewer/user), and applies optional rate-limit overrides per key/tenant. The example above yields the API key `sk-demo.my-secret` for testing, makes `admin@example.com` the owner of the `demo` tenant, and caps that tenant at 120 RPM / 120k TPM / 20 parallel requests (with a stricter per-key override of 60 RPM / 60k TPM / 5 parallel).
-
-### Quick Curl Smoke Tests
-
-With the bootstrap API key you can exercise the Azure-backed endpoints directly:
+1. Run `go run ./cmd/routerd` (or `docker compose up`) with the sample config.
+2. Use the seeded key `sk-demo.my-secret` from `bootstrap.api_keys`:
 
 ```bash
-curl -s http://localhost:8080/v1/models \
+curl -s http://localhost:8090/v1/models \
   -H "Authorization: Bearer sk-demo.my-secret" | jq
 
-curl -s http://localhost:8080/v1/chat/completions \
+curl -s http://localhost:8090/v1/chat/completions \
   -H "Authorization: Bearer sk-demo.my-secret" \
   -H "Content-Type: application/json" \
   -d '{
@@ -218,10 +127,11 @@ curl -s http://localhost:8080/v1/chat/completions \
         "messages": [
           {"role": "system", "content": "You are a friendly assistant."},
           {"role": "user", "content": "Give me a short status update on the gateway service."}
-        ]
+        ],
+        "stream": false
       }'
 
-curl -s http://localhost:8080/v1/embeddings \
+curl -s http://localhost:8090/v1/embeddings \
   -H "Authorization: Bearer sk-demo.my-secret" \
   -H "Content-Type: application/json" \
   -d '{
@@ -229,54 +139,31 @@ curl -s http://localhost:8080/v1/embeddings \
         "input": "The quick brown fox jumps over the lazy dog."
       }'
 
-curl -s http://localhost:8080/v1/images/generations \
+curl -s http://localhost:8090/v1/images/generations \
   -H "Authorization: Bearer sk-demo.my-secret" \
   -H "Content-Type: application/json" \
   -d '{
         "model": "gpt-image-1-mini",
         "prompt": "A futuristic research laboratory overlooking a neon city skyline"
       }' \
-  | jq -r '.data[0].b64_json' \
-  | base64 --decode > gpt-image.png
+  | jq -r '.data[0].b64_json' | base64 --decode > gpt-image.png
 ```
 
-The final command writes `gpt-image.png`; open it locally to verify image generation.
+3. Verify admin auth by calling `POST /admin/auth/login` with seeded credentials and confirm `Authorization: Bearer <token>` works for `/admin/tenants`.
+4. Check OTEL exporter hits `http://localhost:4318` (default) and Prometheus metrics show up at `/metrics`.
 
-### Admin Authentication Flow (local credentials)
+## Roadmap summary
 
-1. Seed an admin user/credential via SQLC helpers (example script forthcoming).
-2. Hit `POST /admin/auth/login` with JSON `{"email":"...","password":"..."}` to receive an access/refresh token pair.
-3. Use the returned access token as `Authorization: Bearer <token>` for any `/admin/**` requests. Refresh tokens are stored in an HTTP-only cookie (`og_admin_session` by default).
+- Expand provider coverage (Cerebras, Google AI Studio, Ollama, vLLM) with capability-aware routing metadata.
+- Ship tenant guardrails policy engine and user-facing consent flows for sensitive models.
+- Harden autoscaling: queue-aware retry/backoff, circuit-breaker tuning per provider, and SLA-driven health scoring.
+- Finish CI contract tests mirroring OpenAI responses plus Playwright regression for admin/user portals.
+- Publish Terraform + Helm starting points that reuse the Docker image + `router.example.yaml` config structure.
 
-### Configuration Highlights
+## Additional resources
 
-| Section             | Key Fields                                                                                   |
-|---------------------|-----------------------------------------------------------------------------------------------|
-| `server`            | Timeouts (sync/stream), body size, graceful shutdown delay                                    |
-| `database`          | Connection string, pool sizes, migration directory, run-on-boot flag                          |
-| `redis`             | URL, logical DB, pool size                                                                    |
-| `rate_limits`       | Default RPM/TPM caps and parallel request constraints (overrides via `bootstrap.*`)          |
-| `budgets`           | Default budget (USD), warning threshold, refresh cadence (calendar/weekly/rolling), alert defaults (enabled/emails/webhooks/cooldown) |
-| `providers`         | Credential slots (OpenAI, Azure OpenAI, Anthropic, Bedrock, Vertex, Hugging Face)             |
-| `model_catalog`     | Alias metadata (deployment, endpoint, per-model pricing, weight, modalities, metadata)        |
-| `observability`     | OTLP endpoint toggle and Prometheus metrics flag                                              |
-| `health`            | Interval/cooldown for background provider probes                                              |
-| `admin`             | JWT secrets + TTLs, local/oidc feature toggles, OIDC client configuration                     |
-
-Refer to [`docs/runtime/router.example.yaml`](docs/runtime/router.example.yaml) for a fully annotated sample.
-
-## Development Workflows
-
-- **Code generation**: `sqlc generate` after editing `sql/queries/*.sql`.
-- **Formatting**: `gofmt` for Go, `bun format` (pending) for the frontend.
-- **Testing**: `go test ./...` (Redis/Postgres not required for unit compilation).
-- **Agents**: Coordination, outstanding TODOs, and feature notes live in `agents.md`.
-
-## Roadmap Snapshot
-
-- Provider coverage: Anthropic, AWS Bedrock, Google Vertex, Hugging Face embeddings.
-- Observability: OTLP exporter wiring, `/metrics` Prometheus endpoint, latency/error dashboards.
-- Frontend: Admin UI (usage dashboards, budgets, health views) served from `frontend/` via Bun.
-- Rate limiting: Per-key TPM and parallel request semaphores derived from quota metadata.
-- Tokenization backfills: Anthropic/Llama token counters for accurate metering fallback.
-- DevOps: Docker Compose stack, Terraform scaffolding, CI smoke tests and contract suite.
+- `docs/developer/README.md` – end-to-end developer workflows, config structure, and contribution guide.
+- `docs/admin/runtime/README.md` – runtime config reference and bootstrap annotations.
+- `docs/admin/` – onboarding guides for admins, tenant owners, and standard users.
+- `Code_Examples/` – curl/Python/TypeScript snippets that hit models, chat, embeddings, images, audio, and admin APIs.
+- `CHANGELOG.md` – feature timeline and migration hints between releases.

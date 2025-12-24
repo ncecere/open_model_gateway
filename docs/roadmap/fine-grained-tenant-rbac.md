@@ -1,5 +1,8 @@
 # Fine-Grained Tenant RBAC
 
+## Status
+Complete (tenant guardrails deferred until the policy engine lands).
+
 ## Summary
 Refine the existing role system (owner, admin, member/viewer) so tenants can manage day‑to‑day operations without touching global admin features. Requirements:
 - Keep the role list simple—reuse existing roles; **no custom roles**.
@@ -63,14 +66,14 @@ Refine the existing role system (owner, admin, member/viewer) so tenants can man
 3. Update invite flows/tooltips to clarify role powers.
 
 ## Task Checklist
-- [ ] Role-capability map + middleware helpers
-- [ ] Membership migration + backfill scripts
-- [ ] Member budget schema + API/UI
-- [ ] Tenant limits schema + API/UI
-- [ ] Model attach/detach API/UI + catalog flag
-- [ ] Tenant guardrail API/UI scoped to templates
-- [ ] Documentation & tooltips
-- [ ] E2E tests covering each permission boundary
+- [x] Role-capability map + middleware helpers
+- [x] Membership migration + backfill scripts
+- [x] Member budget schema + API/UI
+- [x] Tenant limits schema + API/UI
+- [x] Model attach/detach API/UI + catalog flag
+- [ ] Tenant guardrail API/UI scoped to templates (deferred)
+- [x] Documentation & tooltips
+- [x] E2E tests covering each permission boundary
 
 ## Risks
 - Role confusion → provide clear tooltips/docs describing what each role can and cannot do.

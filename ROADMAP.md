@@ -6,7 +6,6 @@ This roadmap now focuses on open initiatives. Completed streams (telemetry & ale
 
 | Initiative | Summary | Plan |
 | --- | --- | --- |
-| Fine-Grained Tenant RBAC | Tighten tenant roles, allow per-member budgets + tenant limits, attach/detach curated models while keeping tenant budgets and model metadata central-admin only. | `docs/roadmap/fine-grained-tenant-rbac.md` |
 | Model A/B Testing & Shadow Traffic | Add experiment buckets and shadow routing so ops can evaluate new deployments before full cutover, with telemetry + UI reporting. | `docs/roadmap/model-ab-testing-shadow-traffic.md` |
 | Observability Dashboards | Ship Grafana dashboards + portal charts covering budgets, provider health, usage hotspots, and provide Terraform/k8s snippets for OTEL → Prometheus → Grafana. | `docs/roadmap/observability-dashboards.md` |
 | Plugin & Tool Execution | Allow tenants to register HTTP/MCP tools that the router can invoke in response to model tool calls, with logging and guardrails. | `docs/roadmap/plugin-tool-execution.md` |
@@ -22,6 +21,7 @@ This roadmap now focuses on open initiatives. Completed streams (telemetry & ale
 
 | Initiative | Summary | Docs |
 | --- | --- | --- |
+| Fine-Grained Tenant RBAC | Tighten tenant roles, allow per-member budgets + tenant limits, attach/detach curated models while keeping tenant budgets and model metadata central-admin only. | `docs/roadmap/fine-grained-tenant-rbac.md` |
 | Usage Exports & Billing Hooks | Self-serve CSV/Parquet exports and optional billing webhooks so finance teams can ingest spend data without DB access. | `docs/roadmap/usage-exports-billing-hooks.md` |
 | Provider Coverage – vLLM / TGI | Generic inference-server adapter so customers can route private Llama/Qwen deployments through the gateway. | `docs/roadmap/provider-coverage-vllm.md` |
 

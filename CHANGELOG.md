@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.26] - 2026-01-06
+### Fixed
+- Increased HTTP read/write buffer sizes to prevent 431 errors from large request headers (cookies).
+
 ## [v0.1.25] - 2025-12-24
 ### Added
 - Fine-grained tenant RBAC capabilities for owner/admin/member/viewer with middleware enforcement and audit logging on user actions.

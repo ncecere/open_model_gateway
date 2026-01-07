@@ -48,8 +48,8 @@ func New(container *app.Container, health runtime.HealthReporter) (*Server, erro
 		BodyLimit:             bodyLimit,
 		ReadTimeout:           cfg.Server.SyncTimeout,
 		IdleTimeout:           cfg.Server.StreamMaxDuration,
-		ReadBufferSize:        4 * 1024,
-		WriteBufferSize:       4 * 1024,
+		ReadBufferSize:        16 * 1024,
+		WriteBufferSize:       16 * 1024,
 	})
 
 	app.Use(requestid.New())

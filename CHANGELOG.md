@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file. The format 
 ## [v0.1.26] - 2026-01-06
 ### Fixed
 - Increased HTTP read/write buffer sizes to prevent 431 errors from large request headers (cookies).
+- Restored `docs/runtime/router.example.yaml` so release packaging can bundle the sample config.
 
 ## [v0.1.25] - 2025-12-24
 ### Added

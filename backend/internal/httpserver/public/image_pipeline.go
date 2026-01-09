@@ -2,26 +2,24 @@ package public
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
-	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/pipeline"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 )
 
 type imagePipeline struct {
-	container *app.Container
-	executor  *executor.Executor
+	*pipeline.Base
 }
 
 func newImagePipeline(container *app.Container, exec *executor.Executor) *imagePipeline {
-	return &imagePipeline{container: container, executor: exec}
+	return &imagePipeline{Base: pipeline.NewBase(container, exec)}
 }
 
 type imageOperationType string
@@ -42,12 +40,12 @@ type imageOperationConfig struct {
 }
 
 func (p *imagePipeline) Execute(c *fiber.Ctx, rc *requestctx.Context, cfg imageOperationConfig) error {
-	alias := strings.TrimSpace(cfg.Alias)
-	if alias == "" {
-		return httputil.WriteError(c, fiber.StatusBadRequest, "model is required")
-	}
-	if !p.container.IsModelAllowed(rc.TenantID, alias) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
+	ctx := c.UserContext()
+
+	// Validate alias and tenant access
+	alias, err := p.ValidateAlias(c, rc.TenantID, cfg.Alias)
+	if err != nil {
+		return err
 	}
 
 	operation := cfg.Operation
@@ -55,15 +53,15 @@ func (p *imagePipeline) Execute(c *fiber.Ctx, rc *requestctx.Context, cfg imageO
 		operation = imageOperationGeneration
 	}
 
-	traceID := traceIDFromContext(c)
 	idempotencyKey := strings.TrimSpace(cfg.IdempotencyKey)
-	if idempotencyKey != "" {
-		if data, ok := p.container.Idempotency.Get(c.UserContext(), idempotencyKey); ok {
-			c.Set("Content-Type", "application/json")
-			return c.Send(data)
-		}
+
+	// Check idempotency cache
+	if found, err := p.CheckIdempotency(c, ctx, idempotencyKey); found || err != nil {
+		return err
 	}
-	result, err := p.executor.Image(c.UserContext(), rc, traceID, executor.ImageOperationConfig{
+
+	traceID := traceIDFromContext(c)
+	result, err := p.Executor.Image(ctx, rc, traceID, executor.ImageOperationConfig{
 		Alias:           alias,
 		IdempotencyKey:  idempotencyKey,
 		Builder:         cfg.Builder,
@@ -74,21 +72,8 @@ func (p *imagePipeline) Execute(c *fiber.Ctx, rc *requestctx.Context, cfg imageO
 		},
 	})
 	if err != nil {
-		if status, msg, ok := executor.AsAPIError(err); ok {
-			return httputil.WriteError(c, status, msg)
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
-	}
-	httputil.ApplyBudgetHeaders(c, result.BudgetStatus)
-
-	payload, err := json.Marshal(convertImageResponse(result.Response))
-	if err != nil {
-		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to encode response")
-	}
-	if idempotencyKey != "" {
-		p.container.Idempotency.Set(c.UserContext(), idempotencyKey, payload)
+		return p.HandleExecutorError(c, err)
 	}
 
-	c.Set("Content-Type", "application/json")
-	return c.Send(payload)
+	return p.SendJSONWithIdempotency(c, ctx, result.BudgetStatus, convertImageResponse(result.Response), idempotencyKey)
 }

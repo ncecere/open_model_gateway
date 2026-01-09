@@ -58,12 +58,12 @@ func (p *filesPipeline) service(c *fiber.Ctx, rc *requestctx.Context) (*filesvc.
 	if rc == nil {
 		return nil, httputil.WriteError(c, fiber.StatusInternalServerError, "request context missing")
 	}
-	svc := p.container.Files
+	svc := p.container.Services.Files
 	if svc == nil {
 		return nil, httputil.WriteError(c, fiber.StatusNotImplemented, "files service disabled")
 	}
-	if p.container.UsageLogger != nil {
-		status, err := p.container.UsageLogger.CheckBudget(c.UserContext(), rc, time.Now().UTC())
+	if p.container.Telemetry.UsageLogger != nil {
+		status, err := p.container.Telemetry.UsageLogger.CheckBudget(c.UserContext(), rc, time.Now().UTC())
 		if err != nil {
 			return nil, httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
 		}

@@ -54,14 +54,17 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 	if !p.container.IsModelAllowed(rc.TenantID, inv.Model) {
 		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
 	}
-	routes := p.container.Engine.SelectRoutes(inv.Model)
+	if p.container.Routing == nil || p.container.Routing.Engine == nil {
+		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "routing not configured")
+	}
+	routes := p.container.Routing.Engine.SelectRoutes(inv.Model)
 	if len(routes) == 0 {
 		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
 	}
 
 	traceID := traceIDFromContext(c)
 
-	budget, err := p.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
+	budget, err := p.container.Telemetry.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
 	}
@@ -124,7 +127,7 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 			continue
 		}
 		if execErr != nil {
-			p.container.Engine.ReportFailure(inv.Model, route)
+			p.container.Routing.Engine.ReportFailure(inv.Model, route)
 			lastLatency = time.Since(start)
 			lastErr = execErr
 			lastRoute = route
@@ -132,15 +135,15 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 			continue
 		}
 		lastRoute = route
-		p.container.Engine.ReportSuccess(inv.Model, route)
+		p.container.Routing.Engine.ReportSuccess(inv.Model, route)
 		if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
-			if err := p.container.RateLimiter.TokenAllowance(ctx, keyKey, tokens, keyCfg); err != nil {
+			if err := p.container.RateLimits.RateLimiter.TokenAllowance(ctx, keyKey, tokens, keyCfg); err != nil {
 				if errors.Is(err, limits.ErrLimitExceeded) {
 					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
 				}
 				return httputil.WriteError(c, fiber.StatusInternalServerError, "token accounting failed")
 			}
-			if err := p.container.RateLimiter.TokenAllowance(ctx, tenantKey, tokens, tenantCfg); err != nil {
+			if err := p.container.RateLimits.RateLimiter.TokenAllowance(ctx, tenantKey, tokens, tenantCfg); err != nil {
 				if errors.Is(err, limits.ErrLimitExceeded) {
 					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
 				}
@@ -158,7 +161,7 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 			Timestamp: time.Now().UTC(),
 			Success:   true,
 		}
-		if status, err := p.container.UsageLogger.Record(ctx, record); err == nil {
+		if status, err := p.container.Telemetry.UsageLogger.Record(ctx, record); err == nil {
 			httputil.ApplyBudgetHeaders(c, status)
 		}
 		p.recordProviderSample(ctx, rc, inv.Model, route, time.Since(start), providermetrics.ResultSuccess, nil, resp.Usage)
@@ -176,7 +179,7 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 		}
 	}
 	if lastRoute.Provider != "" {
-		_, _ = p.container.UsageLogger.Record(ctx, usagepipeline.Record{
+		_, _ = p.container.Telemetry.UsageLogger.Record(ctx, usagepipeline.Record{
 			Context:   rc,
 			Alias:     inv.Model,
 			Provider:  lastRoute.Provider,
@@ -201,14 +204,17 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 	if !p.container.IsModelAllowed(rc.TenantID, inv.Model) {
 		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
 	}
-	routes := p.container.Engine.SelectRoutes(inv.Model)
+	if p.container.Routing == nil || p.container.Routing.Engine == nil {
+		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "routing not configured")
+	}
+	routes := p.container.Routing.Engine.SelectRoutes(inv.Model)
 	if len(routes) == 0 {
 		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
 	}
 
 	traceID := traceIDFromContext(c)
 
-	budget, err := p.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
+	budget, err := p.container.Telemetry.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
 	}
@@ -273,7 +279,7 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 		if err != nil {
 			lastErr = err
 			lastLatency = time.Since(start)
-			p.container.Engine.ReportFailure(inv.Model, route)
+			p.container.Routing.Engine.ReportFailure(inv.Model, route)
 			continue
 		}
 		lastRoute = route
@@ -297,7 +303,7 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 			recordUsage := func() {
 				if usageCaptured {
 					if tokens := int(streamUsage.TotalTokens); tokens > 0 {
-						if err := p.container.RateLimiter.TokenAllowance(ctx, keyKey, tokens, keyCfg); err != nil {
+						if err := p.container.RateLimits.RateLimiter.TokenAllowance(ctx, keyKey, tokens, keyCfg); err != nil {
 							if errors.Is(err, limits.ErrLimitExceeded) {
 								recordStatus = fiber.StatusTooManyRequests
 							} else {
@@ -305,7 +311,7 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 							}
 							recordSuccess = false
 						}
-						if err := p.container.RateLimiter.TokenAllowance(ctx, tenantKey, tokens, tenantCfg); err != nil {
+						if err := p.container.RateLimits.RateLimiter.TokenAllowance(ctx, tenantKey, tokens, tenantCfg); err != nil {
 							if errors.Is(err, limits.ErrLimitExceeded) {
 								recordStatus = fiber.StatusTooManyRequests
 							} else {
@@ -331,7 +337,7 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 					Timestamp: time.Now().UTC(),
 					Success:   recordSuccess && recordStatus == fiber.StatusOK,
 				}
-				if status, err := p.container.UsageLogger.Record(ctx, record); err == nil {
+				if status, err := p.container.Telemetry.UsageLogger.Record(ctx, record); err == nil {
 					httputil.ApplyBudgetHeaders(c, status)
 				}
 				result := providermetrics.ResultSuccess
@@ -344,9 +350,9 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 			defer recordUsage()
 			defer func() {
 				if recordSuccess && recordStatus == fiber.StatusOK {
-					p.container.Engine.ReportSuccess(inv.Model, route)
+					p.container.Routing.Engine.ReportSuccess(inv.Model, route)
 				} else {
-					p.container.Engine.ReportFailure(inv.Model, route)
+					p.container.Routing.Engine.ReportFailure(inv.Model, route)
 				}
 			}()
 
@@ -417,7 +423,7 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 		}
 	}
 	if lastRoute.Provider != "" {
-		_, _ = p.container.UsageLogger.Record(context.Background(), usagepipeline.Record{
+		_, _ = p.container.Telemetry.UsageLogger.Record(context.Background(), usagepipeline.Record{
 			Context:   rc,
 			Alias:     inv.Model,
 			Provider:  lastRoute.Provider,
@@ -443,12 +449,15 @@ func (p *audioPipeline) Speech(c *fiber.Ctx, req models.AudioSpeechRequest) erro
 	if !p.container.IsModelAllowed(rc.TenantID, alias) {
 		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
 	}
-	routes := p.container.Engine.SelectRoutes(alias)
+	if p.container.Routing == nil || p.container.Routing.Engine == nil {
+		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "routing not configured")
+	}
+	routes := p.container.Routing.Engine.SelectRoutes(alias)
 	if len(routes) == 0 {
 		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
 	}
 	traceID := traceIDFromContext(c)
-	budget, err := p.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
+	budget, err := p.container.Telemetry.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
 	}
@@ -492,19 +501,19 @@ func (p *audioPipeline) Speech(c *fiber.Ctx, req models.AudioSpeechRequest) erro
 		if synthErr != nil {
 			lastErr = synthErr
 			lastLatency = time.Since(start)
-			p.container.Engine.ReportFailure(alias, route)
+			p.container.Routing.Engine.ReportFailure(alias, route)
 			p.recordProviderSample(ctx, rc, alias, route, lastLatency, providermetrics.ResultError, synthErr, resp.Usage)
 			continue
 		}
-		p.container.Engine.ReportSuccess(alias, route)
+		p.container.Routing.Engine.ReportSuccess(alias, route)
 		if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
-			if err := p.container.RateLimiter.TokenAllowance(ctx, keyKey, tokens, keyCfg); err != nil {
+			if err := p.container.RateLimits.RateLimiter.TokenAllowance(ctx, keyKey, tokens, keyCfg); err != nil {
 				if errors.Is(err, limits.ErrLimitExceeded) {
 					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
 				}
 				return httputil.WriteError(c, fiber.StatusInternalServerError, "token accounting failed")
 			}
-			if err := p.container.RateLimiter.TokenAllowance(ctx, tenantKey, tokens, tenantCfg); err != nil {
+			if err := p.container.RateLimits.RateLimiter.TokenAllowance(ctx, tenantKey, tokens, tenantCfg); err != nil {
 				if errors.Is(err, limits.ErrLimitExceeded) {
 					return httputil.WriteError(c, fiber.StatusTooManyRequests, "token limit exceeded")
 				}
@@ -522,7 +531,7 @@ func (p *audioPipeline) Speech(c *fiber.Ctx, req models.AudioSpeechRequest) erro
 			Timestamp: time.Now().UTC(),
 			Success:   true,
 		}
-		if status, err := p.container.UsageLogger.Record(ctx, record); err == nil {
+		if status, err := p.container.Telemetry.UsageLogger.Record(ctx, record); err == nil {
 			httputil.ApplyBudgetHeaders(c, status)
 		}
 		p.recordProviderSample(ctx, rc, alias, route, time.Since(start), providermetrics.ResultSuccess, nil, resp.Usage)
@@ -534,7 +543,7 @@ func (p *audioPipeline) Speech(c *fiber.Ctx, req models.AudioSpeechRequest) erro
 		lastErr = errors.New("no backend available")
 	}
 	if lastRoute.Provider != "" {
-		_, _ = p.container.UsageLogger.Record(ctx, usagepipeline.Record{
+		_, _ = p.container.Telemetry.UsageLogger.Record(ctx, usagepipeline.Record{
 			Context:   rc,
 			Alias:     alias,
 			Provider:  lastRoute.Provider,

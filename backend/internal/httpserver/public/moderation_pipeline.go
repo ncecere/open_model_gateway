@@ -1,48 +1,41 @@
 package public
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
-	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/pipeline"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 )
 
 type moderationPipeline struct {
-	container *app.Container
-	executor  *executor.Executor
+	*pipeline.Base
 }
 
 func newModerationPipeline(container *app.Container, exec *executor.Executor) *moderationPipeline {
-	return &moderationPipeline{container: container, executor: exec}
+	return &moderationPipeline{Base: pipeline.NewBase(container, exec)}
 }
 
 func (p *moderationPipeline) Execute(c *fiber.Ctx, rc *requestctx.Context, alias string, inputs []string) error {
 	ctx := c.UserContext()
-	alias = strings.TrimSpace(alias)
-	if alias == "" {
-		return httputil.WriteError(c, fiber.StatusBadRequest, "model is required")
-	}
-	if !p.container.IsModelAllowed(rc.TenantID, alias) {
-		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
+
+	// Validate alias and tenant access
+	alias, err := p.ValidateAlias(c, rc.TenantID, alias)
+	if err != nil {
+		return err
 	}
 
-	routes := p.container.Engine.SelectRoutes(alias)
-	if len(routes) == 0 {
-		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
+	// Check routes are available
+	if err := p.CheckRoutes(c, alias); err != nil {
+		return err
 	}
 
 	traceID := traceIDFromContext(c)
-	result, err := p.executor.Moderate(ctx, rc, alias, inputs, traceID)
+	result, err := p.Executor.Moderate(ctx, rc, alias, inputs, traceID)
 	if err != nil {
-		if status, msg, ok := executor.AsAPIError(err); ok {
-			return httputil.WriteError(c, status, msg)
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+		return p.HandleExecutorError(c, err)
 	}
-	httputil.ApplyBudgetHeaders(c, result.BudgetStatus)
-	return c.JSON(convertModerationHTTPResponse(result.Response, alias))
+
+	return p.SendJSONResponse(c, result.BudgetStatus, convertModerationHTTPResponse(result.Response, alias))
 }

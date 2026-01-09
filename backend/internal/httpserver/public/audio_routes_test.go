@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
+	"github.com/ncecere/open_model_gateway/backend/internal/app/containers"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/limits"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
@@ -295,13 +296,30 @@ func basicStreamingContainer(streamer providers.AudioTranscriptionStreaming) *ap
 			},
 		},
 	})
+	rateLimiter := limits.NewRateLimiter(nil, nil)
+	usageLogger := newFakeUsageLogger()
 	return &app.Container{
 		Config: &config.Config{
 			Audio: config.AudioConfig{MaxUploadMB: 10},
 		},
+		// Legacy fields for backwards compatibility
 		Engine:      engine,
-		UsageLogger: newFakeUsageLogger(),
-		RateLimiter: limits.NewRateLimiter(nil, nil),
+		UsageLogger: usageLogger,
+		RateLimiter: rateLimiter,
+		// Sub-containers for new architecture
+		Routing: &containers.RoutingContainer{
+			Engine: engine,
+		},
+		Telemetry: &containers.TelemetryContainer{
+			UsageLogger: usageLogger,
+		},
+		RateLimits: containers.NewRateLimitContainer(
+			rateLimiter,
+			nil, // keyLimits
+			nil, // tenantLimits
+			limits.LimitConfig{}, // defaultKeyLimit
+			limits.LimitConfig{}, // defaultTenantLimit
+		),
 	}
 }
 

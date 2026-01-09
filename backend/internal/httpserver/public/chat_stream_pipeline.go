@@ -105,7 +105,7 @@ func (p *chatStreamPipeline) streamWithRenderer(
 	renderer streamRenderer,
 ) error {
 	ctx := c.UserContext()
-	routes := p.container.Engine.SelectRoutes(alias)
+	routes := p.container.Routing.Engine.SelectRoutes(alias)
 	if len(routes) == 0 {
 		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
 	}
@@ -124,13 +124,13 @@ func (p *chatStreamPipeline) streamWithRenderer(
 		routes = eligible
 	}
 
-	initialBudget, err := p.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
+	initialBudget, err := p.container.Telemetry.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to evaluate budget")
 	}
 	if initialBudget.Exceeded {
 		httputil.ApplyBudgetHeaders(c, initialBudget)
-		_, _ = p.container.UsageLogger.Record(ctx, usagepipeline.Record{
+		_, _ = p.container.Telemetry.UsageLogger.Record(ctx, usagepipeline.Record{
 			Context:   rc,
 			Alias:     alias,
 			Provider:  "budget",
@@ -186,7 +186,7 @@ func (p *chatStreamPipeline) streamChat(
 		req.Model = route.ResolveDeployment()
 		chunks, cancel, err := route.ChatStream.ChatStream(ctx, req)
 		if err != nil {
-			p.container.Engine.ReportFailure(alias, route)
+			p.container.Routing.Engine.ReportFailure(alias, route)
 			lastErr = err
 			p.container.RecordProviderTelemetry(ctx, providermetrics.Sample{
 				Provider:   route.Provider,
@@ -211,16 +211,16 @@ func (p *chatStreamPipeline) streamChat(
 		streamStart := time.Now()
 		var firstTokenLatency time.Duration
 		var firstTokenMeasured bool
-		if p.container.Observability != nil {
-			p.container.Observability.IncProviderStream(route.Provider, alias, route.ResolveDeployment())
+		if p.container.Telemetry.Observability != nil {
+			p.container.Telemetry.Observability.IncProviderStream(route.Provider, alias, route.ResolveDeployment())
 		}
 
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 			defer cancel()
 			defer release()
 			defer func() {
-				if p.container.Observability != nil {
-					p.container.Observability.DecProviderStream(route.Provider, alias, route.ResolveDeployment())
+				if p.container.Telemetry.Observability != nil {
+					p.container.Telemetry.Observability.DecProviderStream(route.Provider, alias, route.ResolveDeployment())
 				}
 			}()
 
@@ -240,7 +240,7 @@ func (p *chatStreamPipeline) streamChat(
 			recordUsage := func() {
 				tokensUsed := int(streamUsage.TotalTokens)
 				if usageCaptured && tokensUsed > 0 {
-					if err := p.container.RateLimiter.TokenAllowance(ctx, keyKey, tokensUsed, keyCfg); err != nil {
+					if err := p.container.RateLimits.RateLimiter.TokenAllowance(ctx, keyKey, tokensUsed, keyCfg); err != nil {
 						if errors.Is(err, limits.ErrLimitExceeded) {
 							recordStatus = fiber.StatusTooManyRequests
 						} else {
@@ -248,7 +248,7 @@ func (p *chatStreamPipeline) streamChat(
 						}
 						recordSuccess = false
 					}
-					if err := p.container.RateLimiter.TokenAllowance(ctx, tenantKey, tokensUsed, tenantCfg); err != nil {
+					if err := p.container.RateLimits.RateLimiter.TokenAllowance(ctx, tenantKey, tokensUsed, tenantCfg); err != nil {
 						if errors.Is(err, limits.ErrLimitExceeded) {
 							recordStatus = fiber.StatusTooManyRequests
 						} else {
@@ -279,7 +279,7 @@ func (p *chatStreamPipeline) streamChat(
 					Success:        recordSuccess && recordStatus == fiber.StatusOK,
 				}
 
-				if _, err := p.container.UsageLogger.Record(ctx, record); err != nil {
+				if _, err := p.container.Telemetry.UsageLogger.Record(ctx, record); err != nil {
 					slog.Error("record stream usage", slog.String("alias", alias), slog.String("error", err.Error()))
 				}
 				p.container.RecordProviderTelemetry(ctx, providermetrics.Sample{
@@ -298,7 +298,7 @@ func (p *chatStreamPipeline) streamChat(
 			defer recordUsage()
 			defer func() {
 				if !reported {
-					p.container.Engine.ReportFailure(alias, route)
+					p.container.Routing.Engine.ReportFailure(alias, route)
 				}
 			}()
 
@@ -346,7 +346,7 @@ func (p *chatStreamPipeline) streamChat(
 				return
 			}
 
-			p.container.Engine.ReportSuccess(alias, route)
+			p.container.Routing.Engine.ReportSuccess(alias, route)
 			reported = true
 		})
 
@@ -357,7 +357,7 @@ func (p *chatStreamPipeline) streamChat(
 		lastErr = errors.New("no backend available")
 	}
 	if lastRoute.Provider != "" && rc != nil {
-		_, _ = p.container.UsageLogger.Record(ctx, usagepipeline.Record{
+		_, _ = p.container.Telemetry.UsageLogger.Record(ctx, usagepipeline.Record{
 			Context:   rc,
 			Alias:     alias,
 			Provider:  lastRoute.Provider,

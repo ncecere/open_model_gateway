@@ -8,21 +8,18 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/pipeline"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 )
 
 // chatPipeline encapsulates the shared flow for synchronous chat completions.
 type chatPipeline struct {
-	container *app.Container
-	executor  *executor.Executor
+	*pipeline.Base
 }
 
 func newChatPipeline(container *app.Container, exec *executor.Executor) *chatPipeline {
-	return &chatPipeline{
-		container: container,
-		executor:  exec,
-	}
+	return &chatPipeline{Base: pipeline.NewBase(container, exec)}
 }
 
 func (p *chatPipeline) Execute(
@@ -48,19 +45,15 @@ func (p *chatPipeline) ExecuteWithConverter(
 	convert func(models.ChatResponse, string) (interface{}, error),
 ) error {
 	ctx := c.UserContext()
-	if idempotencyKey != "" {
-		if data, ok := p.container.Idempotency.Get(ctx, idempotencyKey); ok {
-			c.Set("Content-Type", "application/json")
-			return c.Send(data)
-		}
+
+	// Check idempotency cache
+	if found, err := p.CheckIdempotency(c, ctx, idempotencyKey); found || err != nil {
+		return err
 	}
 
-	result, err := p.executor.Chat(ctx, rc, alias, req, traceID, idempotencyKey)
+	result, err := p.Executor.Chat(ctx, rc, alias, req, traceID, idempotencyKey)
 	if err != nil {
-		if status, msg, ok := executor.AsAPIError(err); ok {
-			return httputil.WriteError(c, status, msg)
-		}
-		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
+		return p.HandleExecutorError(c, err)
 	}
 	httputil.ApplyBudgetHeaders(c, result.BudgetStatus)
 
@@ -73,9 +66,7 @@ func (p *chatPipeline) ExecuteWithConverter(
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to encode response")
 	}
 
-	if idempotencyKey != "" {
-		p.container.Idempotency.Set(ctx, idempotencyKey, payload)
-	}
+	p.CacheResponse(ctx, idempotencyKey, payload)
 
 	c.Set("Content-Type", "application/json")
 	return c.Send(payload)

@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/limits"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
@@ -70,6 +71,7 @@ type ModerationResult struct {
 
 // apiError wraps an error with an HTTP status code so callers can map it
 // directly to OpenAI-compatible responses.
+// Deprecated: Use apperror package types directly for new code.
 type apiError struct {
 	status int
 	msg    string
@@ -78,12 +80,43 @@ type apiError struct {
 func (e apiError) Error() string { return e.msg }
 
 // NewAPIError creates an error tied to an HTTP status code.
+// Deprecated: Use apperror package functions (BadRequest, RateLimited, etc.) instead.
 func NewAPIError(status int, msg string) error {
-	return apiError{status: status, msg: msg}
+	// Map to apperror types for consistency
+	switch status {
+	case fiber.StatusBadRequest:
+		return apperror.BadRequest("executor", msg)
+	case fiber.StatusUnauthorized:
+		return apperror.Unauthorized("executor", msg)
+	case fiber.StatusForbidden:
+		return apperror.Forbidden("executor", msg)
+	case fiber.StatusNotFound:
+		return apperror.NotFound("executor", msg)
+	case fiber.StatusTooManyRequests:
+		return apperror.RateLimited("executor", msg)
+	case fiber.StatusPaymentRequired:
+		return apperror.BudgetExceeded("executor", msg)
+	case fiber.StatusServiceUnavailable:
+		return apperror.ServiceUnavailable("executor", msg)
+	case fiber.StatusBadGateway, fiber.StatusGatewayTimeout:
+		return apperror.ServiceUnavailable("executor", msg)
+	default:
+		return apperror.Internal("executor", msg)
+	}
 }
 
 // AsAPIError extracts the HTTP status information when available.
+// Works with both legacy apiError and apperror.Error types.
 func AsAPIError(err error) (int, string, bool) {
+	if err == nil {
+		return 0, "", false
+	}
+	// Check for apperror.Error first
+	var appErr *apperror.Error
+	if errors.As(err, &appErr) {
+		return apperror.StatusCode(err), apperror.GetMessage(err), true
+	}
+	// Fall back to legacy apiError for backward compatibility
 	var apiErr apiError
 	if errors.As(err, &apiErr) {
 		return apiErr.status, apiErr.msg, true
@@ -797,6 +830,12 @@ func retryReason(err error) string {
 	if errors.Is(err, limits.ErrLimitExceeded) {
 		return "limit_exceeded"
 	}
+	// Check apperror types
+	var appErr *apperror.Error
+	if errors.As(err, &appErr) {
+		return fmt.Sprintf("http_%d", apperror.StatusCode(err))
+	}
+	// Legacy apiError support
 	var apiErr apiError
 	if errors.As(err, &apiErr) {
 		return fmt.Sprintf("http_%d", apiErr.status)
@@ -814,6 +853,16 @@ func shouldRetryProvider(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
+	// Check apperror types - retry on rate limit or server errors
+	var appErr *apperror.Error
+	if errors.As(err, &appErr) {
+		status := apperror.StatusCode(err)
+		if status == fiber.StatusTooManyRequests || status >= 500 {
+			return true
+		}
+		return false
+	}
+	// Legacy apiError support
 	var apiErr apiError
 	if errors.As(err, &apiErr) {
 		if apiErr.status == fiber.StatusTooManyRequests || apiErr.status >= 500 {

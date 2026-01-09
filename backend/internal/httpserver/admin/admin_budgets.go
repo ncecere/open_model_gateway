@@ -354,10 +354,10 @@ func (h *budgetHandler) buildBudgetDefaultsMetadata(ctx context.Context, record 
 }
 
 func (h *budgetHandler) lookupBudgetUser(ctx context.Context, id pgtype.UUID) (*budgetUserRef, error) {
-	if !id.Valid || h.container == nil || h.container.Queries == nil {
+	if !id.Valid || h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return nil, nil
 	}
-	user, err := h.container.Queries.GetUserByID(ctx, id)
+	user, err := h.container.Data.Queries.GetUserByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

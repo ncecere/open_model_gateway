@@ -109,7 +109,7 @@ func (h *userHandler) listAPIKeys(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
 
-	records, err := h.container.Queries.ListPersonalAPIKeysByUser(c.Context(), user.ID)
+	records, err := h.container.Data.Queries.ListPersonalAPIKeysByUser(c.Context(), user.ID)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -186,7 +186,7 @@ func (h *userHandler) createAPIKey(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to hash api key")
 	}
 
-	record, err := h.container.Queries.CreateAPIKey(c.Context(), db.CreateAPIKeyParams{
+	record, err := h.container.Data.Queries.CreateAPIKey(c.Context(), db.CreateAPIKeyParams{
 		TenantID:    tenantID,
 		Prefix:      prefix,
 		SecretHash:  hash,
@@ -232,7 +232,7 @@ func (h *userHandler) revokeAPIKey(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid api key id")
 	}
 
-	record, err := h.container.Queries.GetAPIKeyByID(c.Context(), toPgUUID(apiKeyUUID))
+	record, err := h.container.Data.Queries.GetAPIKeyByID(c.Context(), toPgUUID(apiKeyUUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "api key not found")
@@ -244,7 +244,7 @@ func (h *userHandler) revokeAPIKey(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusForbidden, "cannot modify this api key")
 	}
 
-	revoked, err := h.container.Queries.RevokeAPIKey(c.Context(), toPgUUID(apiKeyUUID))
+	revoked, err := h.container.Data.Queries.RevokeAPIKey(c.Context(), toPgUUID(apiKeyUUID))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -263,7 +263,7 @@ func (h *userHandler) rotateAPIKey(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "api key service unavailable")
 	}
 
@@ -276,7 +276,7 @@ func (h *userHandler) rotateAPIKey(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid api key id")
 	}
 
-	record, err := h.container.Queries.GetAPIKeyByID(c.Context(), toPgUUID(apiKeyUUID))
+	record, err := h.container.Data.Queries.GetAPIKeyByID(c.Context(), toPgUUID(apiKeyUUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "api key not found")
@@ -317,7 +317,7 @@ func (h *userHandler) getAPIKeyUsage(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid api key id")
 	}
-	record, err := h.container.Queries.GetAPIKeyByID(c.Context(), toPgUUID(apiKeyUUID))
+	record, err := h.container.Data.Queries.GetAPIKeyByID(c.Context(), toPgUUID(apiKeyUUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "api key not found")
@@ -365,7 +365,7 @@ func (h *userHandler) listTenantAPIKeys(c *fiber.Ctx) error {
 			return writeTenantCapabilityError(c, err)
 		}
 	}
-	records, err := h.container.Queries.ListAPIKeysByTenant(c.Context(), toPgUUID(tenantUUID))
+	records, err := h.container.Data.Queries.ListAPIKeysByTenant(c.Context(), toPgUUID(tenantUUID))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -419,7 +419,7 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
 	}
 	if req.Quota != nil && req.Quota.BudgetUSD > 0 {
-		membership, err := h.container.Queries.GetTenantMembership(c.Context(), db.GetTenantMembershipParams{
+		membership, err := h.container.Data.Queries.GetTenantMembership(c.Context(), db.GetTenantMembershipParams{
 			TenantID: toPgUUID(tenantUUID),
 			UserID:   user.ID,
 		})
@@ -443,7 +443,7 @@ func (h *userHandler) createTenantAPIKey(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to hash api key")
 	}
-	record, err := h.container.Queries.CreateAPIKey(c.Context(), db.CreateAPIKeyParams{
+	record, err := h.container.Data.Queries.CreateAPIKey(c.Context(), db.CreateAPIKeyParams{
 		TenantID:    toPgUUID(tenantUUID),
 		Prefix:      prefix,
 		SecretHash:  hash,
@@ -496,7 +496,7 @@ func (h *userHandler) revokeTenantAPIKey(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid api key id")
 	}
-	record, err := h.container.Queries.GetAPIKeyByID(c.Context(), toPgUUID(keyUUID))
+	record, err := h.container.Data.Queries.GetAPIKeyByID(c.Context(), toPgUUID(keyUUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "api key not found")
@@ -510,7 +510,7 @@ func (h *userHandler) revokeTenantAPIKey(c *fiber.Ctx) error {
 	if recTenant != tenantUUID {
 		return httputil.WriteError(c, fiber.StatusForbidden, "cannot modify this api key")
 	}
-	revoked, err := h.container.Queries.RevokeAPIKey(c.Context(), toPgUUID(keyUUID))
+	revoked, err := h.container.Data.Queries.RevokeAPIKey(c.Context(), toPgUUID(keyUUID))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -533,7 +533,7 @@ func (h *userHandler) rotateTenantAPIKey(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "api key service unavailable")
 	}
 	tenantUUID, err := uuid.Parse(strings.TrimSpace(c.Params("tenantID")))
@@ -544,7 +544,7 @@ func (h *userHandler) rotateTenantAPIKey(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid api key id")
 	}
-	record, err := h.container.Queries.GetAPIKeyByID(c.Context(), toPgUUID(keyUUID))
+	record, err := h.container.Data.Queries.GetAPIKeyByID(c.Context(), toPgUUID(keyUUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "api key not found")
@@ -598,7 +598,7 @@ func (h *userHandler) getTenantAPIKeyUsage(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid api key id")
 	}
-	record, err := h.container.Queries.GetAPIKeyByID(c.Context(), toPgUUID(keyUUID))
+	record, err := h.container.Data.Queries.GetAPIKeyByID(c.Context(), toPgUUID(keyUUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "api key not found")
@@ -634,10 +634,10 @@ func (h *userHandler) getTenantAPIKeyUsage(c *fiber.Ctx) error {
 }
 
 func (h *userHandler) lookupTenantRole(ctx context.Context, user db.User, tenantID uuid.UUID) (db.MembershipRole, error) {
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return "", errors.New("tenant lookup unavailable")
 	}
-	membership, err := h.container.Queries.GetTenantMembership(ctx, db.GetTenantMembershipParams{
+	membership, err := h.container.Data.Queries.GetTenantMembership(ctx, db.GetTenantMembershipParams{
 		TenantID: toPgUUID(tenantID),
 		UserID:   user.ID,
 	})
@@ -719,10 +719,10 @@ func (h *userHandler) budgetRefreshSchedule(ctx context.Context, tenantID uuid.U
 		return "", errors.New("configuration unavailable")
 	}
 	schedule := config.NormalizeBudgetRefreshSchedule(h.container.Config.Budgets.RefreshSchedule)
-	if tenantID == uuid.Nil || h.container.Queries == nil {
+	if tenantID == uuid.Nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return schedule, nil
 	}
-	override, err := h.container.Queries.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
+	override, err := h.container.Data.Queries.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return schedule, nil
@@ -847,17 +847,17 @@ func validateAPIKeyRateLimit(container *app.Container, tenantID uuid.UUID, paylo
 }
 
 func applyAPIKeyRateLimit(ctx context.Context, container *app.Container, record db.ApiKey, cfg *limits.LimitConfig) error {
-	if container == nil || container.Queries == nil {
+	if container == nil || container.Data == nil || container.Data.Queries == nil {
 		return errors.New("rate limit persistence unavailable")
 	}
 	if cfg == nil {
-		if _, err := container.Queries.DeleteAPIKeyRateLimit(ctx, record.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if _, err := container.Data.Queries.DeleteAPIKeyRateLimit(ctx, record.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
 		container.UpdateAPIKeyRateLimit(record.Prefix, nil)
 		return nil
 	}
-	if _, err := container.Queries.UpsertAPIKeyRateLimit(ctx, db.UpsertAPIKeyRateLimitParams{
+	if _, err := container.Data.Queries.UpsertAPIKeyRateLimit(ctx, db.UpsertAPIKeyRateLimitParams{
 		ApiKeyID:          record.ID,
 		RequestsPerMinute: int32(cfg.RequestsPerMinute),
 		TokensPerMinute:   int32(cfg.TokensPerMinute),
@@ -886,7 +886,7 @@ func validateQuotaForLimit(quota *quotaPayload, limit float64) error {
 }
 
 func (h *userHandler) rotateAPIKeyRecord(ctx context.Context, record db.ApiKey) (db.ApiKey, string, string, error) {
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return db.ApiKey{}, "", "", fmt.Errorf("api key service unavailable")
 	}
 	newPrefix, secret, token, err := auth.GenerateAPIKey()
@@ -898,7 +898,7 @@ func (h *userHandler) rotateAPIKeyRecord(ctx context.Context, record db.ApiKey) 
 		return db.ApiKey{}, "", "", fmt.Errorf("failed to hash api key: %w", err)
 	}
 
-	rotated, err := h.container.Queries.RotateAPIKey(ctx, db.RotateAPIKeyParams{
+	rotated, err := h.container.Data.Queries.RotateAPIKey(ctx, db.RotateAPIKeyParams{
 		ID:         record.ID,
 		Prefix:     newPrefix,
 		SecretHash: hash,
@@ -913,11 +913,11 @@ func (h *userHandler) rotateAPIKeyRecord(ctx context.Context, record db.ApiKey) 
 }
 
 func (h *userHandler) refreshAPIKeyRateLimit(ctx context.Context, oldPrefix, newPrefix string, apiKeyID pgtype.UUID) {
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return
 	}
 	h.container.UpdateAPIKeyRateLimit(oldPrefix, nil)
-	override, err := h.container.Queries.GetAPIKeyRateLimit(ctx, apiKeyID)
+	override, err := h.container.Data.Queries.GetAPIKeyRateLimit(ctx, apiKeyID)
 	if err != nil {
 		return
 	}

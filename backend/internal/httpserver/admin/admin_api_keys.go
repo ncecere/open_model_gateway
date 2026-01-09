@@ -22,10 +22,10 @@ func (h *apiKeyHandler) list(c *fiber.Ctx) error {
     if err := requireAnyRole(c, h.container, db.MembershipRoleAdmin); err != nil {
         return err
     }
-    if h.container == nil || h.container.Queries == nil {
+    if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
         return httputil.WriteError(c, fiber.StatusInternalServerError, "api key service unavailable")
     }
-    rows, err := h.container.Queries.ListAllAPIKeys(c.Context())
+    rows, err := h.container.Data.Queries.ListAllAPIKeys(c.Context())
     if err != nil {
         return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
     }

@@ -156,10 +156,10 @@ func (h *userHandler) inviteTenantMembership(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusForbidden, "only owners can grant the owner role")
 	}
 
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "tenant service unavailable")
 	}
-	if _, err := h.container.Queries.GetUserByEmail(c.Context(), email); err != nil {
+	if _, err := h.container.Data.Queries.GetUserByEmail(c.Context(), email); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusBadRequest, "user does not exist")
 		}
@@ -200,7 +200,7 @@ func (h *userHandler) updateTenantMembershipBudget(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "membership service unavailable")
 	}
 
@@ -244,7 +244,7 @@ func (h *userHandler) updateTenantMembershipBudget(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "token_cap must be >= 0")
 	}
 
-	current, err := h.container.Queries.GetTenantMembership(c.Context(), db.GetTenantMembershipParams{
+	current, err := h.container.Data.Queries.GetTenantMembership(c.Context(), db.GetTenantMembershipParams{
 		TenantID: toPgUUID(tenantUUID),
 		UserID:   toPgUUID(memberUUID),
 	})
@@ -268,7 +268,7 @@ func (h *userHandler) updateTenantMembershipBudget(c *fiber.Ctx) error {
 		tokenCap = *req.TokenCap
 	}
 
-	updated, err := h.container.Queries.UpdateTenantMembershipBudget(c.Context(), db.UpdateTenantMembershipBudgetParams{
+	updated, err := h.container.Data.Queries.UpdateTenantMembershipBudget(c.Context(), db.UpdateTenantMembershipBudgetParams{
 		TenantID:         toPgUUID(tenantUUID),
 		UserID:           toPgUUID(memberUUID),
 		BudgetUsd:        budgetUSD,
@@ -334,7 +334,7 @@ func (h *userHandler) removeTenantMembership(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "cannot remove your own membership")
 	}
 
-	targetMembership, err := h.container.Queries.GetTenantMembership(c.Context(), db.GetTenantMembershipParams{
+	targetMembership, err := h.container.Data.Queries.GetTenantMembership(c.Context(), db.GetTenantMembershipParams{
 		TenantID: toPgUUID(tenantUUID),
 		UserID:   toPgUUID(memberUUID),
 	})
@@ -397,7 +397,7 @@ func (h *userHandler) listDirectoryUsers(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "directory unavailable")
 	}
 
@@ -429,7 +429,7 @@ func (h *userHandler) listDirectoryUsers(c *fiber.Ctx) error {
 		}
 	}
 
-	rows, err := h.container.Queries.SearchUsers(c.Context(), db.SearchUsersParams{
+	rows, err := h.container.Data.Queries.SearchUsers(c.Context(), db.SearchUsersParams{
 		Lower: strings.ToLower(query),
 		Limit: limit,
 	})

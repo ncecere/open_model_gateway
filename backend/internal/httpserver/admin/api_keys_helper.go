@@ -120,10 +120,10 @@ func budgetRefreshSchedule(ctx context.Context, container *app.Container, tenant
         return "", errors.New("configuration unavailable")
     }
     schedule := config.NormalizeBudgetRefreshSchedule(container.Config.Budgets.RefreshSchedule)
-    if tenantID == uuid.Nil || container.Queries == nil {
+    if tenantID == uuid.Nil || container.Data == nil || container.Data.Queries == nil {
         return schedule, nil
     }
-    override, err := container.Queries.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
+    override, err := container.Data.Queries.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
     if err != nil {
         if errors.Is(err, pgx.ErrNoRows) {
             return schedule, nil

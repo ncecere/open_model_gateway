@@ -33,7 +33,7 @@ type auditLogResponse struct {
 }
 
 func registerAdminAuditRoutes(router fiber.Router, container *app.Container) {
-	handler := &auditRoutes{container: container, service: auditservice.NewService(container.Queries)}
+	handler := &auditRoutes{container: container, service: auditservice.NewService(container.Data.Queries)}
 	group := router.Group("/audit")
 	group.Get("/logs", handler.list)
 }

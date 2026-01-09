@@ -36,7 +36,7 @@ func apiKeyAuth(container *app.Container) fiber.Handler {
 		}
 
 		ctx := userContext(c)
-		record, err := container.Queries.GetAPIKeyByPrefix(ctx, prefix)
+		record, err := container.Data.Queries.GetAPIKeyByPrefix(ctx, prefix)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return httputil.WriteError(c, fiber.StatusUnauthorized, "invalid api key")
@@ -60,7 +60,7 @@ func apiKeyAuth(container *app.Container) fiber.Handler {
 			return httputil.WriteError(c, fiber.StatusUnauthorized, "invalid api key")
 		}
 
-		tenant, err := container.Queries.GetTenantByID(ctx, record.TenantID)
+		tenant, err := container.Data.Queries.GetTenantByID(ctx, record.TenantID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return httputil.WriteError(c, fiber.StatusUnauthorized, "tenant not found")
@@ -76,7 +76,7 @@ func apiKeyAuth(container *app.Container) fiber.Handler {
 			return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 		}
 
-		if err := container.Queries.UpdateAPIKeyLastUsed(ctx, record.ID); err != nil {
+		if err := container.Data.Queries.UpdateAPIKeyLastUsed(ctx, record.ID); err != nil {
 			return httputil.WriteError(c, fiber.StatusInternalServerError, "failed to update key usage")
 		}
 

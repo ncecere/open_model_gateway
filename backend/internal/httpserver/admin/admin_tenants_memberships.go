@@ -74,10 +74,10 @@ func (h *tenantHandler) upsertMembership(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "role must be owner, admin, viewer, or user")
 	}
 
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "tenant service unavailable")
 	}
-	if _, err := h.container.Queries.GetUserByEmail(c.Context(), req.Email); err != nil {
+	if _, err := h.container.Data.Queries.GetUserByEmail(c.Context(), req.Email); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusBadRequest, "user does not exist")
 		}
@@ -141,10 +141,10 @@ func (h *tenantHandler) removeMembership(c *fiber.Ctx) error {
 }
 
 func (h *tenantHandler) lookupTenantName(ctx context.Context, tenantID uuid.UUID) string {
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return ""
 	}
-	record, err := h.container.Queries.GetTenantByID(ctx, toPgUUID(tenantID))
+	record, err := h.container.Data.Queries.GetTenantByID(ctx, toPgUUID(tenantID))
 	if err != nil {
 		return ""
 	}

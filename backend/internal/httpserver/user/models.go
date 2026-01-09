@@ -74,8 +74,8 @@ func (h *userHandler) listModels(c *fiber.Ctx) error {
 		}
 	}
 	var health map[string]router.RouteHealth
-	if h.container != nil && h.container.Engine != nil {
-		health = h.container.Engine.HealthStatus()
+	if h.container != nil && h.container.Routing != nil && h.container.Routing.Engine != nil {
+		health = h.container.Routing.Engine.HealthStatus()
 	}
 	resp := make([]userModelResponse, 0, len(models))
 	for _, model := range models {
@@ -197,7 +197,7 @@ func (h *userHandler) loadAllowedModelAliases(ctx context.Context, tenantIDs []u
 	if len(tenantIDs) == 0 {
 		return allowed, nil
 	}
-	if h == nil || h.container == nil || h.container.Queries == nil {
+	if h == nil || h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return nil, errors.New("model access store unavailable")
 	}
 	seen := make(map[uuid.UUID]struct{}, len(tenantIDs))
@@ -209,7 +209,7 @@ func (h *userHandler) loadAllowedModelAliases(ctx context.Context, tenantIDs []u
 			continue
 		}
 		seen[tenantID] = struct{}{}
-		aliases, err := h.container.Queries.ListTenantModels(ctx, toPgUUID(tenantID))
+		aliases, err := h.container.Data.Queries.ListTenantModels(ctx, toPgUUID(tenantID))
 		if err != nil {
 			return nil, err
 		}

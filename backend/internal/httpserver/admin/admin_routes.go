@@ -35,9 +35,9 @@ type oidcStateData struct {
 func registerAdminAuthRoutes(router fiber.Router, container *app.Container) {
 	handler := &adminAuthHandler{
 		authService: container.AdminAuth,
-		redis:       container.Redis,
+		redis:       container.Data.Redis,
 		cfg:         container.Config.Admin,
-		queries:     container.Queries,
+		queries:     container.Data.Queries,
 	}
 
 	router.Get("/methods", handler.listMethods)

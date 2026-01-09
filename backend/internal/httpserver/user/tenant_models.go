@@ -43,7 +43,7 @@ func (h *userHandler) listTenantModels(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
-	if h.container == nil || h.container.AdminCatalog == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.AdminCatalog == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "model catalog unavailable")
 	}
 
@@ -57,7 +57,7 @@ func (h *userHandler) listTenantModels(c *fiber.Ctx) error {
 		}
 	}
 
-	attachedAliases, err := h.container.Queries.ListTenantModels(c.Context(), toPgUUID(tenantUUID))
+	attachedAliases, err := h.container.Data.Queries.ListTenantModels(c.Context(), toPgUUID(tenantUUID))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -109,7 +109,7 @@ func (h *userHandler) attachTenantModel(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
-	if h.container == nil || h.container.Queries == nil || h.container.AdminCatalog == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil || h.container.AdminCatalog == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "model catalog unavailable")
 	}
 
@@ -122,7 +122,7 @@ func (h *userHandler) attachTenantModel(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "alias required")
 	}
 
-	model, err := h.container.Queries.GetModelByAlias(c.Context(), alias)
+	model, err := h.container.Data.Queries.GetModelByAlias(c.Context(), alias)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "model not found")
@@ -133,7 +133,7 @@ func (h *userHandler) attachTenantModel(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusForbidden, "model not approved for tenants")
 	}
 
-	if err := h.container.Queries.InsertTenantModel(c.Context(), db.InsertTenantModelParams{
+	if err := h.container.Data.Queries.InsertTenantModel(c.Context(), db.InsertTenantModelParams{
 		TenantID: toPgUUID(tenantUUID),
 		Alias:    alias,
 	}); err != nil {
@@ -158,7 +158,7 @@ func (h *userHandler) detachTenantModel(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "model catalog unavailable")
 	}
 
@@ -171,7 +171,7 @@ func (h *userHandler) detachTenantModel(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "alias required")
 	}
 
-	if err := h.container.Queries.DeleteTenantModel(c.Context(), db.DeleteTenantModelParams{
+	if err := h.container.Data.Queries.DeleteTenantModel(c.Context(), db.DeleteTenantModelParams{
 		TenantID: toPgUUID(tenantUUID),
 		Alias:    alias,
 	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -192,10 +192,10 @@ func (h *userHandler) detachTenantModel(c *fiber.Ctx) error {
 }
 
 func (h *userHandler) refreshTenantModelCache(ctx context.Context, tenantID uuid.UUID) error {
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return errors.New("tenant model cache unavailable")
 	}
-	aliases, err := h.container.Queries.ListTenantModels(ctx, toPgUUID(tenantID))
+	aliases, err := h.container.Data.Queries.ListTenantModels(ctx, toPgUUID(tenantID))
 	if err != nil {
 		return err
 	}

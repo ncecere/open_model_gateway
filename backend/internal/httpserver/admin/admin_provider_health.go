@@ -49,11 +49,11 @@ func (h *providerHealthHandler) listIncidents(c *fiber.Ctx) error {
 		PageLimit:  int32(limit),
 		PageOffset: int32(offset),
 	}
-	rows, err := h.container.Queries.ListProviderIncidents(c.Context(), params)
+	rows, err := h.container.Data.Queries.ListProviderIncidents(c.Context(), params)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
-	total, _ := h.container.Queries.CountProviderIncidents(c.Context(), db.CountProviderIncidentsParams{
+	total, _ := h.container.Data.Queries.CountProviderIncidents(c.Context(), db.CountProviderIncidentsParams{
 		Provider:   provider,
 		ModelAlias: alias,
 		Status:     status,
@@ -210,7 +210,7 @@ func (h *providerHealthHandler) listAlerts(c *fiber.Ctx) error {
 		PageLimit:  int32(limit),
 		PageOffset: int32(offset),
 	}
-	rows, err := h.container.Queries.ListProviderIncidents(c.Context(), params)
+	rows, err := h.container.Data.Queries.ListProviderIncidents(c.Context(), params)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -258,10 +258,10 @@ func (h *providerHealthHandler) seedSampleSLI(ctx context.Context) error {
 }
 
 func (h *providerHealthHandler) seedSampleIncident(ctx context.Context) error {
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return nil
 	}
-	_, _ = h.container.Queries.UpsertProviderIncident(ctx, db.UpsertProviderIncidentParams{
+	_, _ = h.container.Data.Queries.UpsertProviderIncident(ctx, db.UpsertProviderIncidentParams{
 		Provider:        "sample",
 		ModelAlias:      "sample-alias",
 		IncidentType:    "error_rate",
@@ -286,17 +286,17 @@ func (h *providerHealthHandler) clearSeed(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "container unavailable")
 	}
 	ctx := c.Context()
-	if h.container.DBPool != nil {
-		_, _ = h.container.DBPool.Exec(ctx, `delete from provider_incidents where provider='sample' or metadata @> '{"seed":true}'`)
+	if h.container.Data.DBPool != nil {
+		_, _ = h.container.Data.DBPool.Exec(ctx, `delete from provider_incidents where provider='sample' or metadata @> '{"seed":true}'`)
 	}
-	if h.container.Redis != nil {
-		iter := h.container.Redis.Scan(ctx, 0, "telemetry:provider:sample*", 0).Iterator()
+	if h.container.Data.Redis != nil {
+		iter := h.container.Data.Redis.Scan(ctx, 0, "telemetry:provider:sample*", 0).Iterator()
 		var keys []string
 		for iter.Next(ctx) {
 			keys = append(keys, iter.Val())
 		}
 		if len(keys) > 0 {
-			_, _ = h.container.Redis.Del(ctx, keys...).Result()
+			_, _ = h.container.Data.Redis.Del(ctx, keys...).Result()
 		}
 	}
 	return c.SendStatus(fiber.StatusNoContent)

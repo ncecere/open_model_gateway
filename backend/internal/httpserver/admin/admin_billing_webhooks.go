@@ -270,7 +270,7 @@ func (h *billingWebhookHandler) retry(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid event id")
 	}
-	row, err := h.container.Queries.GetBillingWebhookEvent(c.Context(), toPgUUID(eventID))
+	row, err := h.container.Data.Queries.GetBillingWebhookEvent(c.Context(), toPgUUID(eventID))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusNotFound, "event not found")
 	}

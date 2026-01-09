@@ -42,14 +42,14 @@ func (h *modelCatalogHandler) list(c *fiber.Ctx) error {
 }
 
 func (h *modelCatalogHandler) status(c *fiber.Ctx) error {
-	if h.service == nil || h.container == nil || h.container.Engine == nil {
+	if h.service == nil || h.container == nil || h.container.Routing == nil || h.container.Routing.Engine == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "model catalog service unavailable")
 	}
 	models, err := h.service.List(c.Context())
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
-	health := h.container.Engine.HealthStatus()
+	health := h.container.Routing.Engine.HealthStatus()
 	resp := make([]fiber.Map, 0, len(models))
 	for _, model := range models {
 		status := deriveModelStatus(model.Enabled, health[model.Alias])

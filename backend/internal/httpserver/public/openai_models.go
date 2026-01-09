@@ -14,12 +14,12 @@ func (h *openAIHandler) listModels(c *fiber.Ctx) error {
 	var rc *requestctx.Context
 	if rctx, ok := requestctx.FromContext(ctx); ok {
 		rc = rctx
-		if status, err := h.container.UsageLogger.CheckBudget(ctx, rctx, time.Now().UTC()); err == nil {
+		if status, err := h.container.Telemetry.UsageLogger.CheckBudget(ctx, rctx, time.Now().UTC()); err == nil {
 			httputil.ApplyBudgetHeaders(c, status)
 		}
 	}
 
-	aliases := h.container.Engine.ListAliases()
+	aliases := h.container.Routing.Engine.ListAliases()
 	models := make([]openAIModel, 0, len(aliases))
 	now := time.Now().Unix()
 

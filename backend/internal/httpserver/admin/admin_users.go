@@ -160,7 +160,7 @@ func (h *adminUserHandler) listUserTenants(c *fiber.Ctx) error {
 	if err := requireAnyRole(c, h.container, db.MembershipRoleAdmin); err != nil {
 		return err
 	}
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "user service unavailable")
 	}
 	rawID := strings.TrimSpace(c.Params("userID"))
@@ -171,7 +171,7 @@ func (h *adminUserHandler) listUserTenants(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid user id")
 	}
-	rows, err := h.container.Queries.ListUserTenants(c.Context(), toPgUUID(userID))
+	rows, err := h.container.Data.Queries.ListUserTenants(c.Context(), toPgUUID(userID))
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -198,7 +198,7 @@ func (h *adminUserHandler) sendInvite(c *fiber.Ctx) error {
 	if err := requireAnyRole(c, h.container, db.MembershipRoleAdmin); err != nil {
 		return err
 	}
-	if h.service == nil || h.container == nil || h.container.Queries == nil {
+	if h.service == nil || h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "user service unavailable")
 	}
 	rawID := strings.TrimSpace(c.Params("userID"))
@@ -209,7 +209,7 @@ func (h *adminUserHandler) sendInvite(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid user id")
 	}
-	record, err := h.container.Queries.GetUserByID(c.Context(), toPgUUID(userID))
+	record, err := h.container.Data.Queries.GetUserByID(c.Context(), toPgUUID(userID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return httputil.WriteError(c, fiber.StatusNotFound, "user not found")

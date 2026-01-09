@@ -304,7 +304,7 @@ func (h *userHandler) loadTenantScope(ctx context.Context, user db.User) ([]uuid
 	if personal, err := uuidFromPg(user.PersonalTenantID); err == nil {
 		addAllowed(personal, allowed, &orderedScope)
 	}
-	memberships, err := h.container.Queries.ListUserTenants(ctx, user.ID)
+	memberships, err := h.container.Data.Queries.ListUserTenants(ctx, user.ID)
 	if err != nil {
 		return nil, nil, err
 	}

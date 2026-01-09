@@ -110,7 +110,7 @@ func (h *userHandler) updateProfile(c *fiber.Ctx) error {
 	if !ok {
 		return httputil.WriteError(c, fiber.StatusUnauthorized, "authentication required")
 	}
-	if h.container == nil || h.container.Queries == nil {
+	if h.container == nil || h.container.Data == nil || h.container.Data.Queries == nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, "profile service unavailable")
 	}
 
@@ -141,7 +141,7 @@ func (h *userHandler) updateProfile(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "no changes supplied")
 	}
 
-	updated, err := h.container.Queries.UpdateUserProfile(c.Context(), params)
+	updated, err := h.container.Data.Queries.UpdateUserProfile(c.Context(), params)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -178,7 +178,7 @@ func (h *userHandler) changePassword(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "new password must be at least 8 characters")
 	}
 
-	cred, err := h.container.Queries.GetCredentialByUserAndProvider(c.Context(), db.GetCredentialByUserAndProviderParams{
+	cred, err := h.container.Data.Queries.GetCredentialByUserAndProvider(c.Context(), db.GetCredentialByUserAndProviderParams{
 		UserID:   user.ID,
 		Provider: auth.ProviderLocal,
 		Issuer:   auth.ProviderLocal,
@@ -563,7 +563,7 @@ func (h *userHandler) buildProfileResponse(ctx context.Context, user db.User) (u
 
 	canChange := false
 	if h.container != nil && h.container.Config.Admin.Local.Enabled && h.container.Queries != nil {
-		creds, err := h.container.Queries.ListCredentialsForUser(ctx, user.ID)
+		creds, err := h.container.Data.Queries.ListCredentialsForUser(ctx, user.ID)
 		if err == nil {
 			for _, cred := range creds {
 				if cred.Provider == auth.ProviderLocal && cred.Issuer == auth.ProviderLocal {

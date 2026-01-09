@@ -18,13 +18,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ApiKeyRecord } from "@/api/tenants";
 import { formatScheduleLabel } from "../utils";
+import { shortDateFormatter as dateFormatter } from "@/lib/formatters";
 import { Eye, MoreHorizontal, Trash2 } from "lucide-react";
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
 
 type AdminKeyTableProps = {
   allKeys: ApiKeyRecord[];

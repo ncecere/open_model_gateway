@@ -1,34 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
-import type {
-  MembershipRecord,
-  MembershipRole,
-  TenantRecord,
-  TenantStatus,
-} from "@/api/tenants";
-import {
-  createTenant,
-  deleteTenantRateLimits,
-  getTenantRateLimits,
-  listTenantMemberships,
-  listTenantModels,
-  removeTenantMembership,
-  updateTenant,
-  updateTenantStatus,
-  upsertTenantMembership,
-  upsertTenantModels,
-  upsertTenantRateLimits,
-} from "@/api/tenants";
-import {
-  deleteBudgetOverride,
-  getBudgetDefaults,
-  getTenantBudget,
-  upsertBudgetOverride,
-} from "@/api/budgets";
-import type { UpsertBudgetOverrideRequest } from "@/api/budgets";
+import type { TenantRecord, TenantStatus } from "@/api/tenants";
 import { Separator } from "@/components/ui/separator";
 import { listModelCatalog } from "@/api/model-catalog";
+import { getBudgetDefaults } from "@/api/budgets";
 import { getRateLimitDefaults } from "@/api/rate-limits";
 import { useToast } from "@/hooks/use-toast";
 import type { AdminUser } from "@/api/users";
@@ -40,37 +16,23 @@ import {
   TenantCreateDialog,
   TenantEditDialog,
   TenantMembershipDialog,
-  TENANTS_QUERY_KEY,
-  TENANTS_DASHBOARD_KEY,
   useTenantDirectoryQuery,
   useTenantDirectoryFilters,
   useTenantCreateDialog,
   useTenantEditDialog,
   useMembershipDialog,
-  INHERIT_SCHEDULE,
+  useAdminTenantMutations,
+  useEditTenantData,
+  useTenantHandlers,
 } from "@/features/tenants";
-const MEMBERSHIPS_QUERY_KEY = (tenantId?: string) =>
-  ["tenant-memberships", tenantId] as const;
 
 const TENANT_STATUSES: TenantStatus[] = ["active", "suspended"];
 const EMPTY_USERS: AdminUser[] = [];
 
-const normalizeAliases = (aliases: string[]) =>
-  [...new Set(aliases)].sort((a, b) => a.localeCompare(b));
-
-const aliasSelectionsEqual = (a: string[], b: string[]) => {
-  const left = normalizeAliases(a);
-  const right = normalizeAliases(b);
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every((value, index) => value === right[index]);
-};
-
 export function TenantsPage() {
-  const queryClient = useQueryClient();
   const { toast } = useToast();
   const tenantsQuery = useTenantDirectoryQuery();
+  const mutations = useAdminTenantMutations();
 
   const budgetDefaultsQuery = useQuery({
     queryKey: ["budget-defaults"],
@@ -94,46 +56,8 @@ export function TenantsPage() {
   });
   const userDirectory = usersQuery.data?.users ?? EMPTY_USERS;
 
-  const createTenantMutation = useMutation({
-    mutationFn: createTenant,
-    onSuccess: (tenant) => {
-      toast({
-        title: "Tenant created",
-        description: `${tenant.name} is now active`,
-      });
-      queryClient.invalidateQueries({ queryKey: TENANTS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: TENANTS_DASHBOARD_KEY });
-    },
-    onError: () => {
-      toast({
-        variant: "destructive",
-        title: "Failed to create tenant",
-        description: "Please retry in a moment.",
-      });
-    },
-  });
-
-  const updateStatusMutation = useMutation({
-    mutationFn: updateTenantStatus,
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: TENANTS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: TENANTS_DASHBOARD_KEY });
-      queryClient.invalidateQueries({
-        queryKey: MEMBERSHIPS_QUERY_KEY(variables.tenantId),
-      });
-      toast({ title: "Tenant status updated" });
-    },
-    onError: () => {
-      toast({
-        variant: "destructive",
-        title: "Failed to update status",
-        description: "Check your permissions and try again.",
-      });
-    },
-  });
-
   const tenants = tenantsQuery.data?.tenants ?? [];
-  const suspendedCount = tenants.filter((tenant) => tenant.status === "suspended").length;
+  const suspendedCount = tenants.filter((t) => t.status === "suspended").length;
   const {
     searchTerm: tenantSearch,
     setSearchTerm: setTenantSearch,
@@ -150,458 +74,47 @@ export function TenantsPage() {
     [modelCatalog],
   );
   const createDialog = useTenantCreateDialog(budgetDefaults, modelAliases);
-  const handleTenantStatusChange = async (
-    tenantId: string,
-    status: TenantStatus,
-  ) => {
-    const tenant = tenants.find((entry) => entry.id === tenantId);
-    if (!tenant || tenant.status === status) {
-      return;
-    }
-    try {
-      await updateStatusMutation.mutateAsync({ tenantId, status });
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleCreateTenant = async () => {
-    if (!createDialog.name.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Name is required",
-      });
-      return;
-    }
-
-    const trimmedBudget = createDialog.budgetUsd.trim();
-    const trimmedThreshold = createDialog.warningThreshold.trim();
-    const scheduleSelection =
-      createDialog.refreshSchedule === INHERIT_SCHEDULE
-        ? undefined
-        : createDialog.refreshSchedule;
-    const trimmedCooldown = createDialog.alertCooldown.trim();
-    const trimmedRPM = createDialog.requestsPerMinute.trim();
-    const trimmedTPM = createDialog.tokensPerMinute.trim();
-    const trimmedParallel = createDialog.parallelRequests.trim();
-    const budgetValue = Number.parseFloat(trimmedBudget);
-    const thresholdValue = Number.parseFloat(trimmedThreshold);
-    const cooldownValue = Number.parseInt(trimmedCooldown, 10);
-    const rpmValue = Number.parseInt(trimmedRPM, 10);
-    const tpmValue = Number.parseInt(trimmedTPM, 10);
-    const parallelValue = Number.parseInt(trimmedParallel, 10);
-    const defaults = budgetDefaultsQuery.data;
-    const hasRateOverride =
-      trimmedRPM.length > 0 || trimmedTPM.length > 0 || trimmedParallel.length > 0;
-
-    if (trimmedBudget && (!Number.isFinite(budgetValue) || budgetValue <= 0)) {
-      toast({
-        variant: "destructive",
-        title: "Budget override must be a positive number",
-      });
-      return;
-    }
-
-    if (
-      trimmedBudget &&
-      trimmedThreshold &&
-      (!Number.isFinite(thresholdValue) ||
-        thresholdValue <= 0 ||
-        thresholdValue > 1)
-    ) {
-      toast({
-        variant: "destructive",
-        title: "Warning threshold must be between 0 and 1",
-      });
-      return;
-    }
-
-    if (
-      trimmedBudget &&
-      trimmedCooldown &&
-      (!Number.isFinite(cooldownValue) || cooldownValue <= 0)
-    ) {
-      toast({
-        variant: "destructive",
-        title: "Cooldown must be a positive integer (seconds)",
-      });
-      return;
-    }
-
-    if (hasRateOverride) {
-      if (!trimmedRPM || !trimmedTPM || !trimmedParallel) {
-        toast({
-          variant: "destructive",
-          title: "Provide RPM, TPM, and parallel values",
-          description: "All three fields are required for tenant overrides.",
-        });
-        return;
-      }
-      if (
-        !Number.isFinite(rpmValue) ||
-        rpmValue <= 0 ||
-        !Number.isInteger(rpmValue)
-      ) {
-        toast({
-          variant: "destructive",
-          title: "RPM must be a positive integer",
-        });
-        return;
-      }
-      if (
-        !Number.isFinite(tpmValue) ||
-        tpmValue <= 0 ||
-        !Number.isInteger(tpmValue)
-      ) {
-        toast({
-          variant: "destructive",
-          title: "TPM must be a positive integer",
-        });
-        return;
-      }
-      if (
-        !Number.isFinite(parallelValue) ||
-        parallelValue <= 0 ||
-        !Number.isInteger(parallelValue)
-      ) {
-        toast({
-          variant: "destructive",
-          title: "Parallel requests must be a positive integer",
-        });
-        return;
-      }
-    }
-
-    if (hasRateOverride) {
-      if (!trimmedRPM || !trimmedTPM || !trimmedParallel) {
-        toast({
-          variant: "destructive",
-          title: "Provide RPM, TPM, and parallel values",
-          description: "All three fields are required for a tenant override.",
-        });
-        return;
-      }
-      if (
-        !Number.isFinite(rpmValue) ||
-        rpmValue <= 0 ||
-        !Number.isInteger(rpmValue)
-      ) {
-        toast({
-          variant: "destructive",
-          title: "RPM must be a positive integer",
-        });
-        return;
-      }
-      if (
-        !Number.isFinite(tpmValue) ||
-        tpmValue <= 0 ||
-        !Number.isInteger(tpmValue)
-      ) {
-        toast({
-          variant: "destructive",
-          title: "TPM must be a positive integer",
-        });
-        return;
-      }
-      if (
-        !Number.isFinite(parallelValue) ||
-        parallelValue <= 0 ||
-        !Number.isInteger(parallelValue)
-      ) {
-        toast({
-          variant: "destructive",
-          title: "Parallel requests must be a positive integer",
-        });
-        return;
-      }
-    }
-
-    if (modelCatalog.length === 0) {
-      toast({
-        variant: "destructive",
-        title: modelCatalogQuery.isLoading
-          ? "Model catalog is still loading"
-          : "Add at least one model to the catalog first",
-        description: modelCatalogQuery.isLoading
-          ? "Please wait a moment and try again."
-          : undefined,
-      });
-      return;
-    }
-
-    if (createDialog.selectedModels.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "Select at least one model",
-      });
-      return;
-    }
-
-    try {
-      const tenant = await createTenantMutation.mutateAsync({
-        name: createDialog.name.trim(),
-        status: createDialog.status,
-      });
-      if (trimmedBudget) {
-        const emailList = parseListInput(createDialog.alertEmails);
-        const webhookList = parseListInput(createDialog.alertWebhooks);
-        const payload: UpsertBudgetOverrideRequest = {
-          budget_usd: budgetValue,
-          warning_threshold:
-            Number.isFinite(thresholdValue) &&
-            thresholdValue > 0 &&
-            thresholdValue <= 1
-              ? thresholdValue
-              : (defaults?.warning_threshold_perc ?? 0.8),
-          refresh_schedule:
-            scheduleSelection || defaults?.refresh_schedule || "calendar_month",
-          alert_emails: emailList.length ? emailList : undefined,
-          alert_webhooks: webhookList.length ? webhookList : undefined,
-          alert_cooldown_seconds:
-            trimmedCooldown && Number.isFinite(cooldownValue)
-              ? cooldownValue
-              : defaults?.alert?.cooldown_seconds,
-        };
-
-        try {
-          await upsertBudgetOverride(tenant.id, payload);
-        } catch (error) {
-          console.error(error);
-          toast({
-            variant: "destructive",
-            title: "Tenant created, but budget override failed",
-            description: "Update the budget from the Usage tab.",
-          });
-        }
-      }
-
-      try {
-        await upsertTenantModels(tenant.id, createDialog.selectedModels);
-      } catch (error) {
-        console.error(error);
-        toast({
-          variant: "destructive",
-          title: "Tenant created, but model assignment failed",
-          description: "Reopen the tenant dialog to retry.",
-        });
-      }
-
-      if (hasRateOverride) {
-        try {
-          await upsertTenantRateLimits(tenant.id, {
-            requests_per_minute: rpmValue,
-            tokens_per_minute: tpmValue,
-            parallel_requests: parallelValue,
-          });
-        } catch (error) {
-          console.error(error);
-          toast({
-            variant: "destructive",
-            title: "Tenant created, but rate limits failed to save",
-            description: "Reopen the tenant dialog to retry.",
-          });
-        }
-      }
-
-      createDialog.setName("");
-      createDialog.setStatus("active");
-      createDialog.setBudgetUsd("");
-      createDialog.setWarningThreshold("");
-      createDialog.setRefreshSchedule(INHERIT_SCHEDULE);
-      createDialog.setAlertEmails("");
-      createDialog.setAlertWebhooks("");
-      createDialog.setAlertCooldown("");
-      createDialog.setSelectedModels(modelAliases);
-      createDialog.setRequestsPerMinute("");
-      createDialog.setTokensPerMinute("");
-      createDialog.setParallelRequests("");
-      createDialog.setOpen(false);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const upsertMembershipMutation = useMutation({
-    mutationFn: ({
-      tenantId,
-      payload,
-    }: {
-      tenantId: string;
-      payload: { email: string; role: MembershipRole };
-    }) => upsertTenantMembership(tenantId, payload),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: MEMBERSHIPS_QUERY_KEY(variables.tenantId),
-      });
-      toast({ title: "Membership updated" });
-    },
-    onError: () => {
-      toast({
-        variant: "destructive",
-        title: "Failed to update membership",
-        description: "Check the email and try again.",
-      });
-    },
-  });
-
-  const removeMembershipMutation = useMutation({
-    mutationFn: ({ tenantId, userId }: { tenantId: string; userId: string }) =>
-      removeTenantMembership(tenantId, userId),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: MEMBERSHIPS_QUERY_KEY(variables.tenantId),
-      });
-      toast({ title: "Membership removed" });
-    },
-    onError: () => {
-      toast({
-        variant: "destructive",
-        title: "Failed to remove membership",
-        description: "Try again shortly.",
-      });
-    },
-  });
-
   const membershipDialog = useMembershipDialog(userDirectory);
-
   const editDialog = useTenantEditDialog();
   const [editTab, setEditTab] = useState("overview");
-  const [editModelsLoading, setEditModelsLoading] = useState(false);
-  const [editBudgetLoading, setEditBudgetLoading] = useState(false);
-  const [editBudgetHadOverride, setEditBudgetHadOverride] = useState(false);
-  const [editRateLoading, setEditRateLoading] = useState(false);
-  const [editRateHadOverride, setEditRateHadOverride] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
 
-  const membershipsQuery = useQuery({
-    queryKey: MEMBERSHIPS_QUERY_KEY(editDialog.tenant?.id),
-    queryFn: () => listTenantMemberships(editDialog.tenant?.id as string),
-    enabled: Boolean(editDialog.open && editDialog.tenant?.id),
+  const {
+    membershipsQuery,
+    editModelsLoading,
+    editBudgetLoading,
+    editBudgetHadOverride,
+    editRateLoading,
+    editRateHadOverride,
+    setEditRateHadOverride,
+  } = useEditTenantData({ editDialog, budgetDefaults });
+
+  const {
+    handleCreateTenant,
+    handleSaveTenantDetails,
+    handleTenantStatusChange,
+    handleDeleteTenant,
+  } = useTenantHandlers({
+    createDialog,
+    editDialog,
+    mutations,
+    budgetDefaults,
+    modelCatalog,
+    modelCatalogLoading: modelCatalogQuery.isLoading,
+    editBudgetHadOverride,
+    editRateHadOverride,
+    setEditRateHadOverride,
+    setEditSaving,
   });
 
-  useEffect(() => {
-    if (!editDialog.open || !editDialog.tenant) {
-      if (!editDialog.open) {
-        setEditSaving(false);
-        setEditBudgetLoading(false);
-        setEditModelsLoading(false);
-        setEditRateLoading(false);
-        setEditRateHadOverride(false);
-      }
-      return;
-    }
-
-    editDialog.setName(editDialog.tenant.name);
-    editDialog.setStatus(editDialog.tenant.status as TenantStatus);
-    const defaults = budgetDefaultsQuery.data;
-    editDialog.setBudgetUsd("");
-    editDialog.setWarningThreshold(
-      defaults?.warning_threshold_perc != null
-        ? defaults.warning_threshold_perc.toString()
-        : "",
-    );
-    editDialog.setRefreshSchedule(INHERIT_SCHEDULE);
-    editDialog.setAlertEmails((defaults?.alert?.emails ?? []).join(", "));
-    editDialog.setAlertWebhooks((defaults?.alert?.webhooks ?? []).join(", "));
-    const cooldownSeconds = defaults?.alert?.cooldown_seconds;
-    editDialog.setAlertCooldown(
-      cooldownSeconds != null ? cooldownSeconds.toString() : "",
-    );
-    editDialog.setRequestsPerMinute("");
-    editDialog.setTokensPerMinute("");
-    editDialog.setParallelRequests("");
-    setEditBudgetHadOverride(false);
-    setEditRateHadOverride(false);
-
-    setEditBudgetLoading(true);
-    getTenantBudget(editDialog.tenant.id)
-      .then((override) => {
-        if (override) {
-          setEditBudgetHadOverride(true);
-          editDialog.setBudgetUsd(override.budget_usd.toString());
-          editDialog.setWarningThreshold(override.warning_threshold.toString());
-          editDialog.setRefreshSchedule(override.refresh_schedule);
-          editDialog.setAlertEmails((override.alert_emails ?? []).join(", "));
-          editDialog.setAlertWebhooks((override.alert_webhooks ?? []).join(", "));
-          editDialog.setAlertCooldown(
-            override.alert_cooldown_seconds
-              ? override.alert_cooldown_seconds.toString()
-              : "",
-          );
-        }
-      })
-      .catch(() => {
-        toast({
-          variant: "destructive",
-          title: "Failed to load budget override",
-          description: "Try reopening the dialog.",
-        });
-      })
-      .finally(() => setEditBudgetLoading(false));
-
-    setEditModelsLoading(true);
-    listTenantModels(editDialog.tenant.id)
-      .then((models) => {
-        editDialog.setSelectedModels(models);
-        editDialog.setOriginalModels(models);
-      })
-      .catch(() => {
-        toast({
-          variant: "destructive",
-          title: "Failed to load model access",
-          description: "Try reopening the dialog.",
-        });
-      })
-      .finally(() => setEditModelsLoading(false));
-
-    setEditRateLoading(true);
-    getTenantRateLimits(editDialog.tenant.id)
-      .then((limits) => {
-        if (limits) {
-          setEditRateHadOverride(true);
-          editDialog.setRequestsPerMinute(
-            limits.requests_per_minute.toString(),
-          );
-          editDialog.setTokensPerMinute(
-            limits.tokens_per_minute.toString(),
-          );
-          editDialog.setParallelRequests(
-            limits.parallel_requests.toString(),
-          );
-        }
-      })
-      .catch(() => {
-        toast({
-          variant: "destructive",
-          title: "Failed to load rate limits",
-          description: "Try reopening the dialog.",
-        });
-      })
-      .finally(() => setEditRateLoading(false));
-  }, [editDialog.open, editDialog.tenant, budgetDefaultsQuery.data, toast]);
-
   const toggleEditModel = (alias: string, checked: boolean) => {
-    editDialog.setSelectedModels((prev) => {
-      if (checked) {
-        if (prev.includes(alias)) {
-          return prev;
-        }
-        return [...prev, alias];
-      }
-      return prev.filter((item) => item !== alias);
-    });
+    editDialog.setSelectedModels((prev) =>
+      checked ? (prev.includes(alias) ? prev : [...prev, alias]) : prev.filter((a) => a !== alias),
+    );
   };
 
-  const handleSelectAllEditModels = () => {
-    editDialog.setSelectedModels(modelAliases);
-  };
-
-  const handleClearEditModels = () => {
-    editDialog.setSelectedModels([]);
-  };
-
-  const selectedMemberships: MembershipRecord[] =
-    membershipsQuery.data?.memberships ?? [];
+  const handleSelectAllEditModels = () => editDialog.setSelectedModels(modelAliases);
+  const handleClearEditModels = () => editDialog.setSelectedModels([]);
 
   const handleInviteMember = async () => {
     if (!editDialog.tenant?.id) return;
@@ -610,15 +123,15 @@ export function TenantsPage() {
       return;
     }
     try {
-      await upsertMembershipMutation.mutateAsync({
+      await mutations.upsertMembershipMutation.mutateAsync({
         tenantId: editDialog.tenant.id,
         payload: { email: membershipDialog.email.trim(), role: membershipDialog.role },
       });
       membershipDialog.setEmail("");
       membershipDialog.setRole("admin");
       membershipDialog.setOpen(false);
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -626,160 +139,6 @@ export function TenantsPage() {
     editDialog.setTenant(tenant);
     setEditTab("overview");
     editDialog.setOpen(true);
-  };
-
-  const handleDeleteTenant = async (tenant: TenantRecord) => {
-    if (tenant.status === "suspended") {
-      toast({ title: "Tenant already suspended" });
-      return;
-    }
-    try {
-      await updateStatusMutation.mutateAsync({
-        tenantId: tenant.id,
-        status: "suspended",
-      });
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleSaveTenantDetails = async () => {
-    if (!editDialog.tenant || editSaving) {
-      return;
-    }
-    const tenantId = editDialog.tenant.id;
-    const trimmedName = editDialog.name.trim();
-    const trimmedBudget = editDialog.budgetUsd.trim();
-    const trimmedThreshold = editDialog.warningThreshold.trim();
-    const trimmedCooldown = editDialog.alertCooldown.trim();
-    const trimmedRPM = editDialog.requestsPerMinute.trim();
-    const trimmedTPM = editDialog.tokensPerMinute.trim();
-    const trimmedParallel = editDialog.parallelRequests.trim();
-    const scheduleSelection =
-      editDialog.refreshSchedule === INHERIT_SCHEDULE
-        ? undefined
-        : editDialog.refreshSchedule;
-
-    if (!trimmedName) {
-      toast({ variant: "destructive", title: "Name is required" });
-      return;
-    }
-
-    if (editDialog.selectedModels.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "Select at least one model",
-      });
-      return;
-    }
-
-    const budgetValue = Number.parseFloat(trimmedBudget);
-    if (trimmedBudget && (!Number.isFinite(budgetValue) || budgetValue <= 0)) {
-      toast({
-        variant: "destructive",
-        title: "Budget override must be a positive number",
-      });
-      return;
-    }
-
-    const thresholdValue = Number.parseFloat(trimmedThreshold);
-    if (
-      trimmedBudget &&
-      trimmedThreshold &&
-      (!Number.isFinite(thresholdValue) || thresholdValue <= 0 || thresholdValue > 1)
-    ) {
-      toast({
-        variant: "destructive",
-        title: "Warning threshold must be between 0 and 1",
-      });
-      return;
-    }
-
-    const cooldownValue = Number.parseInt(trimmedCooldown, 10);
-    if (
-      trimmedBudget &&
-      trimmedCooldown &&
-      (!Number.isFinite(cooldownValue) || cooldownValue <= 0)
-    ) {
-      toast({
-        variant: "destructive",
-        title: "Cooldown must be a positive integer (seconds)",
-      });
-      return;
-    }
-
-    const rpmValue = Number.parseInt(trimmedRPM, 10);
-    const tpmValue = Number.parseInt(trimmedTPM, 10);
-    const parallelValue = Number.parseInt(trimmedParallel, 10);
-    const hasRateOverride =
-      trimmedRPM.length > 0 || trimmedTPM.length > 0 || trimmedParallel.length > 0;
-
-    setEditSaving(true);
-    try {
-      if (trimmedName !== editDialog.tenant.name) {
-        await updateTenant(tenantId, { name: trimmedName });
-      }
-
-      if (editDialog.status !== editDialog.tenant.status) {
-        await updateStatusMutation.mutateAsync({
-          tenantId,
-          status: editDialog.status,
-        });
-      }
-
-      if (trimmedBudget) {
-        const defaults = budgetDefaultsQuery.data;
-        const payload: UpsertBudgetOverrideRequest = {
-          budget_usd: budgetValue,
-          warning_threshold:
-            Number.isFinite(thresholdValue) && thresholdValue > 0 && thresholdValue <= 1
-              ? thresholdValue
-              : defaults?.warning_threshold_perc ?? 0.8,
-          refresh_schedule:
-            scheduleSelection || defaults?.refresh_schedule || "calendar_month",
-          alert_emails: parseListInput(editDialog.alertEmails),
-          alert_webhooks: parseListInput(editDialog.alertWebhooks),
-          alert_cooldown_seconds:
-            trimmedCooldown && Number.isFinite(cooldownValue)
-              ? cooldownValue
-              : defaults?.alert?.cooldown_seconds,
-        };
-        await upsertBudgetOverride(tenantId, payload);
-      } else if (editBudgetHadOverride) {
-        await deleteBudgetOverride(tenantId);
-      }
-
-      if (!aliasSelectionsEqual(editDialog.selectedModels, editDialog.originalModels)) {
-        await upsertTenantModels(tenantId, editDialog.selectedModels);
-        editDialog.setOriginalModels(editDialog.selectedModels);
-      }
-
-      if (hasRateOverride) {
-        await upsertTenantRateLimits(tenantId, {
-          requests_per_minute: rpmValue,
-          tokens_per_minute: tpmValue,
-          parallel_requests: parallelValue,
-        });
-        setEditRateHadOverride(true);
-      } else if (editRateHadOverride) {
-        await deleteTenantRateLimits(tenantId);
-        setEditRateHadOverride(false);
-      }
-
-      toast({ title: "Tenant updated" });
-      editDialog.setOpen(false);
-      queryClient.invalidateQueries({ queryKey: TENANTS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: TENANTS_DASHBOARD_KEY });
-    } catch (error) {
-      console.error(error);
-      toast({
-        variant: "destructive",
-        title: "Failed to update tenant",
-        description: "Check the form and try again.",
-      });
-    } finally {
-      setEditSaving(false);
-    }
   };
 
   return (
@@ -792,21 +151,9 @@ export function TenantsPage() {
         onCreate={() => createDialog.setOpen(true)}
       />
       <section className="grid gap-4 md:grid-cols-3">
-        <OverviewCard
-          label="Total tenants"
-          value={tenants.length}
-          help="Active and suspended tenants"
-        />
-        <OverviewCard
-          label="Active"
-          value={activeCount}
-          help="Tenants currently active"
-        />
-        <OverviewCard
-          label="Suspended"
-          value={suspendedCount}
-          help="Tenants paused for review"
-        />
+        <OverviewCard label="Total tenants" value={tenants.length} help="Active and suspended tenants" />
+        <OverviewCard label="Active" value={activeCount} help="Tenants currently active" />
+        <OverviewCard label="Suspended" value={suspendedCount} help="Tenants paused for review" />
       </section>
       <TenantCreateDialog
         dialog={createDialog}
@@ -816,7 +163,7 @@ export function TenantsPage() {
         modelCatalog={modelCatalog}
         modelAliases={modelAliases}
         isModelCatalogLoading={modelCatalogQuery.isLoading}
-        isSubmitting={createTenantMutation.isPending}
+        isSubmitting={mutations.createTenantMutation.isPending}
         onSubmit={handleCreateTenant}
       />
       <Separator />
@@ -832,16 +179,16 @@ export function TenantsPage() {
         isLoading={tenantsQuery.isLoading}
         tenants={tenants}
         displayTenants={sortedTenants}
-        onStatusChange={handleTenantStatusChange}
-        isStatusUpdating={updateStatusMutation.isPending}
+        onStatusChange={(tenantId, status) => handleTenantStatusChange(tenantId, status, tenants)}
+        isStatusUpdating={mutations.updateStatusMutation.isPending}
         onEditTenant={openEditTenantDialog}
-        onDeleteTenant={handleDeleteTenant}
+        onDeleteTenant={(tenant) => handleDeleteTenant(tenant.id, tenant.status)}
         budgetDefaults={budgetDefaults}
       />
 
       <TenantMembershipDialog
         dialog={membershipDialog}
-        isSubmitting={upsertMembershipMutation.isPending}
+        isSubmitting={mutations.upsertMembershipMutation.isPending}
         usersLoading={usersQuery.isLoading}
         tenants={tenants}
         selectedTenantId={editDialog.tenant?.id}
@@ -863,17 +210,14 @@ export function TenantsPage() {
         onSelectAllModels={handleSelectAllEditModels}
         onClearModels={handleClearEditModels}
         onSubmit={handleSaveTenantDetails}
-        memberships={selectedMemberships}
+        memberships={membershipsQuery.data?.memberships ?? []}
         membershipsLoading={membershipsQuery.isLoading}
         onInviteMember={() => membershipDialog.setOpen(true)}
         onRemoveMember={(member) => {
           if (!editDialog.tenant?.id) return;
-          removeMembershipMutation.mutate({
-            tenantId: editDialog.tenant.id,
-            userId: member.user_id,
-          });
+          mutations.removeMembershipMutation.mutate({ tenantId: editDialog.tenant.id, userId: member.user_id });
         }}
-        isRemovingMember={removeMembershipMutation.isPending}
+        isRemovingMember={mutations.removeMembershipMutation.isPending}
         activeTab={editTab}
         onTabChange={setEditTab}
       />
@@ -881,15 +225,7 @@ export function TenantsPage() {
   );
 }
 
-function OverviewCard({
-  label,
-  value,
-  help,
-}: {
-  label: string;
-  value: number;
-  help: string;
-}) {
+function OverviewCard({ label, value, help }: { label: string; value: number; help: string }) {
   return (
     <Card>
       <CardHeader>
@@ -901,11 +237,4 @@ function OverviewCard({
       </CardContent>
     </Card>
   );
-}
-
-function parseListInput(value: string): string[] {
-  return value
-    .split(/[\n,]/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
 }

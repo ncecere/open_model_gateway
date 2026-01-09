@@ -22,6 +22,7 @@ import {
 import { AdminFilesTable, FileDetailsDialog } from "@/features/files";
 import { Separator } from "@/components/ui/separator";
 import { getFileSettings } from "@/api/runtime-settings";
+import { formatDuration } from "@/lib/formatters";
 
 const FILE_PAGE_SIZE = 20;
 
@@ -117,19 +118,6 @@ export function FilesPage() {
     queryKey: ["admin-file-settings"],
     queryFn: getFileSettings,
   });
-
-  const formatDuration = (seconds?: number) => {
-    if (!seconds || seconds <= 0) return null;
-    const days = seconds / 86400;
-    if (Number.isInteger(days)) {
-      return `${days} day${days === 1 ? "" : "s"}`;
-    }
-    const hours = seconds / 3600;
-    if (Number.isInteger(hours)) {
-      return `${hours} hour${hours === 1 ? "" : "s"}`;
-    }
-    return `${seconds} seconds`;
-  };
 
   const ttlDescription = useMemo(() => {
     const defaultTTL = formatDuration(fileSettingsQuery.data?.default_ttl_seconds);

@@ -20,6 +20,7 @@ type Config struct {
 	Server        ServerConfig        `mapstructure:"server"`
 	Database      DatabaseConfig      `mapstructure:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"`
+	Logging       LoggingConfig       `mapstructure:"logging"`
 	RateLimits    RateLimitConfig     `mapstructure:"rate_limits"`
 	Budgets       BudgetConfig        `mapstructure:"budgets"`
 	Public        PublicConfig        `mapstructure:"public"`
@@ -37,111 +38,7 @@ type Config struct {
 	Bootstrap     BootstrapConfig     `mapstructure:"bootstrap"`
 }
 
-type ServerConfig struct {
-	ListenAddr            string        `mapstructure:"listen_addr"`
-	BodyLimitMB           int           `mapstructure:"body_limit_mb"`
-	SyncTimeout           time.Duration `mapstructure:"sync_timeout"`
-	StreamIdleTimeout     time.Duration `mapstructure:"stream_idle_timeout"`
-	StreamMaxDuration     time.Duration `mapstructure:"stream_max_duration"`
-	ProviderTimeout       time.Duration `mapstructure:"provider_timeout"`
-	ReadHeaderTimeout     time.Duration `mapstructure:"read_header_timeout"`
-	GracefulShutdownDelay time.Duration `mapstructure:"graceful_shutdown_delay"`
-}
-
-type DatabaseConfig struct {
-	URL             string        `mapstructure:"url"`
-	RunMigrations   bool          `mapstructure:"run_migrations"`
-	MigrationsDir   string        `mapstructure:"migrations_dir"`
-	MaxConns        int32         `mapstructure:"max_conns"`
-	MaxConnIdleTime time.Duration `mapstructure:"max_conn_idle_time"`
-	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"`
-	MinConns        int32         `mapstructure:"min_conns"`
-}
-
-type RedisConfig struct {
-	URL      string `mapstructure:"url"`
-	DB       int    `mapstructure:"db"`
-	PoolSize int    `mapstructure:"pool_size"`
-}
-
-type AdminConfig struct {
-	Session AdminSessionConfig `mapstructure:"session"`
-	Local   LocalAuthConfig    `mapstructure:"local"`
-	OIDC    OIDCConfig         `mapstructure:"oidc"`
-}
-
-type AdminSessionConfig struct {
-	JWTSecret       string        `mapstructure:"jwt_secret"`
-	AccessTokenTTL  time.Duration `mapstructure:"access_token_ttl"`
-	RefreshTokenTTL time.Duration `mapstructure:"refresh_token_ttl"`
-	CookieName      string        `mapstructure:"cookie_name"`
-}
-
-type LocalAuthConfig struct {
-	Enabled bool `mapstructure:"enabled"`
-}
-
-type OIDCConfig struct {
-	Enabled        bool          `mapstructure:"enabled"`
-	Issuer         string        `mapstructure:"issuer"`
-	ClientID       string        `mapstructure:"client_id"`
-	ClientSecret   string        `mapstructure:"client_secret"`
-	RedirectURL    string        `mapstructure:"redirect_url"`
-	Scopes         []string      `mapstructure:"scopes"`
-	AllowedDomains []string      `mapstructure:"allowed_domains"`
-	HTTPTimeout    time.Duration `mapstructure:"http_timeout"`
-	RolesClaim     string        `mapstructure:"roles_claim"`
-	AllowedRoles   []string      `mapstructure:"allowed_roles"`
-	AdminRoles     []string      `mapstructure:"admin_roles"`
-}
-
-type RateLimitConfig struct {
-	DefaultTokensPerMinute        int `mapstructure:"default_tokens_per_minute"`
-	DefaultRequestsPerMinute      int `mapstructure:"default_requests_per_minute"`
-	DefaultParallelRequestsKey    int `mapstructure:"default_parallel_requests_key"`
-	DefaultParallelRequestsTenant int `mapstructure:"default_parallel_requests_tenant"`
-}
-
-type BudgetConfig struct {
-	DefaultUSD           float64           `mapstructure:"default_usd"`
-	WarningThresholdPerc float64           `mapstructure:"warning_threshold_perc"`
-	RefreshSchedule      string            `mapstructure:"refresh_schedule"`
-	Alert                BudgetAlertConfig `mapstructure:"alert"`
-}
-
-type BudgetAlertConfig struct {
-	Enabled  bool          `mapstructure:"enabled"`
-	Emails   []string      `mapstructure:"emails"`
-	Webhooks []string      `mapstructure:"webhooks"`
-	Cooldown time.Duration `mapstructure:"cooldown"`
-	SMTP     SMTPConfig    `mapstructure:"smtp"`
-	Webhook  WebhookConfig `mapstructure:"webhook"`
-}
-
-type PublicConfig struct {
-	BaseURL string `mapstructure:"base_url"`
-}
-
-type SMTPConfig struct {
-	Host           string        `mapstructure:"host"`
-	Port           int           `mapstructure:"port"`
-	Username       string        `mapstructure:"username"`
-	Password       string        `mapstructure:"password"`
-	From           string        `mapstructure:"from"`
-	UseTLS         bool          `mapstructure:"use_tls"`
-	SkipTLSVerify  bool          `mapstructure:"skip_tls_verify"`
-	ConnectTimeout time.Duration `mapstructure:"connect_timeout"`
-}
-
-type WebhookConfig struct {
-	Timeout    time.Duration `mapstructure:"timeout"`
-	MaxRetries int           `mapstructure:"max_retries"`
-}
-
-type ReportingConfig struct {
-	Timezone string `mapstructure:"timezone"`
-}
-
+// ProviderConfig holds all provider configurations.
 type ProviderConfig struct {
 	OpenAI           OpenAIProviderConfig           `mapstructure:"openai"`
 	OpenAICompatible OpenAICompatibleProviderConfig `mapstructure:"openai_compatible"`
@@ -165,183 +62,6 @@ type ProviderConfig struct {
 	GCPProjectID        string `mapstructure:"gcp_project_id"`
 	GCPJSONCredentials  string `mapstructure:"gcp_json_credentials"`
 	HuggingFaceToken    string `mapstructure:"hugging_face_token"`
-}
-
-type FilesConfig struct {
-	Storage        string           `mapstructure:"storage"`
-	MaxSizeMB      int              `mapstructure:"max_size_mb"`
-	DefaultTTL     time.Duration    `mapstructure:"default_ttl"`
-	MaxTTL         time.Duration    `mapstructure:"max_ttl"`
-	EncryptionKey  string           `mapstructure:"encryption_key"`
-	SweepInterval  time.Duration    `mapstructure:"sweep_interval"`
-	SweepBatchSize int              `mapstructure:"sweep_batch_size"`
-	S3             FilesS3Config    `mapstructure:"s3"`
-	Local          FilesLocalConfig `mapstructure:"local"`
-}
-
-type FilesS3Config struct {
-	Bucket       string `mapstructure:"bucket"`
-	Prefix       string `mapstructure:"prefix"`
-	Region       string `mapstructure:"region"`
-	Endpoint     string `mapstructure:"endpoint"`
-	UsePathStyle bool   `mapstructure:"use_path_style"`
-}
-
-type FilesLocalConfig struct {
-	Directory string `mapstructure:"directory"`
-}
-
-type AudioConfig struct {
-	MaxUploadMB int `mapstructure:"max_upload_mb"`
-}
-
-type BatchesConfig struct {
-	MaxRequests    int           `mapstructure:"max_requests"`
-	MaxConcurrency int           `mapstructure:"max_concurrency"`
-	DefaultTTL     time.Duration `mapstructure:"default_ttl"`
-	MaxTTL         time.Duration `mapstructure:"max_ttl"`
-}
-
-type PricingTier struct {
-	Unit         string            `mapstructure:"unit" json:"unit"`
-	MaxUnits     *float64          `mapstructure:"max_units" json:"max_units,omitempty"`
-	PricePerUnit float64           `mapstructure:"price_per_unit" json:"price_per_unit"`
-	Metadata     map[string]string `mapstructure:"metadata" json:"metadata"`
-}
-
-// PricingTiers maps modality buckets (input/output/audio/image/etc.) to ordered tier slices.
-type PricingTiers map[string][]PricingTier
-
-type ModelCatalogEntry struct {
-	Alias             string            `mapstructure:"alias"`
-	Provider          string            `mapstructure:"provider"`
-	ProviderModel     string            `mapstructure:"provider_model"`
-	ModelType         string            `mapstructure:"model_type"`
-	ContextWindow     int32             `mapstructure:"context_window"`
-	MaxOutputTokens   int32             `mapstructure:"max_output_tokens"`
-	Modalities        []string          `mapstructure:"modalities"`
-	SupportsTools     bool              `mapstructure:"supports_tools"`
-	Enabled           *bool             `mapstructure:"enabled"`
-	Deployment        string            `mapstructure:"deployment"`
-	Endpoint          string            `mapstructure:"endpoint"`
-	APIKey            string            `mapstructure:"api_key"`
-	APIVersion        string            `mapstructure:"api_version"`
-	Region            string            `mapstructure:"region"`
-	Weight            int               `mapstructure:"weight"`
-	Metadata          map[string]string `mapstructure:"metadata"`
-	PricingTiers      PricingTiers      `mapstructure:"pricing_tiers"`
-	ProviderOverrides `mapstructure:",squash"`
-	PriceInput        float64 `mapstructure:"price_input"`
-	PriceOutput       float64 `mapstructure:"price_output"`
-	Currency          string  `mapstructure:"currency"`
-}
-
-func (e ModelCatalogEntry) IsEnabled() bool {
-	if e.Enabled == nil {
-		return true
-	}
-	return *e.Enabled
-}
-
-type RetentionConfig struct {
-	MetadataDays  int  `mapstructure:"metadata_days"`
-	ZeroRetention bool `mapstructure:"zero_retention"`
-}
-
-type ObservabilityConfig struct {
-	OTLPEndpoint  string `mapstructure:"otlp_endpoint"`
-	EnableOTLP    bool   `mapstructure:"enable_otlp"`
-	EnableMetrics bool   `mapstructure:"enable_metrics"`
-}
-
-type TelemetryConfig struct {
-	Provider ProviderTelemetryConfig `mapstructure:"provider"`
-}
-
-type ProviderTelemetryConfig struct {
-	Enabled                bool                           `mapstructure:"enabled"`
-	EvaluationInterval     time.Duration                  `mapstructure:"evaluation_interval"`
-	WindowSize             time.Duration                  `mapstructure:"window_size"`
-	IncidentRetentionDays  int                            `mapstructure:"incident_retention_days"`
-	DownweightWhenDegraded bool                           `mapstructure:"downweight_when_degraded"`
-	Defaults               ProviderSLIDefaults            `mapstructure:"defaults"`
-	Overrides              map[string]ProviderSLIDefaults `mapstructure:"overrides"`
-}
-
-type ProviderSLIDefaults struct {
-	LatencyP95Ms         int     `mapstructure:"latency_p95_ms"`
-	ErrorRateThreshold   float64 `mapstructure:"error_rate_threshold"`
-	TimeoutRateThreshold float64 `mapstructure:"timeout_rate_threshold"`
-	MinSamples           int     `mapstructure:"min_samples"`
-}
-
-type HealthConfig struct {
-	CheckInterval time.Duration `mapstructure:"check_interval"`
-	RollingWindow int           `mapstructure:"rolling_window"`
-	Cooldown      time.Duration `mapstructure:"cooldown"`
-}
-
-type BootstrapConfig struct {
-	Tenants       []BootstrapTenant       `mapstructure:"tenants"`
-	AdminUsers    []BootstrapAdminUser    `mapstructure:"admin_users"`
-	APIKeys       []BootstrapAPIKey       `mapstructure:"api_keys"`
-	Memberships   []BootstrapMembership   `mapstructure:"memberships"`
-	TenantLimits  []BootstrapTenantLimit  `mapstructure:"tenant_limits"`
-	TenantBudgets []BootstrapTenantBudget `mapstructure:"tenant_budgets"`
-}
-
-type BootstrapTenant struct {
-	Name   string `mapstructure:"name"`
-	Status string `mapstructure:"status"`
-}
-
-type BootstrapAdminUser struct {
-	Email      string `mapstructure:"email"`
-	Name       string `mapstructure:"name"`
-	Password   string `mapstructure:"password"`
-	SuperAdmin *bool  `mapstructure:"super_admin"`
-}
-
-func (u BootstrapAdminUser) IsSuperAdmin() bool {
-	if u.SuperAdmin == nil {
-		return true
-	}
-	return *u.SuperAdmin
-}
-
-type BootstrapAPIKey struct {
-	Tenant    string             `mapstructure:"tenant"`
-	Prefix    string             `mapstructure:"prefix"`
-	Secret    string             `mapstructure:"secret"`
-	Name      string             `mapstructure:"name"`
-	RateLimit BootstrapRateLimit `mapstructure:"rate_limit"`
-}
-
-type BootstrapMembership struct {
-	Tenant string `mapstructure:"tenant"`
-	Email  string `mapstructure:"email"`
-	Role   string `mapstructure:"role"`
-}
-
-type BootstrapTenantLimit struct {
-	Tenant string             `mapstructure:"tenant"`
-	Limits BootstrapRateLimit `mapstructure:"limits"`
-}
-
-type BootstrapTenantBudget struct {
-	Tenant           string        `mapstructure:"tenant"`
-	BudgetUSD        *float64      `mapstructure:"budget_usd"`
-	WarningThreshold *float64      `mapstructure:"warning_threshold"`
-	RefreshSchedule  string        `mapstructure:"refresh_schedule"`
-	AlertEmails      []string      `mapstructure:"alert_emails"`
-	AlertWebhooks    []string      `mapstructure:"alert_webhooks"`
-	AlertCooldown    time.Duration `mapstructure:"alert_cooldown"`
-}
-
-type BootstrapRateLimit struct {
-	RequestsPerMinute int `mapstructure:"requests_per_minute"`
-	TokensPerMinute   int `mapstructure:"tokens_per_minute"`
-	ParallelRequests  int `mapstructure:"parallel_requests"`
 }
 
 // Options controls the config loader behavior.
@@ -687,6 +407,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.read_header_timeout", "5s")
 	v.SetDefault("server.graceful_shutdown_delay", "5s")
 
+	v.SetDefault("logging.level", "info")
+	v.SetDefault("logging.format", "text")
+	v.SetDefault("logging.add_source", false)
+
 	v.SetDefault("rate_limits.default_tokens_per_minute", 1_000_000)
 	v.SetDefault("rate_limits.default_requests_per_minute", 1_000)
 	v.SetDefault("rate_limits.default_parallel_requests_key", 10)
@@ -916,6 +640,7 @@ func validateRateLimit(limit BootstrapRateLimit) error {
 	return nil
 }
 
+// NormalizeBudgetRefreshSchedule normalizes a budget refresh schedule string.
 func NormalizeBudgetRefreshSchedule(schedule string) string {
 	schedule = strings.ToLower(strings.TrimSpace(schedule))
 	if schedule == "" {
@@ -932,6 +657,7 @@ func NormalizeBudgetRefreshSchedule(schedule string) string {
 	return "calendar_month"
 }
 
+// BudgetRollingWindowDays extracts the number of days from a rolling window schedule.
 func BudgetRollingWindowDays(schedule string) (int, bool) {
 	schedule = strings.ToLower(strings.TrimSpace(schedule))
 	if !strings.HasPrefix(schedule, "rolling_") {

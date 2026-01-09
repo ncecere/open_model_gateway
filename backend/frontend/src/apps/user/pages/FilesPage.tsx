@@ -11,6 +11,7 @@ import {
   UserFileDetailsDialog,
   useUserFileFilters,
 } from "@/features/files";
+import { formatDuration } from "@/lib/formatters";
 
 export function UserFilesPage() {
   const { toast } = useToast();
@@ -69,21 +70,6 @@ export function UserFilesPage() {
     queryKey: ["user-file-settings"],
     queryFn: () => getUserFileSettings(),
   });
-
-  const formatDuration = (seconds?: number) => {
-    if (!seconds || seconds <= 0) {
-      return null;
-    }
-    const days = seconds / 86400;
-    if (Number.isInteger(days)) {
-      return `${days} day${days === 1 ? "" : "s"}`;
-    }
-    const hours = seconds / 3600;
-    if (Number.isInteger(hours)) {
-      return `${hours} hour${hours === 1 ? "" : "s"}`;
-    }
-    return `${seconds} seconds`;
-  };
 
   const tenantLabelForFile = useMemo(() => {
     if (!selectedFile) {

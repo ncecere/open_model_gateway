@@ -1,31 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
-import { Copy, Key, RefreshCcw, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -34,490 +10,149 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BudgetMeter } from "@/ui/kit/BudgetMeter";
-import { useToast } from "@/hooks/use-toast";
 import { useDefaultSelection } from "@/hooks/useDefaultSelection";
 import { computeNextResetDate, formatScheduleLabel } from "@/features/api-keys";
-import type {
-  CreateUserAPIKeyRequest,
-  UserAPIKey,
-} from "../../../api/user/api-keys";
+import { shortDateFormatter as dateFormatter } from "@/lib/formatters";
+import { getTenantSummary, type TenantBudgetSummary } from "@/api/user/tenants";
+import type { UserAPIKey } from "@/api/user/api-keys";
 import {
-  useCreateUserAPIKeyMutation,
-  useCreateTenantAPIKeyMutation,
-  useRevokeUserAPIKeyMutation,
-  useRevokeTenantAPIKeyMutation,
-  useRotateUserAPIKeyMutation,
-  useRotateTenantAPIKeyMutation,
   useTenantAPIKeysQuery,
   useUserAPIKeysQuery,
   useUserTenantsQuery,
   useAllTenantAPIKeysQueries,
 } from "../hooks/useUserData";
-import { getTenantSummary, type TenantBudgetSummary } from "../../../api/user/tenants";
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
-
-type BudgetMeta = {
-  limit: number | null;
-  used: number;
-  warning: number;
-  schedule: string;
-};
-
-type IssuedSecret =
-  | null
-  | {
-      scope: "personal" | "tenant";
-      tenantName?: string;
-      name: string;
-      prefix: string;
-      secret: string;
-      token: string;
-    };
-
-type RevokedRow = UserAPIKey & { tenantLabel: string };
+import {
+  KeyTable,
+  IssuedSecretCard,
+  CreateApiKeyDialog,
+  RevokedKeysTable,
+  useApiKeyMutations,
+  type IssuedSecret,
+  type BudgetMeta,
+  type RevokedRow,
+} from "../features/api-keys";
 
 export function UserApiKeysPage() {
-  const [activeTab, setActiveTab] = useState<"personal" | "tenant" | "revoked">(
-    "personal",
-  );
+  const [activeTab, setActiveTab] = useState<"personal" | "tenant" | "revoked">("personal");
   const { data: personalKeys, isLoading: personalLoading } = useUserAPIKeysQuery();
   const { data: tenants } = useUserTenantsQuery();
+
   const personalTenantId = useMemo(
-    () => tenants?.find((tenant) => tenant.is_personal)?.tenant_id,
+    () => tenants?.find((t) => t.is_personal)?.tenant_id,
     [tenants],
   );
   const tenantOptions = useMemo(
-    () => (tenants ?? []).filter((tenant) => !tenant.is_personal),
+    () => (tenants ?? []).filter((t) => !t.is_personal),
     [tenants],
   );
-  const tenantIds = tenantOptions.map((tenant) => tenant.tenant_id);
+  const tenantIds = tenantOptions.map((t) => t.tenant_id);
+
   const [selectedTenantId, setSelectedTenantId] = useState<string>();
   useDefaultSelection({
     items: tenantOptions,
     selected: selectedTenantId,
     onChange: setSelectedTenantId,
-    getValue: (tenant) => tenant.tenant_id,
+    getValue: (t) => t.tenant_id,
   });
 
   const { data: tenantKeyData, isFetching: tenantKeysLoading } =
     useTenantAPIKeysQuery(selectedTenantId);
   const allTenantKeyQueries = useAllTenantAPIKeysQueries(tenantIds);
+
+  // Budget data
   const uniqueBudgetTenantIds = useMemo(() => {
     const ids = new Set<string>();
-    (personalKeys ?? []).forEach((key) => ids.add(key.tenant_id));
-    tenantOptions.forEach((tenant) => ids.add(tenant.tenant_id));
+    (personalKeys ?? []).forEach((k) => ids.add(k.tenant_id));
+    tenantOptions.forEach((t) => ids.add(t.tenant_id));
     return Array.from(ids);
   }, [personalKeys, tenantOptions]);
 
   const tenantSummaryQueries = useQueries({
-    queries: uniqueBudgetTenantIds.map((tenantId) => ({
-      queryKey: ["user-tenant-summary", tenantId],
-      queryFn: () => getTenantSummary(tenantId),
-      enabled: Boolean(tenantId),
+    queries: uniqueBudgetTenantIds.map((tid) => ({
+      queryKey: ["user-tenant-summary", tid],
+      queryFn: () => getTenantSummary(tid),
+      enabled: Boolean(tid),
     })),
   });
 
   const tenantBudgetMap = useMemo(() => {
     const map = new Map<string, TenantBudgetSummary>();
-    tenantSummaryQueries.forEach((query, index) => {
-      const tenantId = uniqueBudgetTenantIds[index];
-      if (tenantId && query.data?.budget) {
-        map.set(tenantId, query.data.budget);
+    tenantSummaryQueries.forEach((q, i) => {
+      const tid = uniqueBudgetTenantIds[i];
+      if (tid && q.data?.budget) {
+        map.set(tid, q.data.budget);
       }
     });
     return map;
   }, [tenantSummaryQueries, uniqueBudgetTenantIds]);
-  const personalBudgetLimit =
-    (personalTenantId && tenantBudgetMap.get(personalTenantId)?.limit_usd) ??
-    null;
-  const selectedTenantBudgetSummary = selectedTenantId
+
+  const personalBudgetLimit: number | null = personalTenantId
+    ? (tenantBudgetMap.get(personalTenantId)?.limit_usd ?? null)
+    : null;
+  const selectedTenantBudget = selectedTenantId
     ? tenantBudgetMap.get(selectedTenantId)
     : null;
+
+  // Tenant data
   const tenantRole = tenantKeyData?.role;
   const tenantKeys = tenantKeyData?.api_keys ?? [];
-  const tenantActiveKeys = tenantKeys.filter((key) => !key.revoked);
-  const selectedTenant = tenantOptions.find(
-    (tenant) => tenant.tenant_id === selectedTenantId,
-  );
-  const canManageTenant =
-    tenantRole === "owner" || tenantRole === "admin";
+  const tenantActiveKeys = tenantKeys.filter((k) => !k.revoked);
+  const selectedTenant = tenantOptions.find((t) => t.tenant_id === selectedTenantId);
+  const canManageTenant = tenantRole === "owner" || tenantRole === "admin";
 
-  const createMutation = useCreateUserAPIKeyMutation();
-  const revokeMutation = useRevokeUserAPIKeyMutation();
-  const rotateMutation = useRotateUserAPIKeyMutation();
-  const tenantCreateMutation = useCreateTenantAPIKeyMutation();
-  const tenantRevokeMutation = useRevokeTenantAPIKeyMutation();
-  const tenantRotateMutation = useRotateTenantAPIKeyMutation();
-  const { toast } = useToast();
-
-  const [name, setName] = useState("");
-  const [personalBudgetUsd, setPersonalBudgetUsd] = useState("");
-  const [personalWarningThreshold, setPersonalWarningThreshold] = useState("");
-  const [personalRPM, setPersonalRPM] = useState("");
-  const [personalTPM, setPersonalTPM] = useState("");
-  const [personalParallel, setPersonalParallel] = useState("");
+  // Dialog state
   const [createOpen, setCreateOpen] = useState(false);
   const [tenantCreateOpen, setTenantCreateOpen] = useState(false);
-  const [tenantKeyName, setTenantKeyName] = useState("");
-  const [tenantBudgetUsd, setTenantBudgetUsd] = useState("");
-  const [tenantWarningThreshold, setTenantWarningThreshold] = useState("");
-  const [tenantRPM, setTenantRPM] = useState("");
-  const [tenantTPM, setTenantTPM] = useState("");
-  const [tenantParallel, setTenantParallel] = useState("");
-  const [issuedSecret, setIssuedSecret] = useState<IssuedSecret>(null);
+  const [issuedSecret, setIssuedSecret] = useState<IssuedSecret | null>(null);
 
-  useEffect(() => {
-    if (!createOpen) {
-      setName("");
-      setPersonalBudgetUsd("");
-      setPersonalWarningThreshold("");
-      setPersonalRPM("");
-      setPersonalTPM("");
-      setPersonalParallel("");
-    }
-  }, [createOpen]);
+  // Mutations
+  const {
+    handleCopy,
+    handlePersonalCreate,
+    handleTenantCreate,
+    handleRevoke,
+    handleTenantRevoke,
+    handleRotate,
+    handleTenantRotate,
+    createMutation,
+    tenantCreateMutation,
+  } = useApiKeyMutations({
+    selectedTenantId,
+    selectedTenantName: selectedTenant?.name,
+    tenantOptions,
+    onIssued: setIssuedSecret,
+    onPersonalDialogClose: () => setCreateOpen(false),
+    onTenantDialogClose: () => setTenantCreateOpen(false),
+  });
 
-  useEffect(() => {
-    if (!tenantCreateOpen) {
-      setTenantKeyName("");
-      setTenantBudgetUsd("");
-      setTenantWarningThreshold("");
-      setTenantRPM("");
-      setTenantTPM("");
-      setTenantParallel("");
-    }
-  }, [tenantCreateOpen]);
-
-  const handleCreate = async () => {
-    if (!name.trim()) {
-      toast({ variant: "destructive", title: "Name is required" });
-      return;
-    }
-    const payload: CreateUserAPIKeyRequest = {
-      name: name.trim(),
-    };
-    const budgetValue = Number(personalBudgetUsd);
-    const thresholdValue = Number(personalWarningThreshold);
-    if (
-      personalWarningThreshold &&
-      (!Number.isFinite(thresholdValue) ||
-        thresholdValue <= 0 ||
-        thresholdValue > 1)
-    ) {
-      toast({
-        variant: "destructive",
-        title: "Warning threshold must be between 0 and 1",
-      });
-      return;
-    }
-    if (personalBudgetUsd && Number.isFinite(budgetValue)) {
-      if (
-        personalBudgetLimit &&
-        budgetValue > personalBudgetLimit
-      ) {
-        toast({
-          variant: "destructive",
-          title: `Budget exceeds limit ($${personalBudgetLimit.toFixed(2)})`,
-        });
-        return;
-      }
-      payload.quota = {
-        budget_usd: budgetValue,
-        warning_threshold: Number.isFinite(thresholdValue)
-          ? thresholdValue
-          : undefined,
-      };
-    } else if (personalWarningThreshold) {
-      payload.quota = {
-        warning_threshold: Number.isFinite(thresholdValue)
-          ? thresholdValue
-          : undefined,
-      };
-    }
-    const rpmValue = personalRPM.trim()
-      ? Number.parseInt(personalRPM.trim(), 10)
-      : undefined;
-    const tpmValue = personalTPM.trim()
-      ? Number.parseInt(personalTPM.trim(), 10)
-      : undefined;
-    const parallelValue = personalParallel.trim()
-      ? Number.parseInt(personalParallel.trim(), 10)
-      : undefined;
-    if (
-      rpmValue !== undefined ||
-      tpmValue !== undefined ||
-      parallelValue !== undefined
-    ) {
-      if (
-        !rpmValue ||
-        !tpmValue ||
-        !parallelValue ||
-        rpmValue <= 0 ||
-        tpmValue <= 0 ||
-        parallelValue <= 0
-      ) {
-        toast({
-          variant: "destructive",
-          title: "Rate limits must be positive integers",
-        });
-        return;
-      }
-      payload.rate_limits = {
-        requests_per_minute: rpmValue,
-        tokens_per_minute: tpmValue,
-        parallel_requests: parallelValue,
-      };
-    }
-    try {
-      const result = await createMutation.mutateAsync(payload);
-      setIssuedSecret({
-        scope: "personal",
-        name: result.api_key.name,
-        prefix: result.api_key.prefix,
-        secret: result.secret,
-        token: result.token,
-      });
-      setCreateOpen(false);
-      toast({ title: "API key created", description: "Copy the secret now." });
-    } catch (error) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Failed to create key" });
-    }
-  };
-
-  const handleTenantCreate = async () => {
-    if (!selectedTenantId) {
-      toast({
-        variant: "destructive",
-        title: "Select a tenant",
-        description: "Choose a tenant before creating a key.",
-      });
-      return;
-    }
-    if (!tenantKeyName.trim()) {
-      toast({ variant: "destructive", title: "Name is required" });
-      return;
-    }
-    const payload: CreateUserAPIKeyRequest = {
-      name: tenantKeyName.trim(),
-    };
-    const tenantBudgetValue = Number(tenantBudgetUsd);
-    const tenantThresholdValue = Number(tenantWarningThreshold);
-    if (
-      tenantWarningThreshold &&
-      (!Number.isFinite(tenantThresholdValue) ||
-        tenantThresholdValue <= 0 ||
-        tenantThresholdValue > 1)
-    ) {
-      toast({
-        variant: "destructive",
-        title: "Warning threshold must be between 0 and 1",
-      });
-      return;
-    }
-    if (tenantBudgetUsd && Number.isFinite(tenantBudgetValue)) {
-      if (
-        selectedTenantBudgetSummary?.limit_usd &&
-        tenantBudgetValue > selectedTenantBudgetSummary.limit_usd
-      ) {
-        toast({
-          variant: "destructive",
-          title: `Budget exceeds tenant cap ($${selectedTenantBudgetSummary.limit_usd.toFixed(
-            2,
-          )})`,
-        });
-        return;
-      }
-      payload.quota = {
-        budget_usd: tenantBudgetValue,
-        warning_threshold: Number.isFinite(tenantThresholdValue)
-          ? tenantThresholdValue
-          : undefined,
-      };
-    } else if (tenantWarningThreshold) {
-      payload.quota = {
-        warning_threshold: Number.isFinite(tenantThresholdValue)
-          ? tenantThresholdValue
-          : undefined,
-      };
-    }
-    const rpmValue = tenantRPM.trim()
-      ? Number.parseInt(tenantRPM.trim(), 10)
-      : undefined;
-    const tpmValue = tenantTPM.trim()
-      ? Number.parseInt(tenantTPM.trim(), 10)
-      : undefined;
-    const parallelValue = tenantParallel.trim()
-      ? Number.parseInt(tenantParallel.trim(), 10)
-      : undefined;
-    if (
-      rpmValue !== undefined ||
-      tpmValue !== undefined ||
-      parallelValue !== undefined
-    ) {
-      if (
-        !rpmValue ||
-        !tpmValue ||
-        !parallelValue ||
-        rpmValue <= 0 ||
-        tpmValue <= 0 ||
-        parallelValue <= 0
-      ) {
-        toast({
-          variant: "destructive",
-          title: "Rate limits must be positive integers",
-        });
-        return;
-      }
-      payload.rate_limits = {
-        requests_per_minute: rpmValue,
-        tokens_per_minute: tpmValue,
-        parallel_requests: parallelValue,
-      };
-    }
-    try {
-      const result = await tenantCreateMutation.mutateAsync({
-        tenantId: selectedTenantId,
-        payload,
-      });
-      setIssuedSecret({
-        scope: "tenant",
-        tenantName: selectedTenant?.name,
-        name: result.api_key.name,
-        prefix: result.api_key.prefix,
-        secret: result.secret,
-        token: result.token,
-      });
-      setTenantCreateOpen(false);
-      toast({
-        title: "Tenant API key created",
-        description: `Key issued for ${selectedTenant?.name ?? "tenant"}.`,
-      });
-    } catch (error) {
-      console.error(error);
-      toast({
-        variant: "destructive",
-        title: "Failed to create tenant key",
-      });
-    }
-  };
-
-  const handleCopy = (value: string) => {
-    navigator.clipboard.writeText(value).then(() => {
-      toast({ title: "Copied to clipboard" });
-    });
-  };
-
-  const handleRevoke = async (id: string) => {
-    try {
-      await revokeMutation.mutateAsync(id);
-      toast({ title: "API key revoked" });
-    } catch (error) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Failed to revoke key" });
-    }
-  };
-
-  const handleTenantRevoke = async (keyId: string) => {
-    if (!selectedTenantId) {
-      toast({ variant: "destructive", title: "Select a tenant first" });
-      return;
-    }
-    try {
-      await tenantRevokeMutation.mutateAsync({
-        tenantId: selectedTenantId,
-        apiKeyId: keyId,
-      });
-      toast({ title: "Tenant API key revoked" });
-    } catch (error) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Failed to revoke tenant key" });
-    }
-  };
-
-  const handleRotate = async (key: UserAPIKey) => {
-    try {
-      const result = await rotateMutation.mutateAsync(key.id);
-      setIssuedSecret({
-        scope: "personal",
-        name: result.api_key.name,
-        prefix: result.api_key.prefix,
-        secret: result.secret,
-        token: result.token,
-      });
-      toast({ title: "API key rotated", description: "Copy the new secret now." });
-    } catch (error) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Failed to rotate key" });
-    }
-  };
-
-  const handleTenantRotate = async (key: UserAPIKey) => {
-    const tenantId = key.tenant_id;
-    if (!tenantId) {
-      toast({ variant: "destructive", title: "Missing tenant for this key" });
-      return;
-    }
-    try {
-      const result = await tenantRotateMutation.mutateAsync({
-        tenantId,
-        apiKeyId: key.id,
-      });
-      const tenantName =
-        tenantOptions.find((tenant) => tenant.tenant_id === tenantId)?.name ??
-        selectedTenant?.name;
-      setIssuedSecret({
-        scope: "tenant",
-        tenantName,
-        name: result.api_key.name,
-        prefix: result.api_key.prefix,
-        secret: result.secret,
-        token: result.token,
-      });
-      toast({
-        title: "Tenant API key rotated",
-        description: "Copy the new secret now.",
-      });
-    } catch (error) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Failed to rotate tenant key" });
-    }
-  };
-
+  // Personal keys
   const personalOnlyKeys =
     personalTenantId && personalKeys
-      ? personalKeys.filter((key) => key.tenant_id === personalTenantId)
+      ? personalKeys.filter((k) => k.tenant_id === personalTenantId)
       : [];
-  const activeKeys = personalOnlyKeys.filter((key) => !key.revoked);
-  const revokedKeys = personalOnlyKeys.filter((key) => key.revoked);
+  const activeKeys = personalOnlyKeys.filter((k) => !k.revoked);
+  const revokedKeys = personalOnlyKeys.filter((k) => k.revoked);
+
+  // Revoked keys from all tenants
   const revokedRows: RevokedRow[] = useMemo(() => {
-    const tenantRevoked = allTenantKeyQueries.flatMap((query, index) => {
-      const tenantMeta = tenantOptions[index];
-      if (!tenantMeta || !query.data) {
-        return [];
-      }
-      return query.data.api_keys
-        .filter((key) => key.revoked)
-        .map((key) => ({ ...key, tenantLabel: tenantMeta.name }));
+    const tenantRevoked = allTenantKeyQueries.flatMap((q, i) => {
+      const meta = tenantOptions[i];
+      if (!meta || !q.data) return [];
+      return q.data.api_keys
+        .filter((k) => k.revoked)
+        .map((k) => ({ ...k, tenantLabel: meta.name }));
     });
     return [
-      ...revokedKeys.map((key) => ({ ...key, tenantLabel: "Personal" })),
+      ...revokedKeys.map((k) => ({ ...k, tenantLabel: "Personal" })),
       ...tenantRevoked,
     ];
   }, [revokedKeys, allTenantKeyQueries, tenantOptions]);
+
   const revokedLoading =
     personalLoading ||
-    allTenantKeyQueries.some((query) => query.isLoading || query.isFetching);
+    allTenantKeyQueries.some((q) => q.isLoading || q.isFetching);
 
-  const formatRole = (role?: string) =>
-    role ? role.charAt(0).toUpperCase() + role.slice(1) : "—";
-
+  // Budget helpers
   const resolveBudgetMeta = (key: UserAPIKey): BudgetMeta => {
     const tenantBudget = tenantBudgetMap.get(key.tenant_id);
     const fallbackLimit = tenantBudget?.limit_usd ?? null;
@@ -527,14 +162,9 @@ export function UserApiKeysPage() {
         ? key.quota.budget_cents / 100
         : fallbackLimit);
     const used = tenantBudget?.used_usd ?? 0;
-    const warning =
-      key.quota?.warning_threshold ??
-      tenantBudget?.warning_threshold ??
-      0.8;
+    const warning = key.quota?.warning_threshold ?? tenantBudget?.warning_threshold ?? 0.8;
     const schedule =
-      key.budget_refresh_schedule ||
-      tenantBudget?.refresh_schedule ||
-      "calendar_month";
+      key.budget_refresh_schedule || tenantBudget?.refresh_schedule || "calendar_month";
     return { limit, used, warning, schedule };
   };
 
@@ -542,11 +172,11 @@ export function UserApiKeysPage() {
     const { schedule } = resolveBudgetMeta(key);
     const label = formatScheduleLabel(schedule);
     const next = computeNextResetDate(schedule);
-    if (!next) {
-      return label;
-    }
-    return `${label} · ${dateFormatter.format(next)}`;
+    return next ? `${label} · ${dateFormatter.format(next)}` : label;
   };
+
+  const formatRole = (role?: string) =>
+    role ? role.charAt(0).toUpperCase() + role.slice(1) : "—";
 
   return (
     <div className="space-y-6">
@@ -554,44 +184,18 @@ export function UserApiKeysPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">API Keys</h1>
           <p className="text-sm text-muted-foreground">
-            Personal keys are always available. Tenant keys respect the role of
-            each membership.
+            Personal keys are always available. Tenant keys respect the role of each membership.
           </p>
         </div>
       </div>
 
       {issuedSecret ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Save this secret</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p>
-              {issuedSecret.scope === "tenant"
-                ? `Issued for ${issuedSecret.tenantName ?? "selected tenant"}.`
-                : "Issued for your personal tenant."}{" "}
-              This is the only time the full secret will be shown.
-            </p>
-            <div className="rounded-md border p-3">
-              <p className="text-xs text-muted-foreground">Token</p>
-              <div className="mt-1 flex items-center justify-between gap-4">
-                <code className="truncate">{issuedSecret.token}</code>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleCopy(issuedSecret.token)}
-                >
-                  <Copy className="mr-1 size-4" /> Copy
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <IssuedSecretCard issued={issuedSecret} onCopy={handleCopy} />
       ) : null}
 
       <Tabs
         value={activeTab}
-        onValueChange={(value) => setActiveTab(value as "personal" | "tenant")}
+        onValueChange={(v) => setActiveTab(v as "personal" | "tenant" | "revoked")}
         className="space-y-6"
       >
         <TabsList>
@@ -601,104 +205,24 @@ export function UserApiKeysPage() {
           </TabsTrigger>
           <TabsTrigger value="revoked">Revoked keys</TabsTrigger>
         </TabsList>
+
         <TabsContent value="personal" className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-semibold">Personal tenant</h2>
               <p className="text-sm text-muted-foreground">
-                Keys scoped to your personal tenant inherit default model/
-                budget controls.
+                Keys scoped to your personal tenant inherit default model/budget controls.
               </p>
             </div>
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Key className="mr-2 size-4" />
-                  Create key
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create personal API key</DialogTitle>
-                  <DialogDescription>
-                    Keys are scoped to your personal tenant and inherit default
-                    budgets.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="key-name">Name</Label>
-                    <Input
-                      id="key-name"
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      placeholder="My personal key"
-                    />
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="personal-budget">Budget (USD)</Label>
-                      <Input
-                        id="personal-budget"
-                        value={personalBudgetUsd}
-                        onChange={(event) => setPersonalBudgetUsd(event.target.value)}
-                        placeholder={
-                          personalBudgetLimit
-                            ? `${personalBudgetLimit.toFixed(2)}`
-                            : "Budget"
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="personal-threshold">Warning threshold</Label>
-                      <Input
-                        id="personal-threshold"
-                        value={personalWarningThreshold}
-                        onChange={(event) =>
-                          setPersonalWarningThreshold(event.target.value)
-                        }
-                        placeholder="0.8"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Rate limits (optional)</Label>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <Input
-                        value={personalRPM}
-                        onChange={(event) => setPersonalRPM(event.target.value)}
-                        placeholder="RPM"
-                        aria-label="Requests per minute"
-                      />
-                      <Input
-                        value={personalTPM}
-                        onChange={(event) => setPersonalTPM(event.target.value)}
-                        placeholder="TPM"
-                        aria-label="Tokens per minute"
-                      />
-                      <Input
-                        value={personalParallel}
-                        onChange={(event) =>
-                          setPersonalParallel(event.target.value)
-                        }
-                        placeholder="Parallel"
-                        aria-label="Parallel requests"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    onClick={handleCreate}
-                    disabled={createMutation.isPending}
-                  >
-                    Issue key
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <CreateApiKeyDialog
+              mode="personal"
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              onSubmit={handlePersonalCreate}
+              isSubmitting={createMutation.isPending}
+              budgetLimit={personalBudgetLimit}
+            />
           </div>
-
           <section className="grid gap-6">
             <KeyTable
               title="Active keys"
@@ -732,20 +256,14 @@ export function UserApiKeysPage() {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
                 <div className="flex-1 space-y-2">
                   <Label>Select tenant</Label>
-                  <Select
-                    value={selectedTenantId}
-                    onValueChange={(value) => setSelectedTenantId(value)}
-                  >
+                  <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select tenant" />
                     </SelectTrigger>
                     <SelectContent>
-                      {tenantOptions.map((tenant) => (
-                        <SelectItem
-                          key={tenant.tenant_id}
-                          value={tenant.tenant_id}
-                        >
-                          {tenant.name}
+                      {tenantOptions.map((t) => (
+                        <SelectItem key={t.tenant_id} value={t.tenant_id}>
+                          {t.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -758,110 +276,18 @@ export function UserApiKeysPage() {
                     {!canManageTenant ? "(read-only)" : "(manage keys allowed)"}
                   </p>
                 </div>
-                <Dialog
+                <CreateApiKeyDialog
+                  mode="tenant"
                   open={tenantCreateOpen}
-                  onOpenChange={(open) => {
-                    if (!canManageTenant) {
-                      toast({
-                        variant: "destructive",
-                        title: "Insufficient role",
-                        description:
-                          "Only tenant owners and admins can create keys.",
-                      });
-                      return;
-                    }
-                    setTenantCreateOpen(open);
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button disabled={!canManageTenant}>
-                      <Key className="mr-2 size-4" />
-                      Issue key
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create tenant API key</DialogTitle>
-                      <DialogDescription>
-                        {selectedTenant
-                          ? `Keys are scoped to ${selectedTenant.name}.`
-                          : "Select a tenant to continue."}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="tenant-key-name">Name</Label>
-                      <Input
-                        id="tenant-key-name"
-                        value={tenantKeyName}
-                        onChange={(event) => setTenantKeyName(event.target.value)}
-                        placeholder="Shared key"
-                      />
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="tenant-budget">Budget (USD)</Label>
-                        <Input
-                          id="tenant-budget"
-                          value={tenantBudgetUsd}
-                          onChange={(event) => setTenantBudgetUsd(event.target.value)}
-                          placeholder={
-                            selectedTenantBudgetSummary
-                              ? `${selectedTenantBudgetSummary.limit_usd.toFixed(2)}`
-                              : "Budget"
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="tenant-threshold">Warning threshold</Label>
-                        <Input
-                          id="tenant-threshold"
-                          value={tenantWarningThreshold}
-                          onChange={(event) =>
-                            setTenantWarningThreshold(event.target.value)
-                          }
-                          placeholder="0.8"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Rate limits (optional)</Label>
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <Input
-                          value={tenantRPM}
-                          onChange={(event) => setTenantRPM(event.target.value)}
-                          placeholder="RPM"
-                          aria-label="Requests per minute"
-                        />
-                        <Input
-                          value={tenantTPM}
-                          onChange={(event) => setTenantTPM(event.target.value)}
-                          placeholder="TPM"
-                          aria-label="Tokens per minute"
-                        />
-                        <Input
-                          value={tenantParallel}
-                          onChange={(event) =>
-                            setTenantParallel(event.target.value)
-                          }
-                          placeholder="Parallel"
-                          aria-label="Parallel requests"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      onClick={handleTenantCreate}
-                      disabled={tenantCreateMutation.isPending}
-                      >
-                        Issue key
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                  onOpenChange={setTenantCreateOpen}
+                  onSubmit={handleTenantCreate}
+                  isSubmitting={tenantCreateMutation.isPending}
+                  budgetLimit={selectedTenantBudget?.limit_usd}
+                  tenantName={selectedTenant?.name}
+                  disabled={!canManageTenant}
+                  disabledReason="Only tenant owners and admins can create keys."
+                />
               </div>
-
               <section className="grid gap-6">
                 <KeyTable
                   title="Active keys"
@@ -881,208 +307,9 @@ export function UserApiKeysPage() {
         </TabsContent>
 
         <TabsContent value="revoked" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Revoked keys</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {revokedLoading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, idx) => (
-                    <div key={idx} className="h-10 animate-pulse rounded bg-muted" />
-                  ))}
-                </div>
-              ) : revokedRows.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Prefix</TableHead>
-                      <TableHead>Scope</TableHead>
-                      <TableHead>Revoked at</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {revokedRows.map((key) => (
-                      <TableRow key={key.id}>
-                        <TableCell>{key.name}</TableCell>
-                        <TableCell>{key.prefix}</TableCell>
-                        <TableCell>{key.tenantLabel}</TableCell>
-                        <TableCell>
-                          {key.revoked_at
-                            ? new Date(key.revoked_at).toLocaleDateString()
-                            : "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No revoked keys yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          <RevokedKeysTable keys={revokedRows} loading={revokedLoading} />
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-type KeyTableProps = {
-  title: string;
-  loading: boolean;
-  keys: UserAPIKey[];
-  variant: "active" | "revoked";
-  allowRevoke?: boolean;
-  allowRotate?: boolean;
-  onRevoke?: (id: string) => void;
-  onRotate?: (key: UserAPIKey) => void;
-  getBudgetMeta: (key: UserAPIKey) => BudgetMeta;
-  formatResetValue: (key: UserAPIKey) => string;
-};
-
-function KeyTable({
-  title,
-  loading,
-  keys,
-  variant,
-  allowRevoke = false,
-  allowRotate = false,
-  onRevoke,
-  onRotate,
-  getBudgetMeta,
-  formatResetValue,
-}: KeyTableProps) {
-  const hasKeys = keys.length > 0;
-  const showActions = variant === "active" && (allowRevoke || allowRotate);
-  const showBudgetColumns = variant === "active";
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="space-y-2">
-            {[...Array(4)].map((_, idx) => (
-              <div key={idx} className="h-10 animate-pulse rounded bg-muted" />
-            ))}
-          </div>
-        ) : hasKeys ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Prefix</TableHead>
-                {showBudgetColumns ? (
-                  <>
-                    <TableHead>Budget</TableHead>
-                    <TableHead>Reset schedule</TableHead>
-                  </>
-                ) : null}
-                {variant === "active" && showActions ? (
-                  <TableHead className="text-right">Actions</TableHead>
-                ) : null}
-                {variant === "revoked" ? <TableHead>Revoked at</TableHead> : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {keys.map((key) => {
-                const budgetMeta = getBudgetMeta(key);
-                const hasBudget =
-                  typeof budgetMeta.limit === "number" && budgetMeta.limit > 0;
-                return (
-                  <TableRow key={key.id}>
-                    <TableCell>{key.name}</TableCell>
-                    <TableCell>{key.prefix}</TableCell>
-                    {showBudgetColumns ? (
-                      <>
-                        <TableCell className="min-w-[220px] align-top">
-                          {hasBudget ? (
-                            <div className="space-y-1.5">
-                              <BudgetMeter
-                                used={budgetMeta.used}
-                                limit={budgetMeta.limit ?? 0}
-                                warningThreshold={budgetMeta.warning}
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Warn at {Math.round(budgetMeta.warning * 100)}%
-                              </p>
-                            </div>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">
-                              Inherits tenant defaults
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatResetValue(key)}
-                        </TableCell>
-                      </>
-                    ) : null}
-                    {variant === "active" && showActions ? (
-                      <TableCell className="flex justify-end gap-2">
-                        {allowRotate && onRotate ? (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => onRotate(key)}
-                            title="Rotate API key"
-                          >
-                            <RefreshCcw className="size-4" />
-                          </Button>
-                        ) : null}
-                        {allowRevoke && onRevoke ? (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-destructive"
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Revoke API key</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This action cannot be undone. Requests using this
-                                  key will immediately fail.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => onRevoke(key.id)}
-                                >
-                                  Revoke
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        ) : null}
-                      </TableCell>
-                    ) : null}
-                    {variant === "revoked" ? (
-                      <TableCell>
-                        {key.revoked_at
-                          ? new Date(key.revoked_at).toLocaleDateString()
-                          : "—"}
-                      </TableCell>
-                    ) : null}
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        ) : (
-          <p className="text-sm text-muted-foreground">No data yet.</p>
-        )}
-      </CardContent>
-    </Card>
   );
 }

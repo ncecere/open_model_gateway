@@ -19,6 +19,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -54,16 +55,16 @@ type Adapter struct {
 // New creates a Vertex adapter using service-account credentials.
 func New(ctx context.Context, opts Options) (*Adapter, error) {
 	if opts.ProjectID == "" {
-		return nil, errors.New("vertex: project id required")
+		return nil, apperror.Validation("vertex.New", "project id required")
 	}
 	if opts.Location == "" {
-		return nil, errors.New("vertex: location required")
+		return nil, apperror.Validation("vertex.New", "location required")
 	}
 	if opts.Model == "" {
-		return nil, errors.New("vertex: model id required")
+		return nil, apperror.Validation("vertex.New", "model id required")
 	}
 	if len(opts.CredentialsJSON) == 0 {
-		return nil, errors.New("vertex: credentials json required")
+		return nil, apperror.Validation("vertex.New", "credentials json required")
 	}
 
 	publisher := strings.TrimSpace(opts.Publisher)
@@ -112,7 +113,7 @@ func New(ctx context.Context, opts Options) (*Adapter, error) {
 
 func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.ChatResponse, error) {
 	if a.chatURL == "" {
-		return models.ChatResponse{}, errors.New("vertex chat disabled for this model")
+		return models.ChatResponse{}, apperror.BadRequest("vertex.Chat", "chat disabled for this model")
 	}
 	payload, err := a.buildGenerateContentRequest(ctx, req)
 	if err != nil {
@@ -131,7 +132,7 @@ func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.Chat
 
 func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-chan models.ChatChunk, func() error, error) {
 	if a.streamURL == "" {
-		return nil, nil, errors.New("vertex streaming disabled for this model")
+		return nil, nil, apperror.BadRequest("vertex.ChatStream", "streaming disabled for this model")
 	}
 	payload, err := a.buildGenerateContentRequest(ctx, req)
 	if err != nil {
@@ -201,10 +202,10 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 
 func (a *Adapter) Embed(ctx context.Context, req models.EmbeddingsRequest) (models.EmbeddingsResponse, error) {
 	if len(req.Input) == 0 {
-		return models.EmbeddingsResponse{}, errors.New("vertex embeddings input required")
+		return models.EmbeddingsResponse{}, apperror.Validation("vertex.Embed", "embeddings input required")
 	}
 	if a.embedURL == "" {
-		return models.EmbeddingsResponse{}, errors.New("vertex embeddings disabled for this model")
+		return models.EmbeddingsResponse{}, apperror.BadRequest("vertex.Embed", "embeddings disabled for this model")
 	}
 
 	payload := vertexPredictRequest{Instances: make([]vertexPredictInstance, 0, len(req.Input))}
@@ -225,10 +226,10 @@ func (a *Adapter) Generate(ctx context.Context, req models.ImageRequest) (models
 	}
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return models.ImageResponse{}, errors.New("vertex: prompt required")
+		return models.ImageResponse{}, apperror.Validation("vertex.Generate", "prompt required")
 	}
 	if req.ResponseFormat != "" && req.ResponseFormat != "b64_json" {
-		return models.ImageResponse{}, errors.New("vertex: only b64_json responses are supported")
+		return models.ImageResponse{}, apperror.Validation("vertex.Generate", "only b64_json responses are supported")
 	}
 	payload := vertexImagePredictRequest{
 		Instances: []vertexImageInstance{{Prompt: prompt}},
@@ -250,11 +251,11 @@ func (a *Adapter) Edit(ctx context.Context, req models.ImageEditRequest) (models
 		return models.ImageResponse{}, models.ErrImageOperationUnsupported
 	}
 	if len(req.Images) == 0 {
-		return models.ImageResponse{}, errors.New("vertex: base image required for edits")
+		return models.ImageResponse{}, apperror.Validation("vertex.Edit", "base image required for edits")
 	}
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return models.ImageResponse{}, errors.New("vertex: prompt required")
+		return models.ImageResponse{}, apperror.Validation("vertex.Edit", "prompt required")
 	}
 	base64Image, err := encodeVertexImage(req.Images[0])
 	if err != nil {
@@ -321,7 +322,7 @@ func (a *Adapter) Variation(ctx context.Context, req models.ImageVariationReques
 		return models.ImageResponse{}, models.ErrImageOperationUnsupported
 	}
 	if len(req.Image.Data) == 0 {
-		return models.ImageResponse{}, errors.New("vertex: variation image input required")
+		return models.ImageResponse{}, apperror.Validation("vertex.Variation", "variation image input required")
 	}
 	base64Image, err := encodeVertexImage(req.Image)
 	if err != nil {
@@ -354,7 +355,7 @@ func (a *Adapter) Variation(ctx context.Context, req models.ImageVariationReques
 }
 
 func (a *Adapter) Models(ctx context.Context) ([]models.Model, error) {
-	return nil, errors.New("vertex model listing not implemented")
+	return nil, apperror.BadRequest("vertex.Models", "model listing not implemented")
 }
 
 func (a *Adapter) HealthCheck(ctx context.Context) error {
@@ -579,7 +580,7 @@ func peekNonWhitespace(r *bufio.Reader) (byte, error) {
 
 func encodeVertexImage(input models.ImageInput) (string, error) {
 	if len(input.Data) == 0 {
-		return "", errors.New("vertex: empty image payload")
+		return "", apperror.Validation("vertex.encodeVertexImage", "empty image payload")
 	}
 	return base64.StdEncoding.EncodeToString(input.Data), nil
 }

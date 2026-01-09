@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -93,10 +94,10 @@ type Adapter struct {
 // New creates a Bedrock adapter using the provided credentials/region.
 func New(ctx context.Context, opts Options) (*Adapter, error) {
 	if opts.Region == "" {
-		return nil, errors.New("bedrock region required")
+		return nil, apperror.Validation("bedrock.New", "region required")
 	}
 	if opts.ModelID == "" {
-		return nil, errors.New("bedrock model id required")
+		return nil, apperror.Validation("bedrock.New", "model id required")
 	}
 
 	loadOpts := []func(*config.LoadOptions) error{
@@ -143,7 +144,7 @@ func New(ctx context.Context, opts Options) (*Adapter, error) {
 // Chat executes a non-streaming chat request using the configured chat format.
 func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.ChatResponse, error) {
 	if a.opts.ChatFormat == "" {
-		return models.ChatResponse{}, errors.New("chat not supported by this bedrock route")
+		return models.ChatResponse{}, apperror.BadRequest("bedrock.Chat", "chat not supported by this bedrock route")
 	}
 
 	switch a.opts.ChatFormat {
@@ -157,10 +158,10 @@ func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.Chat
 func (a *Adapter) generateTitan(ctx context.Context, req models.ImageRequest) (models.ImageResponse, error) {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return models.ImageResponse{}, errors.New("prompt required")
+		return models.ImageResponse{}, apperror.Validation("bedrock.generateTitan", "prompt required")
 	}
 	if req.ResponseFormat != "" && req.ResponseFormat != "b64_json" {
-		return models.ImageResponse{}, errors.New("bedrock image generation currently supports only base64 responses")
+		return models.ImageResponse{}, apperror.Validation("bedrock.generateTitan", "only base64 responses are supported")
 	}
 
 	width, height := parseImageSize(req.Size)
@@ -244,10 +245,10 @@ func (a *Adapter) generateTitan(ctx context.Context, req models.ImageRequest) (m
 func (a *Adapter) generateStableDiffusion(ctx context.Context, req models.ImageRequest) (models.ImageResponse, error) {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return models.ImageResponse{}, errors.New("prompt required")
+		return models.ImageResponse{}, apperror.Validation("bedrock.generateStableDiffusion", "prompt required")
 	}
 	if req.ResponseFormat != "" && req.ResponseFormat != "b64_json" {
-		return models.ImageResponse{}, errors.New("bedrock image generation currently supports only base64 responses")
+		return models.ImageResponse{}, apperror.Validation("bedrock.generateStableDiffusion", "only base64 responses are supported")
 	}
 	width, height := parseImageSize(req.Size)
 	if width == 0 {
@@ -319,11 +320,11 @@ func (a *Adapter) invokeStableDiffusion(ctx context.Context, request stableDiffu
 
 func (a *Adapter) imageEditStableDiffusion(ctx context.Context, req models.ImageEditRequest) (models.ImageResponse, error) {
 	if len(req.Images) == 0 {
-		return models.ImageResponse{}, errors.New("bedrock: at least one image is required for edits")
+		return models.ImageResponse{}, apperror.Validation("bedrock.imageEditStableDiffusion", "at least one image is required for edits")
 	}
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return models.ImageResponse{}, errors.New("prompt required")
+		return models.ImageResponse{}, apperror.Validation("bedrock.imageEditStableDiffusion", "prompt required")
 	}
 	base64Image, err := encodeImageInput(req.Images[0])
 	if err != nil {
@@ -374,7 +375,7 @@ func (a *Adapter) imageEditStableDiffusion(ctx context.Context, req models.Image
 
 func (a *Adapter) imageVariationStableDiffusion(ctx context.Context, req models.ImageVariationRequest) (models.ImageResponse, error) {
 	if len(req.Image.Data) == 0 {
-		return models.ImageResponse{}, errors.New("bedrock: variation image input required")
+		return models.ImageResponse{}, apperror.Validation("bedrock.imageVariationStableDiffusion", "variation image input required")
 	}
 	base64Image, err := encodeImageInput(req.Image)
 	if err != nil {
@@ -413,14 +414,14 @@ func (a *Adapter) imageVariationStableDiffusion(ctx context.Context, req models.
 
 func encodeImageInput(input models.ImageInput) (string, error) {
 	if len(input.Data) == 0 {
-		return "", errors.New("empty image payload")
+		return "", apperror.Validation("bedrock.encodeImageInput", "empty image payload")
 	}
 	return base64.StdEncoding.EncodeToString(input.Data), nil
 }
 
 func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-chan models.ChatChunk, func() error, error) {
 	if a.opts.ChatFormat != ChatFormatAnthropicMessages {
-		return nil, nil, errors.New("streaming not supported for this bedrock route")
+		return nil, nil, apperror.BadRequest("bedrock.ChatStream", "streaming not supported for this bedrock route")
 	}
 
 	body, err := a.buildAnthropicBody(ctx, req)
@@ -569,13 +570,13 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 
 // Models is not supported (parity with Azure adapter behaviour).
 func (a *Adapter) Models(ctx context.Context) ([]models.Model, error) {
-	return nil, errors.New("bedrock models listing not implemented")
+	return nil, apperror.BadRequest("bedrock.Models", "models listing not implemented")
 }
 
 // Embed generates embeddings using the configured embedding format.
 func (a *Adapter) Embed(ctx context.Context, req models.EmbeddingsRequest) (models.EmbeddingsResponse, error) {
 	if a.opts.EmbeddingFormat == "" {
-		return models.EmbeddingsResponse{}, errors.New("embeddings not supported by this bedrock route")
+		return models.EmbeddingsResponse{}, apperror.BadRequest("bedrock.Embed", "embeddings not supported by this bedrock route")
 	}
 
 	switch a.opts.EmbeddingFormat {
@@ -590,7 +591,7 @@ func (a *Adapter) Generate(ctx context.Context, req models.ImageRequest) (models
 	task := strings.ToLower(strings.TrimSpace(a.opts.ImageTaskType))
 	switch {
 	case task == "":
-		return models.ImageResponse{}, errors.New("image generation not supported for this bedrock route")
+		return models.ImageResponse{}, apperror.BadRequest("bedrock.Generate", "image generation not supported for this bedrock route")
 	case strings.Contains(task, "stability"), strings.Contains(task, "diffusion"):
 		return a.generateStableDiffusion(ctx, req)
 	default:
@@ -621,7 +622,7 @@ func (a *Adapter) Variation(ctx context.Context, req models.ImageVariationReques
 // HealthCheck simply verifies the AWS client can be used (no-op to avoid extra inference costs).
 func (a *Adapter) HealthCheck(ctx context.Context) error {
 	if a.stsClient == nil {
-		return errors.New("bedrock sts client not initialised")
+		return apperror.Internal("bedrock.HealthCheck", "sts client not initialised")
 	}
 	_, err := a.stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	return err
@@ -629,7 +630,7 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 
 func (a *Adapter) chatAnthropic(ctx context.Context, req models.ChatRequest) (models.ChatResponse, error) {
 	if len(req.Messages) == 0 {
-		return models.ChatResponse{}, errors.New("at least one message is required")
+		return models.ChatResponse{}, apperror.Validation("bedrock.chatAnthropic", "at least one message is required")
 	}
 
 	body, err := a.buildAnthropicBody(ctx, req)
@@ -678,7 +679,7 @@ func (a *Adapter) chatAnthropic(ctx context.Context, req models.ChatRequest) (mo
 
 func (a *Adapter) embedTitan(ctx context.Context, req models.EmbeddingsRequest) (models.EmbeddingsResponse, error) {
 	if len(req.Input) == 0 {
-		return models.EmbeddingsResponse{}, errors.New("embedding input required")
+		return models.EmbeddingsResponse{}, apperror.Validation("bedrock.embedTitan", "embedding input required")
 	}
 
 	embeddings := make([]models.Embedding, 0, len(req.Input))
@@ -766,7 +767,7 @@ func (a *Adapter) buildAnthropicBody(ctx context.Context, req models.ChatRequest
 	}
 
 	if len(messages) == 0 {
-		return nil, errors.New("bedrock: no user/assistant messages provided")
+		return nil, apperror.Validation("bedrock.buildAnthropicBody", "no user/assistant messages provided")
 	}
 
 	body := anthropicRequest{
@@ -942,7 +943,7 @@ func (a *Adapter) convertAnthropicMessageParts(ctx context.Context, msgIndex int
 
 func (a *Adapter) anthropicImageContentFromURL(ctx context.Context, image *models.MessageContentImageURL) (anthropicContent, error) {
 	if image == nil || strings.TrimSpace(image.URL) == "" {
-		return anthropicContent{}, errors.New("image_url missing url")
+		return anthropicContent{}, apperror.Validation("bedrock.anthropicImageContentFromURL", "image_url missing url")
 	}
 	urlValue := strings.TrimSpace(image.URL)
 	var mime string
@@ -961,11 +962,11 @@ func (a *Adapter) anthropicImageContentFromURL(ctx context.Context, image *model
 
 func anthropicImageContentFromInline(image *models.MessageContentImageObject) (anthropicContent, error) {
 	if image == nil {
-		return anthropicContent{}, errors.New("image payload missing")
+		return anthropicContent{}, apperror.Validation("bedrock.anthropicImageContentFromInline", "image payload missing")
 	}
 	encoded := strings.TrimSpace(image.Data)
 	if encoded == "" {
-		return anthropicContent{}, errors.New("image data missing")
+		return anthropicContent{}, apperror.Validation("bedrock.anthropicImageContentFromInline", "image data missing")
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {

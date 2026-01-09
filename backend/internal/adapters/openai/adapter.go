@@ -3,7 +3,6 @@ package openai
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/openai/openai-go/v3/packages/respjson"
 
 	openaihelper "github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -39,7 +39,7 @@ type Adapter struct {
 func New(opts Options) (*Adapter, error) {
 	apiKey := strings.TrimSpace(opts.APIKey)
 	if apiKey == "" && !opts.AllowNoKey {
-		return nil, errors.New("openai: api key required")
+		return nil, apperror.Validation("openai.New", "api key required")
 	}
 
 	requestOpts := make([]option.RequestOption, 0, 2)
@@ -102,7 +102,7 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 // Embed creates embeddings using the selected OpenAI model.
 func (a *Adapter) Embed(ctx context.Context, req models.EmbeddingsRequest) (models.EmbeddingsResponse, error) {
 	if len(req.Input) == 0 {
-		return models.EmbeddingsResponse{}, errors.New("openai: embeddings input required")
+		return models.EmbeddingsResponse{}, apperror.Validation("openai.Embed", "embeddings input required")
 	}
 	params := openai.EmbeddingNewParams{Model: openai.EmbeddingModel(req.Model)}
 	if len(req.Input) == 1 {
@@ -120,7 +120,7 @@ func (a *Adapter) Embed(ctx context.Context, req models.EmbeddingsRequest) (mode
 // Moderate executes a moderation request using the Moderations API.
 func (a *Adapter) Moderate(ctx context.Context, req models.ModerationRequest) (models.ModerationResponse, error) {
 	if len(req.Input) == 0 {
-		return models.ModerationResponse{}, errors.New("openai: moderation input required")
+		return models.ModerationResponse{}, apperror.Validation("openai.Moderate", "moderation input required")
 	}
 	params := openai.ModerationNewParams{
 		Model: openai.ModerationModel(req.Model),
@@ -141,7 +141,7 @@ func (a *Adapter) Moderate(ctx context.Context, req models.ModerationRequest) (m
 func (a *Adapter) Generate(ctx context.Context, req models.ImageRequest) (models.ImageResponse, error) {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return models.ImageResponse{}, errors.New("openai: prompt required")
+		return models.ImageResponse{}, apperror.Validation("openai.Generate", "prompt required")
 	}
 	params := openai.ImageGenerateParams{
 		Model:  openai.ImageModel(req.Model),
@@ -169,11 +169,11 @@ func (a *Adapter) Generate(ctx context.Context, req models.ImageRequest) (models
 // Edit performs an image edit/extension request via the Images API.
 func (a *Adapter) Edit(ctx context.Context, req models.ImageEditRequest) (models.ImageResponse, error) {
 	if len(req.Images) == 0 {
-		return models.ImageResponse{}, errors.New("openai: at least one image is required for edits")
+		return models.ImageResponse{}, apperror.Validation("openai.Edit", "at least one image is required for edits")
 	}
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return models.ImageResponse{}, errors.New("openai: prompt required for image edits")
+		return models.ImageResponse{}, apperror.Validation("openai.Edit", "prompt required for image edits")
 	}
 	params := openai.ImageEditParams{
 		Model:  openai.ImageModel(req.Model),
@@ -233,7 +233,7 @@ func (a *Adapter) Variation(ctx context.Context, req models.ImageVariationReques
 	reader := req.Image.Reader()
 	defer reader.Close()
 	if reader == nil {
-		return models.ImageResponse{}, errors.New("openai: image input required for variations")
+		return models.ImageResponse{}, apperror.Validation("openai.Variation", "image input required for variations")
 	}
 	params := openai.ImageNewVariationParams{
 		Image: reader,
@@ -276,7 +276,7 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 // Transcribe performs speech-to-text via the OpenAI Audio Transcriptions API.
 func (a *Adapter) Transcribe(ctx context.Context, req models.AudioTranscriptionRequest) (models.AudioTranscriptionResponse, error) {
 	if req.Input.Reader == nil {
-		return models.AudioTranscriptionResponse{}, errors.New("openai: audio input required")
+		return models.AudioTranscriptionResponse{}, apperror.Validation("openai.Transcribe", "audio input required")
 	}
 	params := openai.AudioTranscriptionNewParams{
 		File:  req.Input.Reader,
@@ -323,7 +323,7 @@ func (a *Adapter) Transcribe(ctx context.Context, req models.AudioTranscriptionR
 
 func (a *Adapter) TranscribeStream(ctx context.Context, req models.AudioTranscriptionRequest) (<-chan models.AudioTranscriptionStreamChunk, func() error, error) {
 	if req.Input.Reader == nil {
-		return nil, nil, errors.New("openai: audio input required")
+		return nil, nil, apperror.Validation("openai.TranscribeStream", "audio input required")
 	}
 	params := openai.AudioTranscriptionNewParams{
 		File:  req.Input.Reader,
@@ -398,7 +398,7 @@ func (a *Adapter) TranscribeStream(ctx context.Context, req models.AudioTranscri
 // Translate performs speech translation using the OpenAI Audio Translations API.
 func (a *Adapter) Translate(ctx context.Context, req models.AudioTranscriptionRequest) (models.AudioTranscriptionResponse, error) {
 	if req.Input.Reader == nil {
-		return models.AudioTranscriptionResponse{}, errors.New("openai: audio input required")
+		return models.AudioTranscriptionResponse{}, apperror.Validation("openai.Translate", "audio input required")
 	}
 	params := openai.AudioTranslationNewParams{
 		File:  req.Input.Reader,
@@ -417,7 +417,7 @@ func (a *Adapter) Translate(ctx context.Context, req models.AudioTranscriptionRe
 	switch format {
 	case models.AudioResponseFormatJSON, models.AudioResponseFormatVerboseJSON, models.AudioResponseFormatText, models.AudioResponseFormatSRT, models.AudioResponseFormatVTT:
 	default:
-		return models.AudioTranscriptionResponse{}, errors.New("openai: response format not supported for translations")
+		return models.AudioTranscriptionResponse{}, apperror.Validation("openai.Translate", "response format not supported for translations")
 	}
 	if format != "" {
 		params.ResponseFormat = openai.AudioTranslationNewParamsResponseFormat(format)
@@ -441,7 +441,7 @@ func (a *Adapter) Translate(ctx context.Context, req models.AudioTranscriptionRe
 func (a *Adapter) Synthesize(ctx context.Context, req models.AudioSpeechRequest) (models.AudioSpeechResponse, error) {
 	input := strings.TrimSpace(req.Input)
 	if input == "" {
-		return models.AudioSpeechResponse{}, errors.New("openai: input is required for speech synthesis")
+		return models.AudioSpeechResponse{}, apperror.Validation("openai.Synthesize", "input is required for speech synthesis")
 	}
 	voice := strings.TrimSpace(req.Voice)
 	if voice == "" {
@@ -479,7 +479,7 @@ func (a *Adapter) Synthesize(ctx context.Context, req models.AudioSpeechRequest)
 }
 
 func (a *Adapter) SynthesizeStream(ctx context.Context, req models.AudioSpeechRequest) (<-chan models.AudioSpeechChunk, func() error, error) {
-	return nil, nil, errors.New("openai: streaming speech not implemented")
+	return nil, nil, apperror.Internal("openai.SynthesizeStream", "streaming speech not implemented")
 }
 
 func (a *Adapter) invokeAudioRaw(ctx context.Context, path string, body any, format models.AudioResponseFormat) (models.AudioTranscriptionResponse, error) {

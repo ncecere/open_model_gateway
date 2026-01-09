@@ -2,7 +2,6 @@ package azureopenai
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 
 	openaihelper "github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -39,10 +39,10 @@ type Options struct {
 // New creates a new Azure adapter using the provided endpoint, api key, and api version.
 func New(opts Options) (*Adapter, error) {
 	if opts.Endpoint == "" {
-		return nil, errors.New("azure openai endpoint required")
+		return nil, apperror.Validation("azureopenai.New", "endpoint required")
 	}
 	if opts.APIKey == "" {
-		return nil, errors.New("azure openai api key required")
+		return nil, apperror.Validation("azureopenai.New", "api key required")
 	}
 	if opts.APIVersion == "" {
 		opts.APIVersion = "2024-07-01-preview"
@@ -121,7 +121,7 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 // Embed creates embeddings using an Azure OpenAI deployment.
 func (a *Adapter) Embed(ctx context.Context, req models.EmbeddingsRequest) (models.EmbeddingsResponse, error) {
 	if len(req.Input) == 0 {
-		return models.EmbeddingsResponse{}, errors.New("embedding input required")
+		return models.EmbeddingsResponse{}, apperror.Validation("azureopenai.Embed", "embedding input required")
 	}
 
 	params := openai.EmbeddingNewParams{
@@ -145,7 +145,7 @@ func (a *Adapter) Embed(ctx context.Context, req models.EmbeddingsRequest) (mode
 // Moderate forwards a moderation request to Azure OpenAI.
 func (a *Adapter) Moderate(ctx context.Context, req models.ModerationRequest) (models.ModerationResponse, error) {
 	if len(req.Input) == 0 {
-		return models.ModerationResponse{}, errors.New("moderation input required")
+		return models.ModerationResponse{}, apperror.Validation("azureopenai.Moderate", "moderation input required")
 	}
 
 	params := openai.ModerationNewParams{
@@ -167,7 +167,7 @@ func (a *Adapter) Moderate(ctx context.Context, req models.ModerationRequest) (m
 
 // Models list is not yet supported via Azure OpenAI REST.
 func (a *Adapter) Models(ctx context.Context) ([]models.Model, error) {
-	return nil, errors.New("azure models listing not implemented")
+	return nil, apperror.BadRequest("azureopenai.Models", "models listing not implemented")
 }
 
 // HealthCheck makes a lightweight GET request against the Azure deployments endpoint.
@@ -195,7 +195,7 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 func (a *Adapter) Generate(ctx context.Context, req models.ImageRequest) (models.ImageResponse, error) {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return models.ImageResponse{}, errors.New("prompt required")
+		return models.ImageResponse{}, apperror.Validation("azureopenai.Generate", "prompt required")
 	}
 
 	params := openai.ImageGenerateParams{
@@ -245,7 +245,7 @@ func (a *Adapter) Variation(ctx context.Context, req models.ImageVariationReques
 
 func (a *Adapter) Transcribe(ctx context.Context, req models.AudioTranscriptionRequest) (models.AudioTranscriptionResponse, error) {
 	if req.Input.Reader == nil {
-		return models.AudioTranscriptionResponse{}, errors.New("azure openai: audio input required")
+		return models.AudioTranscriptionResponse{}, apperror.Validation("azureopenai.Transcribe", "audio input required")
 	}
 	params := openai.AudioTranscriptionNewParams{
 		File:  req.Input.Reader,
@@ -292,7 +292,7 @@ func (a *Adapter) Transcribe(ctx context.Context, req models.AudioTranscriptionR
 
 func (a *Adapter) Translate(ctx context.Context, req models.AudioTranscriptionRequest) (models.AudioTranscriptionResponse, error) {
 	if req.Input.Reader == nil {
-		return models.AudioTranscriptionResponse{}, errors.New("azure openai: audio input required")
+		return models.AudioTranscriptionResponse{}, apperror.Validation("azureopenai.Translate", "audio input required")
 	}
 	params := openai.AudioTranslationNewParams{
 		File:  req.Input.Reader,
@@ -311,7 +311,7 @@ func (a *Adapter) Translate(ctx context.Context, req models.AudioTranscriptionRe
 	switch format {
 	case models.AudioResponseFormatJSON, models.AudioResponseFormatVerboseJSON, models.AudioResponseFormatText, models.AudioResponseFormatSRT, models.AudioResponseFormatVTT:
 	default:
-		return models.AudioTranscriptionResponse{}, errors.New("azure openai: response format not supported for translations")
+		return models.AudioTranscriptionResponse{}, apperror.Validation("azureopenai.Translate", "response format not supported for translations")
 	}
 	if format != "" {
 		params.ResponseFormat = openai.AudioTranslationNewParamsResponseFormat(format)

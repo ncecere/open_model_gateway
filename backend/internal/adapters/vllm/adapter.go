@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -38,7 +39,7 @@ type TGIAdapter struct {
 func NewTGI(opts Options) (*TGIAdapter, error) {
 	baseURL := strings.TrimSpace(opts.BaseURL)
 	if baseURL == "" {
-		return nil, errors.New("vllm: base_url required for tgi mode")
+		return nil, apperror.Validation("vllm.NewTGI", "base_url required for tgi mode")
 	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{Timeout: defaultHTTPTimeout}
@@ -251,12 +252,12 @@ func (a *TGIAdapter) HealthCheck(ctx context.Context) error {
 
 func buildPrompt(messages []models.ChatMessage) (string, error) {
 	if len(messages) == 0 {
-		return "", errors.New("vllm: messages required")
+		return "", apperror.Validation("vllm.buildPrompt", "messages required")
 	}
 	var sb strings.Builder
 	for _, msg := range messages {
 		if msg.HasNonTextContent() {
-			return "", errors.New("vllm: non-text content unsupported by tgi mode")
+			return "", apperror.Validation("vllm.buildPrompt", "non-text content unsupported by tgi mode")
 		}
 		content := strings.TrimSpace(msg.Text())
 		if content == "" {
@@ -273,7 +274,7 @@ func buildPrompt(messages []models.ChatMessage) (string, error) {
 	}
 	prompt := strings.TrimSpace(sb.String())
 	if prompt == "" {
-		return "", errors.New("vllm: prompt required")
+		return "", apperror.Validation("vllm.buildPrompt", "prompt required")
 	}
 	if !strings.HasSuffix(strings.ToLower(prompt), "\nassistant:") {
 		prompt += "\nassistant:"

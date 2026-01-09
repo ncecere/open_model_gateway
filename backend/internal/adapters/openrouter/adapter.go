@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -41,7 +42,7 @@ type Adapter struct {
 // New builds an OpenRouter adapter using the supplied credentials.
 func New(opts Options) (*Adapter, error) {
 	if strings.TrimSpace(opts.APIKey) == "" {
-		return nil, errors.New("openrouter: api key required")
+		return nil, apperror.Validation("openrouter.New", "api key required")
 	}
 	if strings.TrimSpace(opts.BaseURL) == "" {
 		opts.BaseURL = defaultBaseURL
@@ -64,7 +65,7 @@ func New(opts Options) (*Adapter, error) {
 // Chat executes a non-streaming chat completion.
 func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.ChatResponse, error) {
 	if len(req.Messages) == 0 {
-		return models.ChatResponse{}, errors.New("openrouter: messages are required")
+		return models.ChatResponse{}, apperror.Validation("openrouter.Chat", "messages are required")
 	}
 	payload := buildChatRequest(req, false)
 	var resp chatCompletionResponse
@@ -77,7 +78,7 @@ func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.Chat
 // ChatStream streams chat completions using SSE.
 func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-chan models.ChatChunk, func() error, error) {
 	if len(req.Messages) == 0 {
-		return nil, nil, errors.New("openrouter: messages are required")
+		return nil, nil, apperror.Validation("openrouter.ChatStream", "messages are required")
 	}
 	payload := buildChatRequest(req, true)
 	body, err := json.Marshal(payload)
@@ -157,7 +158,7 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 // Embed invokes the embeddings API.
 func (a *Adapter) Embed(ctx context.Context, req models.EmbeddingsRequest) (models.EmbeddingsResponse, error) {
 	if len(req.Input) == 0 {
-		return models.EmbeddingsResponse{}, errors.New("openrouter: embeddings input required")
+		return models.EmbeddingsResponse{}, apperror.Validation("openrouter.Embed", "embeddings input required")
 	}
 	payload := embeddingRequest{
 		Model: req.Model,

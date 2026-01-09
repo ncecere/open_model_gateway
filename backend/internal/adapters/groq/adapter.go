@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -40,7 +41,7 @@ type Adapter struct {
 // New creates a Groq adapter using the provided credentials.
 func New(opts Options) (*Adapter, error) {
 	if strings.TrimSpace(opts.APIKey) == "" {
-		return nil, errors.New("groq: api key required")
+		return nil, apperror.Validation("groq.New", "api key required")
 	}
 	if strings.TrimSpace(opts.BaseURL) == "" {
 		opts.BaseURL = defaultBaseURL
@@ -62,7 +63,7 @@ func New(opts Options) (*Adapter, error) {
 // Chat executes a non-streaming chat completion.
 func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.ChatResponse, error) {
 	if len(req.Messages) == 0 {
-		return models.ChatResponse{}, errors.New("groq: messages are required")
+		return models.ChatResponse{}, apperror.Validation("groq.Chat", "messages are required")
 	}
 	payload := buildChatRequest(req, false)
 	var resp chatCompletionResponse
@@ -75,7 +76,7 @@ func (a *Adapter) Chat(ctx context.Context, req models.ChatRequest) (models.Chat
 // ChatStream performs a streaming chat completion using SSE.
 func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-chan models.ChatChunk, func() error, error) {
 	if len(req.Messages) == 0 {
-		return nil, nil, errors.New("groq: messages are required")
+		return nil, nil, apperror.Validation("groq.ChatStream", "messages are required")
 	}
 	payload := buildChatRequest(req, true)
 	body, err := json.Marshal(payload)

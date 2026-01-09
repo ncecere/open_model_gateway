@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
 )
@@ -43,7 +43,7 @@ type Adapter struct {
 
 func New(opts Options) (*Adapter, error) {
 	if strings.TrimSpace(opts.APIKey) == "" {
-		return nil, errors.New("anthropic: api key required")
+		return nil, apperror.Validation("anthropic.New", "api key required")
 	}
 	if strings.TrimSpace(opts.BaseURL) == "" {
 		opts.BaseURL = defaultBaseURL
@@ -247,7 +247,7 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 }
 
 func (a *Adapter) Models(ctx context.Context) ([]models.Model, error) {
-	return nil, errors.New("anthropic model listing not implemented")
+	return nil, apperror.BadRequest("anthropic.Models", "model listing not implemented")
 }
 
 func (a *Adapter) postJSON(ctx context.Context, path string, payload anthropicRequestBody, out any) error {
@@ -312,7 +312,7 @@ func (a *Adapter) buildMessageRequest(ctx context.Context, req models.ChatReques
 	}
 
 	if len(messages) == 0 {
-		return anthropicRequestBody{}, errors.New("anthropic: no user/assistant messages provided")
+		return anthropicRequestBody{}, apperror.Validation("anthropic.buildMessageRequest", "no user/assistant messages provided")
 	}
 
 	maxTokens := int32(0)
@@ -488,7 +488,7 @@ func (a *Adapter) convertMessageParts(ctx context.Context, msgIndex int, msg mod
 
 func (a *Adapter) imageContentFromURL(ctx context.Context, image *models.MessageContentImageURL) (anthropicContent, error) {
 	if image == nil || strings.TrimSpace(image.URL) == "" {
-		return anthropicContent{}, errors.New("image_url missing url")
+		return anthropicContent{}, apperror.Validation("anthropic.imageContentFromURL", "image_url missing url")
 	}
 	urlValue := strings.TrimSpace(image.URL)
 	var mime string
@@ -507,11 +507,11 @@ func (a *Adapter) imageContentFromURL(ctx context.Context, image *models.Message
 
 func imageContentFromInline(image *models.MessageContentImageObject) (anthropicContent, error) {
 	if image == nil {
-		return anthropicContent{}, errors.New("image payload missing")
+		return anthropicContent{}, apperror.Validation("anthropic.imageContentFromInline", "image payload missing")
 	}
 	encoded := strings.TrimSpace(image.Data)
 	if encoded == "" {
-		return anthropicContent{}, errors.New("image data missing")
+		return anthropicContent{}, apperror.Validation("anthropic.imageContentFromInline", "image data missing")
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {

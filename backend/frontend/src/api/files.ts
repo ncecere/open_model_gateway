@@ -1,55 +1,84 @@
+/**
+ * Admin Files API
+ *
+ * This module provides admin-level access to file management.
+ * Uses shared types from api/shared/types.ts.
+ */
+
 import { api } from "./client";
+import { createResource } from "./shared/factory";
+import type {
+  AdminFileRecord,
+  PaginationParams,
+  PaginatedResponse,
+} from "./shared/types";
 
-export interface AdminFileRecord {
-  id: string;
-  tenant_id: string;
-  tenant_name: string;
-  filename: string;
-  purpose: string;
-  content_type: string;
-  bytes: number;
-  storage_backend: string;
-  encrypted: boolean;
-  checksum: string;
-  expires_at: string;
-  created_at: string;
-  deleted_at?: string | null;
-  status: string;
-  status_details?: string | null;
-}
+// ============================================================================
+// Types
+// ============================================================================
 
-export interface ListFilesResponse {
+/** Response for listing files */
+export interface ListFilesResponse extends PaginatedResponse<AdminFileRecord> {
   object: string;
-  data: AdminFileRecord[];
-  limit: number;
-  offset: number;
-  total: number;
 }
 
-export interface ListFilesParams {
+/** Parameters for listing files */
+export interface ListFilesParams extends PaginationParams {
   tenant_id?: string;
   purpose?: string;
   state?: string;
   q?: string;
-  limit?: number;
-  offset?: number;
 }
 
-export async function listFiles(params?: ListFilesParams) {
+// Re-export shared types for convenience
+export type { AdminFileRecord };
+
+// ============================================================================
+// Factory-based Resources
+// ============================================================================
+
+/** Admin files resource using factory pattern */
+const filesResource = createResource<AdminFileRecord>({
+  basePath: "/files",
+  client: api,
+  transformListResponse: (data) => {
+    const response = data as { data: AdminFileRecord[] };
+    return response.data;
+  },
+});
+
+// ============================================================================
+// File Functions
+// ============================================================================
+
+/** List all files with optional filters */
+export async function listFiles(params?: ListFilesParams): Promise<ListFilesResponse> {
   const { data } = await api.get<ListFilesResponse>("/files", { params });
   return data;
 }
 
-export async function getFile(fileId: string) {
-  const { data } = await api.get<AdminFileRecord>(`/files/${fileId}`);
-  return data;
+/** Get a specific file by ID */
+export async function getFile(fileId: string): Promise<AdminFileRecord> {
+  const file = await filesResource.get(fileId);
+  if (!file) {
+    throw new Error(`File not found: ${fileId}`);
+  }
+  return file;
 }
 
-export async function deleteFile(fileId: string) {
-  await api.delete(`/files/${fileId}`);
+/** Delete a file by ID */
+export async function deleteFile(fileId: string): Promise<void> {
+  await filesResource.remove(fileId);
 }
 
-export function downloadAdminFileContent(fileId: string) {
+/** Open file content in a new browser tab (admin endpoint) */
+export function downloadAdminFileContent(fileId: string): void {
   const url = `/admin/files/${fileId}/content`;
   window.open(url, "_blank", "noopener");
 }
+
+// ============================================================================
+// Exported Resources (for advanced usage)
+// ============================================================================
+
+export const adminFilesResource = filesResource;

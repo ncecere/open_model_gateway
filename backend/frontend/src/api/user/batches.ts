@@ -1,67 +1,72 @@
+/**
+ * User Batches API
+ *
+ * This module provides user-level access to batch job management.
+ * Uses shared types from api/shared/types.ts.
+ */
+
 import { userApi } from "../userClient";
+import { createNestedResource } from "../shared/factory";
+import type {
+  BaseBatchRecord,
+  BatchCounts,
+  BatchErrorEntry,
+  BatchErrorList,
+  CursorPaginationParams,
+  CursorPaginatedResponse,
+} from "../shared/types";
 
-export interface UserBatchCounts {
-  total: number;
-  completed: number;
-  failed: number;
-  cancelled: number;
-}
+// ============================================================================
+// Types
+// ============================================================================
 
-export interface UserBatchErrorEntry {
-  code: string;
-  message: string;
-  param?: string;
-  line?: number | null;
-}
+/** User batch record */
+export interface UserBatchRecord extends BaseBatchRecord {}
 
-export interface UserBatchErrorList {
-  object: string;
-  data: UserBatchErrorEntry[];
-}
+/** User batch counts (alias for BatchCounts) */
+export type UserBatchCounts = BatchCounts;
 
-export interface UserBatchRecord {
-  id: string;
-  tenant_id: string;
-  endpoint: string;
-  status: string;
-  completion_window: string;
-  max_concurrency: number;
-  metadata?: Record<string, string>;
-  input_file_id: string;
-  output_file_id?: string | null;
-  error_file_id?: string | null;
-  created_at: string;
-  updated_at: string;
-  in_progress_at?: string | null;
-  completed_at?: string | null;
-  cancelled_at?: string | null;
-  cancelling_at?: string | null;
-  finalizing_at?: string | null;
-  failed_at?: string | null;
-  expires_at?: string | null;
-  expired_at?: string | null;
-  counts: UserBatchCounts;
-  errors?: UserBatchErrorList;
-}
+/** User batch error entry (alias for BatchErrorEntry) */
+export type UserBatchErrorEntry = BatchErrorEntry;
 
-export interface UserListBatchesResponse {
-  object: string;
-  data: UserBatchRecord[];
+/** User batch error list (alias for BatchErrorList) */
+export type UserBatchErrorList = BatchErrorList;
+
+/** Response for listing user batches */
+export interface UserListBatchesResponse extends CursorPaginatedResponse<UserBatchRecord> {
   tenant?: string;
-  has_more: boolean;
-  first_id?: string;
-  last_id?: string;
 }
 
-export interface UserListBatchesParams {
-  limit?: number;
-  after?: string;
-}
+/** Parameters for listing user batches */
+export interface UserListBatchesParams extends CursorPaginationParams {}
 
+// Re-export shared types for convenience
+export type { BatchCounts, BatchErrorEntry, BatchErrorList };
+
+// ============================================================================
+// Factory-based Resources
+// ============================================================================
+
+/** User tenant batches nested resource */
+const tenantBatchesResource = createNestedResource<UserBatchRecord>({
+  parentPath: "/tenants",
+  childPath: "batches",
+  client: userApi,
+  transformListResponse: (data) => {
+    const response = data as { data: UserBatchRecord[] };
+    return response.data;
+  },
+});
+
+// ============================================================================
+// Batch Functions
+// ============================================================================
+
+/** List batches for a tenant */
 export async function listUserTenantBatches(
   tenantId: string,
   params?: UserListBatchesParams,
-) {
+): Promise<UserListBatchesResponse> {
   const { data } = await userApi.get<UserListBatchesResponse>(
     `/tenants/${tenantId}/batches`,
     { params },
@@ -69,23 +74,32 @@ export async function listUserTenantBatches(
   return data;
 }
 
+/** Get a specific batch for a tenant */
 export async function getUserTenantBatch(
   tenantId: string,
   batchId: string,
-) {
-  const { data } = await userApi.get<UserBatchRecord>(
-    `/tenants/${tenantId}/batches/${batchId}`,
-  );
-  return data;
+): Promise<UserBatchRecord> {
+  const batch = await tenantBatchesResource.get(tenantId, batchId);
+  if (!batch) {
+    throw new Error(`Batch not found: ${batchId}`);
+  }
+  return batch;
 }
 
+/** Cancel a batch for a tenant */
 export async function cancelUserTenantBatch(
   tenantId: string,
   batchId: string,
-) {
+): Promise<UserBatchRecord> {
   const { data } = await userApi.post<UserBatchRecord>(
     `/tenants/${tenantId}/batches/${batchId}/cancel`,
     {},
   );
   return data;
 }
+
+// ============================================================================
+// Exported Resources (for advanced usage)
+// ============================================================================
+
+export const userTenantBatchesResource = tenantBatchesResource;

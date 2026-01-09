@@ -6,6 +6,15 @@ import { Tooltip } from "recharts";
 
 import { cn } from "@/lib/utils";
 
+// Local type for tooltip payload items (recharts v3 doesn't export Payload directly)
+type TooltipPayloadItem = {
+  dataKey?: string | number;
+  name?: string;
+  value?: number | string;
+  color?: string;
+  payload?: unknown;
+};
+
 export type ChartConfig = Record<string, { label?: string; color?: string }>;
 
 interface ChartContainerProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -35,10 +44,13 @@ export function ChartTooltip(props: TooltipProps<number, string>) {
   return <Tooltip {...props} />;
 }
 
-interface ChartTooltipContentProps extends TooltipProps<number, string> {
+interface ChartTooltipContentProps {
+  active?: boolean;
+  payload?: ReadonlyArray<TooltipPayloadItem>;
+  label?: string | number;
   indicator?: "line" | "dot";
   labelFormatter?: (label: string | number) => React.ReactNode;
-  valueFormatter?: (payload: any) => React.ReactNode;
+  valueFormatter?: (payload: TooltipPayloadItem) => React.ReactNode;
 }
 
 export function ChartTooltipContent({
@@ -58,7 +70,7 @@ export function ChartTooltipContent({
     <div className="rounded-lg border bg-popover px-3 py-2 text-xs shadow-sm">
       {formattedLabel ? <div className="mb-1 font-medium text-foreground">{formattedLabel}</div> : null}
       <div className="grid gap-1">
-        {payload.map((item) => {
+        {payload.map((item: TooltipPayloadItem) => {
           if (!item || item.value == null) return null;
           const key = item.dataKey?.toString() ?? "";
           const color = item.color ?? (key ? `var(--color-${key})` : undefined);

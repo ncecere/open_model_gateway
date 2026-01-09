@@ -1,51 +1,72 @@
+/**
+ * Admin Keys API
+ *
+ * This module provides access to admin key management.
+ * Admin keys are used for system-level authentication.
+ * Uses shared types from api/shared/types.ts.
+ */
+
 import { api } from "./client";
+import { createResource } from "./shared/factory";
+import type {
+  AdminKeyRecord,
+  AdminKeyScope,
+  CreateAdminKeyPayload,
+  CreateAdminKeyResult,
+} from "./shared/types";
 
-export type AdminKeyScope = "admin" | "system";
+// ============================================================================
+// Types
+// ============================================================================
 
-export interface AdminKeyRecord {
-  id: string;
-  name: string;
-  scope: AdminKeyScope;
-  prefix: string;
-  owner_user_id?: string | null;
-  owner_name?: string;
-  owner_email?: string;
-  created_by_user_id: string;
-  creator_name?: string;
-  creator_email?: string;
-  expires_at?: string | null;
-  revoked_at?: string | null;
-  last_used_at?: string | null;
-  created_at: string;
+/** Request payload for creating an admin key */
+export interface CreateAdminKeyRequest extends CreateAdminKeyPayload {}
+
+/** Response when creating an admin key */
+export interface CreateAdminKeyResponse extends CreateAdminKeyResult {}
+
+// Re-export shared types for convenience
+export type { AdminKeyRecord, AdminKeyScope };
+
+// ============================================================================
+// Factory-based Resources
+// ============================================================================
+
+/** Admin keys resource using factory pattern */
+const adminKeysResource = createResource<AdminKeyRecord, CreateAdminKeyRequest>({
+  basePath: "/admin-keys",
+  client: api,
+  transformListResponse: (data) => {
+    const response = data as { admin_keys: AdminKeyRecord[] };
+    return response.admin_keys;
+  },
+});
+
+// ============================================================================
+// Admin Key Functions
+// ============================================================================
+
+/** List all admin keys */
+export async function listAdminKeys(): Promise<AdminKeyRecord[]> {
+  return adminKeysResource.list();
 }
 
-export interface CreateAdminKeyRequest {
-  name: string;
-  scope: AdminKeyScope;
-  expires_in_seconds: number;
-}
-
-export interface CreateAdminKeyResponse {
-  admin_key: AdminKeyRecord;
-  token: string;
-}
-
-export async function listAdminKeys() {
-  const { data } = await api.get<{ admin_keys: AdminKeyRecord[] }>(
-    "/admin-keys",
-  );
-  return data.admin_keys;
-}
-
-export async function createAdminKey(payload: CreateAdminKeyRequest) {
-  const { data } = await api.post<CreateAdminKeyResponse>(
-    "/admin-keys",
-    payload,
-  );
+/** Create a new admin key */
+export async function createAdminKey(
+  payload: CreateAdminKeyRequest,
+): Promise<CreateAdminKeyResponse> {
+  const { data } = await api.post<CreateAdminKeyResponse>("/admin-keys", payload);
   return data;
 }
 
-export async function revokeAdminKey(id: string) {
+/** Revoke an admin key */
+export async function revokeAdminKey(id: string): Promise<{ revoked: boolean }> {
   const { data } = await api.delete<{ revoked: boolean }>(`/admin-keys/${id}`);
   return data;
 }
+
+// ============================================================================
+// Exported Resources (for advanced usage)
+// ============================================================================
+
+export const adminKeysResourceApi = adminKeysResource;

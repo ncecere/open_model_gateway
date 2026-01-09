@@ -1,125 +1,146 @@
+/**
+ * User API Keys API
+ *
+ * This module provides user-level access to API key management.
+ * Uses the factory pattern from api/shared/factory.ts.
+ */
+
 import { userApi } from "../userClient";
-import type { UsagePoint, UsageTotals } from "./usage";
+import { createResource, createNestedResource } from "../shared/factory";
 import { getBrowserTimezone } from "@/lib/timezone";
+import type {
+  BaseApiKeyRecord,
+  RateLimitInfo,
+  ApiKeyRateLimits,
+  QuotaPayload,
+  ApiKeyUsageSummary,
+  UserUsagePoint,
+  UserUsageTotals,
+} from "../shared/types";
 
-export type RateLimitInfo = {
-  requests_per_minute?: number;
-  tokens_per_minute?: number;
-  parallel_requests?: number;
-};
+// ============================================================================
+// Types
+// ============================================================================
 
-export type ApiKeyRateLimits = {
-  key: RateLimitInfo;
-  tenant: RateLimitInfo;
-};
+/** User API key record */
+export interface UserAPIKey extends BaseApiKeyRecord {}
 
-export type UserAPIKey = {
-  id: string;
-  tenant_id: string;
-  prefix: string;
-  name: string;
-  scopes: string[];
-  quota?: {
-    budget_usd?: number;
-    budget_cents?: number;
-    warning_threshold?: number;
-  } | null;
-  budget_refresh_schedule?: string;
-  rate_limits?: ApiKeyRateLimits;
-  created_at: string;
-  revoked_at?: string | null;
-  last_used_at?: string | null;
-  revoked: boolean;
-};
-
+/** Response for listing user API keys */
 export type ListUserAPIKeysResponse = {
   api_keys: UserAPIKey[];
 };
 
-export async function listUserAPIKeys() {
-  const { data } = await userApi.get<ListUserAPIKeysResponse>("/api-keys");
-  return data.api_keys;
-}
-
+/** Payload for creating a user API key */
 export type CreateUserAPIKeyRequest = {
   name: string;
   scopes?: string[];
-  quota?: {
-    budget_usd?: number;
-    warning_threshold?: number;
-  };
-  rate_limits?: {
-    requests_per_minute?: number;
-    tokens_per_minute?: number;
-    parallel_requests?: number;
-  };
+  quota?: QuotaPayload;
+  rate_limits?: RateLimitInfo;
 };
 
+/** Response when creating a user API key */
 export type CreateUserAPIKeyResponse = {
   api_key: UserAPIKey;
   secret: string;
   token: string;
 };
 
-export async function createUserAPIKey(payload: CreateUserAPIKeyRequest) {
-  const { data } = await userApi.post<CreateUserAPIKeyResponse>(
-    "/api-keys",
-    payload,
-  );
-  return data;
-}
-
-export async function revokeUserAPIKey(apiKeyId: string) {
-  const { data } = await userApi.post<UserAPIKey>(
-    `/api-keys/${apiKeyId}/revoke`,
-  );
-  return data;
-}
-
-export async function rotateUserAPIKey(apiKeyId: string) {
-  const { data } = await userApi.post<CreateUserAPIKeyResponse>(
-    `/api-keys/${apiKeyId}/rotate`,
-  );
-  return data;
-}
-
-export type APIKeyUsageSummary = {
-  api_key_id: string;
-  period: string;
-  start: string;
-  end: string;
-  timezone: string;
-  totals: UsageTotals;
-  series: UsagePoint[];
-};
-
-export async function getUserAPIKeyUsage(apiKeyId: string, period = "30d") {
-  const timezone = getBrowserTimezone();
-  const { data } = await userApi.get<APIKeyUsageSummary>(
-    `/api-keys/${apiKeyId}/usage`,
-    {
-      params: { period, timezone },
-    },
-  );
-  return data;
-}
-
+/** Response when listing tenant API keys */
 export type TenantAPIKeyListResponse = {
   role: string;
   api_keys: UserAPIKey[];
 };
 
-export async function listTenantAPIKeys(tenantId: string) {
+// Re-export shared types for convenience
+export type { RateLimitInfo, ApiKeyRateLimits, ApiKeyUsageSummary };
+
+// Re-export usage types from shared
+export type UsagePoint = UserUsagePoint;
+export type UsageTotals = UserUsageTotals;
+
+// ============================================================================
+// Factory-based Resources
+// ============================================================================
+
+/** User API keys resource using factory pattern */
+const apiKeysResource = createResource<UserAPIKey, CreateUserAPIKeyRequest>({
+  basePath: "/api-keys",
+  client: userApi,
+  transformListResponse: (data) => {
+    const response = data as { api_keys: UserAPIKey[] };
+    return response.api_keys;
+  },
+});
+
+/** User tenant API keys nested resource */
+const tenantApiKeysResource = createNestedResource<UserAPIKey, CreateUserAPIKeyRequest>({
+  parentPath: "/tenants",
+  childPath: "api-keys",
+  client: userApi,
+  transformListResponse: (data) => {
+    const response = data as { api_keys: UserAPIKey[] };
+    return response.api_keys;
+  },
+});
+
+// ============================================================================
+// Personal API Key Functions
+// ============================================================================
+
+/** List all API keys for the current user */
+export async function listUserAPIKeys(): Promise<UserAPIKey[]> {
+  return apiKeysResource.list();
+}
+
+/** Create a personal API key */
+export async function createUserAPIKey(
+  payload: CreateUserAPIKeyRequest,
+): Promise<CreateUserAPIKeyResponse> {
+  const { data } = await userApi.post<CreateUserAPIKeyResponse>("/api-keys", payload);
+  return data;
+}
+
+/** Revoke a personal API key */
+export async function revokeUserAPIKey(apiKeyId: string): Promise<UserAPIKey> {
+  const { data } = await userApi.post<UserAPIKey>(`/api-keys/${apiKeyId}/revoke`);
+  return data;
+}
+
+/** Rotate a personal API key */
+export async function rotateUserAPIKey(apiKeyId: string): Promise<CreateUserAPIKeyResponse> {
+  const { data } = await userApi.post<CreateUserAPIKeyResponse>(`/api-keys/${apiKeyId}/rotate`);
+  return data;
+}
+
+/** Get usage for a personal API key */
+export async function getUserAPIKeyUsage(
+  apiKeyId: string,
+  period = "30d",
+): Promise<ApiKeyUsageSummary> {
+  const timezone = getBrowserTimezone();
+  const { data } = await userApi.get<ApiKeyUsageSummary>(`/api-keys/${apiKeyId}/usage`, {
+    params: { period, timezone },
+  });
+  return data;
+}
+
+// ============================================================================
+// Tenant API Key Functions
+// ============================================================================
+
+/** List API keys for a tenant */
+export async function listTenantAPIKeys(tenantId: string): Promise<TenantAPIKeyListResponse> {
   const { data } = await userApi.get<TenantAPIKeyListResponse>(
     `/tenants/${tenantId}/api-keys`,
   );
   return data;
 }
 
+/** Create an API key for a tenant */
 export async function createTenantAPIKey(
   tenantId: string,
   payload: CreateUserAPIKeyRequest,
-) {
+): Promise<CreateUserAPIKeyResponse> {
   const { data } = await userApi.post<CreateUserAPIKeyResponse>(
     `/tenants/${tenantId}/api-keys`,
     payload,
@@ -127,32 +148,45 @@ export async function createTenantAPIKey(
   return data;
 }
 
-export async function revokeTenantAPIKey(tenantId: string, apiKeyId: string) {
+/** Revoke a tenant API key */
+export async function revokeTenantAPIKey(
+  tenantId: string,
+  apiKeyId: string,
+): Promise<UserAPIKey> {
   const { data } = await userApi.post<UserAPIKey>(
     `/tenants/${tenantId}/api-keys/${apiKeyId}/revoke`,
   );
   return data;
 }
 
+/** Rotate a tenant API key */
 export async function rotateTenantAPIKey(
   tenantId: string,
   apiKeyId: string,
-) {
+): Promise<CreateUserAPIKeyResponse> {
   const { data } = await userApi.post<CreateUserAPIKeyResponse>(
     `/tenants/${tenantId}/api-keys/${apiKeyId}/rotate`,
   );
   return data;
 }
 
+/** Get usage for a tenant API key */
 export async function getTenantAPIKeyUsage(
   tenantId: string,
   apiKeyId: string,
   period = "30d",
-) {
+): Promise<ApiKeyUsageSummary> {
   const timezone = getBrowserTimezone();
-  const { data } = await userApi.get<APIKeyUsageSummary>(
+  const { data } = await userApi.get<ApiKeyUsageSummary>(
     `/tenants/${tenantId}/api-keys/${apiKeyId}/usage`,
     { params: { period, timezone } },
   );
   return data;
 }
+
+// ============================================================================
+// Exported Resources (for advanced usage)
+// ============================================================================
+
+export const userApiKeysResource = apiKeysResource;
+export const userTenantApiKeysResource = tenantApiKeysResource;

@@ -1,83 +1,57 @@
+/**
+ * Admin Batches API
+ *
+ * This module provides admin-level access to batch job management.
+ * Uses shared types from api/shared/types.ts.
+ */
+
 import { api } from "./client";
+import type {
+  AdminBatchRecord,
+  BatchCounts,
+  BatchErrorEntry,
+  BatchErrorList,
+  CursorPaginationParams,
+  CursorPaginatedResponse,
+} from "./shared/types";
 
-export interface BatchCounts {
-  total: number;
-  completed: number;
-  failed: number;
-  cancelled: number;
-}
+// ============================================================================
+// Types
+// ============================================================================
 
-export interface BatchErrorEntry {
-  code: string;
-  message: string;
-  param?: string;
-  line?: number | null;
-}
+/** Batch record type (alias for AdminBatchRecord) */
+export type BatchRecord = AdminBatchRecord;
 
-export interface BatchErrorList {
-  object: string;
-  data: BatchErrorEntry[];
-}
-
-export interface BatchRecord {
-  id: string;
-  tenant_id: string;
-  tenant_name?: string;
-  api_key_id: string;
-  endpoint: string;
-  status: string;
-  completion_window: string;
-  max_concurrency: number;
-  metadata?: Record<string, string>;
-  input_file_id: string;
-  output_file_id?: string | null;
-  error_file_id?: string | null;
-  created_at: string;
-  updated_at: string;
-  in_progress_at?: string | null;
-  completed_at?: string | null;
-  cancelled_at?: string | null;
-  cancelling_at?: string | null;
-  finalizing_at?: string | null;
-  failed_at?: string | null;
-  expires_at?: string | null;
-  expired_at?: string | null;
-  counts: BatchCounts;
-  errors?: BatchErrorList;
-}
-
-export interface ListTenantBatchesResponse {
-  object: string;
-  data: BatchRecord[];
+/** Response for listing tenant batches */
+export interface ListTenantBatchesResponse extends CursorPaginatedResponse<BatchRecord> {
   tenant?: string;
-  has_more: boolean;
-  first_id?: string;
-  last_id?: string;
 }
 
-export interface ListBatchesParams {
-  limit?: number;
-  after?: string;
-}
+/** Parameters for listing batches */
+export interface ListBatchesParams extends CursorPaginationParams {}
 
-export interface ListAdminBatchesResponse {
-  object: string;
-  data: BatchRecord[];
-  has_more: boolean;
-  first_id?: string;
-  last_id?: string;
-}
+/** Response for listing admin batches */
+export interface ListAdminBatchesResponse extends CursorPaginatedResponse<BatchRecord> {}
 
-export interface ListAdminBatchesParams extends ListBatchesParams {
+/** Parameters for listing admin batches */
+export interface ListAdminBatchesParams extends CursorPaginationParams {
   tenant_id?: string;
   status?: string;
   q?: string;
 }
 
+// Re-export shared types for convenience
+export type { BatchCounts, BatchErrorEntry, BatchErrorList };
+
+// ============================================================================
+// Tenant Batch Functions
+// ============================================================================
+
+/** List batches for a specific tenant */
 export async function listTenantBatches(
   tenantId: string,
   params?: ListBatchesParams,
-) {
+): Promise<ListTenantBatchesResponse> {
   const { data } = await api.get<ListTenantBatchesResponse>(
     `/tenants/${tenantId}/batches`,
     { params },
@@ -85,21 +59,20 @@ export async function listTenantBatches(
   return data;
 }
 
-export async function listBatches(params?: ListAdminBatchesParams) {
-  const { data } = await api.get<ListAdminBatchesResponse>("/batches", {
-    params,
-  });
+/** Get a specific batch for a tenant */
+export async function getTenantBatch(
+  tenantId: string,
+  batchId: string,
+): Promise<BatchRecord> {
+  const { data } = await api.get<BatchRecord>(`/tenants/${tenantId}/batches/${batchId}`);
   return data;
 }
 
-export async function getTenantBatch(tenantId: string, batchId: string) {
-  const { data } = await api.get<BatchRecord>(
-    `/tenants/${tenantId}/batches/${batchId}`,
-  );
-  return data;
-}
-
-export async function cancelTenantBatch(tenantId: string, batchId: string) {
+/** Cancel a batch for a tenant */
+export async function cancelTenantBatch(
+  tenantId: string,
+  batchId: string,
+): Promise<BatchRecord> {
   const { data } = await api.post<BatchRecord>(
     `/tenants/${tenantId}/batches/${batchId}/cancel`,
     {},
@@ -107,7 +80,20 @@ export async function cancelTenantBatch(tenantId: string, batchId: string) {
   return data;
 }
 
-export async function cancelBatch(batchId: string) {
+// ============================================================================
+// Admin Batch Functions
+// ============================================================================
+
+/** List all batches (admin view) */
+export async function listBatches(
+  params?: ListAdminBatchesParams,
+): Promise<ListAdminBatchesResponse> {
+  const { data } = await api.get<ListAdminBatchesResponse>("/batches", { params });
+  return data;
+}
+
+/** Cancel a batch by ID (admin) */
+export async function cancelBatch(batchId: string): Promise<BatchRecord> {
   const { data } = await api.post<BatchRecord>(`/batches/${batchId}/cancel`, {});
   return data;
 }

@@ -1,10 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  TenantModelRow,
-  renderMemberBudget,
-} from "../TenantsPage";
+import { TenantModelRow, renderMemberBudget } from "../../features/tenants";
 import type { TenantModelEntry } from "@/api/user/tenants";
 
 describe("tenant model access UI", () => {

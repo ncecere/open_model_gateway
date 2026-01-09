@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) TenantDailyUsage(ctx context.Context, tenantID uuid.UUID, start, end time.Time, timezone string) (TenantDailyUsageResponse, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return TenantDailyUsageResponse{}, errors.New("usage service not initialized")
 	}
 	if tenantID == uuid.Nil {
@@ -40,7 +40,7 @@ func (s *Service) TenantDailyUsage(ctx context.Context, tenantID uuid.UUID, star
 		endDay = startDay.AddDate(0, 0, 1)
 	}
 
-	dailyRows, err := s.queries.AggregateTenantUsageDaily(ctx, db.AggregateTenantUsageDailyParams{
+	dailyRows, err := s.repo.AggregateTenantUsageDaily(ctx, db.AggregateTenantUsageDailyParams{
 		TenantID: toPgUUID(tenantID),
 		Ts:       toPgTime(startDay),
 		Ts_2:     toPgTime(endDay),
@@ -49,7 +49,7 @@ func (s *Service) TenantDailyUsage(ctx context.Context, tenantID uuid.UUID, star
 	if err != nil {
 		return TenantDailyUsageResponse{}, err
 	}
-	keyRows, err := s.queries.AggregateTenantUsageDailyByAPIKeys(ctx, db.AggregateTenantUsageDailyByAPIKeysParams{
+	keyRows, err := s.repo.AggregateTenantUsageDailyByAPIKeys(ctx, db.AggregateTenantUsageDailyByAPIKeysParams{
 		TenantID: toPgUUID(tenantID),
 		Ts:       toPgTime(startDay),
 		Ts_2:     toPgTime(endDay),
@@ -134,7 +134,7 @@ func (s *Service) TenantDailyUsage(ctx context.Context, tenantID uuid.UUID, star
 // UserDailyUsage aggregates daily totals for a user with per-tenant breakdowns.
 
 func (s *Service) UserDailyUsage(ctx context.Context, userID uuid.UUID, start, end time.Time, timezone string) (UserDailyUsageResponse, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return UserDailyUsageResponse{}, errors.New("usage service not initialized")
 	}
 	if userID == uuid.Nil {
@@ -161,7 +161,7 @@ func (s *Service) UserDailyUsage(ctx context.Context, userID uuid.UUID, start, e
 		endDay = startDay.AddDate(0, 0, 1)
 	}
 
-	userRows, err := s.queries.AggregateUsageDailyByUsers(ctx, db.AggregateUsageDailyByUsersParams{
+	userRows, err := s.repo.AggregateUsageDailyByUsers(ctx, db.AggregateUsageDailyByUsersParams{
 		Column1: toPgUUIDArray([]uuid.UUID{userID}),
 		Ts:      toPgTime(startDay),
 		Ts_2:    toPgTime(endDay),
@@ -173,7 +173,7 @@ func (s *Service) UserDailyUsage(ctx context.Context, userID uuid.UUID, start, e
 	userDaily := groupUserDailyAggregates(userRows, loc)
 	dailyTotals := userDaily[userID.String()]
 
-	tenantRows, err := s.queries.AggregateUserUsageDailyByTenants(ctx, db.AggregateUserUsageDailyByTenantsParams{
+	tenantRows, err := s.repo.AggregateUserUsageDailyByTenants(ctx, db.AggregateUserUsageDailyByTenantsParams{
 		OwnerUserID: toPgUUID(userID),
 		Ts:          toPgTime(startDay),
 		Ts_2:        toPgTime(endDay),
@@ -243,7 +243,7 @@ func (s *Service) UserDailyUsage(ctx context.Context, userID uuid.UUID, start, e
 // ModelDailyUsage aggregates daily totals for a model alias with per-tenant breakdowns.
 
 func (s *Service) ModelDailyUsage(ctx context.Context, alias string, start, end time.Time, timezone string, tenantScope []uuid.UUID) (ModelDailyUsageResponse, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return ModelDailyUsageResponse{}, errors.New("usage service not initialized")
 	}
 	alias = strings.TrimSpace(alias)
@@ -277,7 +277,7 @@ func (s *Service) ModelDailyUsage(ctx context.Context, alias string, start, end 
 	for _, id := range scopeIDs {
 		allowedTenants[id.String()] = struct{}{}
 	}
-	modelRows, err := s.queries.AggregateUsageDailyByModels(ctx, db.AggregateUsageDailyByModelsParams{
+	modelRows, err := s.repo.AggregateUsageDailyByModels(ctx, db.AggregateUsageDailyByModelsParams{
 		Column1: []string{alias},
 		Ts:      toPgTime(startDay),
 		Ts_2:    toPgTime(endDay),
@@ -290,7 +290,7 @@ func (s *Service) ModelDailyUsage(ctx context.Context, alias string, start, end 
 	modelDaily := groupModelDailyAggregates(modelRows, loc)
 	dailyTotals := modelDaily[alias]
 
-	tenantRows, err := s.queries.AggregateModelUsageDailyByTenants(ctx, db.AggregateModelUsageDailyByTenantsParams{
+	tenantRows, err := s.repo.AggregateModelUsageDailyByTenants(ctx, db.AggregateModelUsageDailyByTenantsParams{
 		ModelAlias: alias,
 		Ts:         toPgTime(startDay),
 		Ts_2:       toPgTime(endDay),

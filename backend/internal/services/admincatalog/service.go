@@ -26,13 +26,19 @@ type ReloadFunc func(ctx context.Context) error
 
 // Service wraps admin model catalog operations.
 type Service struct {
-	queries *db.Queries
-	reload  ReloadFunc
+	repo   Repository
+	reload ReloadFunc
 }
 
 // NewService constructs a catalog service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries, reload ReloadFunc) *Service {
-	return &Service{queries: queries, reload: reload}
+	return NewServiceWithRepository(NewQueriesRepository(queries), reload)
+}
+
+// NewServiceWithRepository constructs a catalog service with a Repository interface.
+func NewServiceWithRepository(repo Repository, reload ReloadFunc) *Service {
+	return &Service{repo: repo, reload: reload}
 }
 
 // ModelPayload represents the upsert request body.
@@ -63,10 +69,10 @@ type ModelPayload struct {
 
 // List returns the model catalog entries.
 func (s *Service) List(ctx context.Context) ([]db.ModelCatalog, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	items, err := s.queries.ListModelCatalog(ctx)
+	items, err := s.repo.ListModelCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +84,7 @@ func (s *Service) List(ctx context.Context) ([]db.ModelCatalog, error) {
 
 // Upsert validates and saves a catalog entry, reloading the router afterwards.
 func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCatalog, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.ModelCatalog{}, ErrServiceUnavailable
 	}
 	alias := strings.TrimSpace(payload.Alias)
@@ -227,7 +233,7 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 		params.Currency = "USD"
 	}
 
-	entry, err := s.queries.UpsertModelCatalogEntry(ctx, params)
+	entry, err := s.repo.UpsertModelCatalogEntry(ctx, params)
 	if err != nil {
 		return db.ModelCatalog{}, err
 	}
@@ -242,14 +248,14 @@ func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCat
 
 // Remove deletes an entry and reloads the router.
 func (s *Service) Remove(ctx context.Context, alias string) error {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return ErrServiceUnavailable
 	}
 	alias = strings.TrimSpace(alias)
 	if alias == "" {
 		return ErrAliasRequired
 	}
-	if err := s.queries.DeleteModelCatalogEntry(ctx, alias); err != nil {
+	if err := s.repo.DeleteModelCatalogEntry(ctx, alias); err != nil {
 		return err
 	}
 	if s.reload != nil {

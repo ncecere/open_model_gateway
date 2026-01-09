@@ -19,7 +19,7 @@ func (s *Service) buildTenantCompareSeries(ctx context.Context, tenantIDs []uuid
 		return nil, nil
 	}
 	pgIDs := toPgUUIDArray(tenantIDs)
-	metaRows, err := s.queries.ListTenantsByIDs(ctx, pgIDs)
+	metaRows, err := s.repo.ListTenantsByIDs(ctx, pgIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +27,7 @@ func (s *Service) buildTenantCompareSeries(ctx context.Context, tenantIDs []uuid
 	for _, row := range metaRows {
 		meta[pgUUIDString(row.ID)] = row
 	}
-	totalRows, err := s.queries.SumUsageByTenants(ctx, db.SumUsageByTenantsParams{
+	totalRows, err := s.repo.SumUsageByTenants(ctx, db.SumUsageByTenantsParams{
 		Column1: pgIDs,
 		Ts:      toPgTime(start),
 		Ts_2:    toPgTime(end),
@@ -45,7 +45,7 @@ func (s *Service) buildTenantCompareSeries(ctx context.Context, tenantIDs []uuid
 			CostUSD:   microsToUSD(row.TotalCostUsdMicros),
 		}
 	}
-	dailyRows, err := s.queries.AggregateUsageDailyByTenants(ctx, db.AggregateUsageDailyByTenantsParams{
+	dailyRows, err := s.repo.AggregateUsageDailyByTenants(ctx, db.AggregateUsageDailyByTenantsParams{
 		Column1: pgIDs,
 		Ts:      toPgTime(start),
 		Ts_2:    toPgTime(end),
@@ -114,7 +114,7 @@ func (s *Service) buildModelCompareSeries(ctx context.Context, aliases []string,
 	if len(aliases) == 0 {
 		return nil, nil
 	}
-	metaRows, err := s.queries.ListModelCatalogByAliases(ctx, aliases)
+	metaRows, err := s.repo.ListModelCatalogByAliases(ctx, aliases)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (s *Service) buildModelCompareSeries(ctx context.Context, aliases []string,
 	for _, row := range metaRows {
 		meta[row.Alias] = row
 	}
-	totalRows, err := s.queries.SumUsageByModels(ctx, db.SumUsageByModelsParams{
+	totalRows, err := s.repo.SumUsageByModels(ctx, db.SumUsageByModelsParams{
 		Column1: aliases,
 		Ts:      toPgTime(start),
 		Ts_2:    toPgTime(end),
@@ -140,7 +140,7 @@ func (s *Service) buildModelCompareSeries(ctx context.Context, aliases []string,
 			CostUSD:   microsToUSD(row.TotalCostUsdMicros),
 		}
 	}
-	dailyRows, err := s.queries.AggregateUsageDailyByModels(ctx, db.AggregateUsageDailyByModelsParams{
+	dailyRows, err := s.repo.AggregateUsageDailyByModels(ctx, db.AggregateUsageDailyByModelsParams{
 		Column1: aliases,
 		Ts:      toPgTime(start),
 		Ts_2:    toPgTime(end),
@@ -198,7 +198,7 @@ func (s *Service) buildModelCompareSeries(ctx context.Context, aliases []string,
 
 func (s *Service) ModelPerformance(ctx context.Context, start, end time.Time) (map[string]ModelPerformanceStats, error) {
 	result := make(map[string]ModelPerformanceStats)
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return result, nil
 	}
 	if end.Before(start) {
@@ -208,7 +208,7 @@ func (s *Service) ModelPerformance(ctx context.Context, start, end time.Time) (m
 	if windowSeconds <= 0 {
 		windowSeconds = 1
 	}
-	metricRows, err := s.queries.AggregateRequestMetricsByModel(ctx, db.AggregateRequestMetricsByModelParams{
+	metricRows, err := s.repo.AggregateRequestMetricsByModel(ctx, db.AggregateRequestMetricsByModelParams{
 		Ts:   toPgTime(start),
 		Ts_2: toPgTime(end),
 	})
@@ -224,7 +224,7 @@ func (s *Service) ModelPerformance(ctx context.Context, start, end time.Time) (m
 		}
 		result[row.ModelAlias] = stats
 	}
-	latencyRows, err := s.queries.AggregateLatencyByModel(ctx, db.AggregateLatencyByModelParams{
+	latencyRows, err := s.repo.AggregateLatencyByModel(ctx, db.AggregateLatencyByModelParams{
 		Ts:   toPgTime(start),
 		Ts_2: toPgTime(end),
 	})
@@ -247,7 +247,7 @@ func (s *Service) buildUserCompareSeries(ctx context.Context, userIDs []uuid.UUI
 		return nil, nil
 	}
 	pgIDs := toPgUUIDArray(userIDs)
-	metaRows, err := s.queries.ListUsersByIDs(ctx, pgIDs)
+	metaRows, err := s.repo.ListUsersByIDs(ctx, pgIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func (s *Service) buildUserCompareSeries(ctx context.Context, userIDs []uuid.UUI
 	for _, row := range metaRows {
 		meta[pgUUIDString(row.ID)] = row
 	}
-	totalRows, err := s.queries.SumUsageByUsers(ctx, db.SumUsageByUsersParams{
+	totalRows, err := s.repo.SumUsageByUsers(ctx, db.SumUsageByUsersParams{
 		Column1: pgIDs,
 		Ts:      toPgTime(start),
 		Ts_2:    toPgTime(end),
@@ -273,7 +273,7 @@ func (s *Service) buildUserCompareSeries(ctx context.Context, userIDs []uuid.UUI
 			CostUSD:   microsToUSD(row.TotalCostUsdMicros),
 		}
 	}
-	dailyRows, err := s.queries.AggregateUsageDailyByUsers(ctx, db.AggregateUsageDailyByUsersParams{
+	dailyRows, err := s.repo.AggregateUsageDailyByUsers(ctx, db.AggregateUsageDailyByUsersParams{
 		Column1: pgIDs,
 		Ts:      toPgTime(start),
 		Ts_2:    toPgTime(end),
@@ -317,7 +317,7 @@ func (s *Service) buildUserCompareSeries(ctx context.Context, userIDs []uuid.UUI
 // CompareUsage returns parallel usage series for the requested tenants/models so dashboards can overlay them.
 
 func (s *Service) CompareUsage(ctx context.Context, params CompareUsageParams) (MultiEntityUsage, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return MultiEntityUsage{}, errors.New("usage service not initialized")
 	}
 	period := strings.TrimSpace(params.Period)

@@ -13,11 +13,18 @@ import (
 
 // Service provides RBAC helpers for admin surfaces.
 type Service struct {
-	queries *db.Queries
+	repo rbac.Repository
 }
 
+// NewService builds an admin RBAC service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries) *Service {
-	return &Service{queries: queries}
+	return NewServiceWithRepository(rbac.NewQueriesRepository(queries))
+}
+
+// NewServiceWithRepository builds an admin RBAC service with a Repository interface.
+func NewServiceWithRepository(repo rbac.Repository) *Service {
+	return &Service{repo: repo}
 }
 
 var (
@@ -30,10 +37,10 @@ func (s *Service) RequireTenantRole(ctx context.Context, tenantID, userID uuid.U
 	if superAdmin {
 		return nil
 	}
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return errors.New("rbac service not initialized")
 	}
-	_, err := rbac.Ensure(ctx, s.queries, tenantID, userID, role)
+	_, err := rbac.EnsureWithRepo(ctx, s.repo, tenantID, userID, role)
 	if err != nil {
 		if err == rbac.ErrForbidden || err == pgx.ErrNoRows {
 			return ErrForbidden
@@ -48,10 +55,10 @@ func (s *Service) RequireAnyRole(ctx context.Context, userID uuid.UUID, role db.
 	if superAdmin {
 		return nil
 	}
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return errors.New("rbac service not initialized")
 	}
-	_, err := rbac.EnsureAny(ctx, s.queries, userID, role)
+	_, err := rbac.EnsureAnyWithRepo(ctx, s.repo, userID, role)
 	if err != nil {
 		if err == rbac.ErrForbidden || err == pgx.ErrNoRows {
 			return ErrForbidden

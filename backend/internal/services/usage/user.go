@@ -15,7 +15,7 @@ import (
 )
 
 func (s *Service) SummarizeUserUsage(ctx context.Context, user db.User, period string, tenantFilter *uuid.UUID, timezone string, startOverride, endOverride *time.Time) (UserSummary, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return UserSummary{}, errors.New("usage service not initialized")
 	}
 
@@ -126,7 +126,7 @@ func (s *Service) SummarizeUserUsage(ctx context.Context, user db.User, period s
 		entries = append(entries, scopeEntry{scope: scope, tenant: uuid.Nil})
 	}
 
-	ownedTenants, err := s.queries.ListUserOwnedTenants(ctx, user.ID)
+	ownedTenants, err := s.repo.ListUserOwnedTenants(ctx, user.ID)
 	if err != nil {
 		return UserSummary{}, err
 	}
@@ -206,7 +206,7 @@ func (s *Service) SummarizeUserUsage(ctx context.Context, user db.User, period s
 // SummarizeAPIKeyUsage aggregates usage for a single API key owned by the caller over the requested period.
 
 func (s *Service) SummarizeAPIKeyUsage(ctx context.Context, key db.ApiKey, period, timezone string) (APIKeyUsageSummary, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return APIKeyUsageSummary{}, errors.New("usage service not initialized")
 	}
 	window, err := s.newWindow(period, timezone)
@@ -219,7 +219,7 @@ func (s *Service) SummarizeAPIKeyUsage(ctx context.Context, key db.ApiKey, perio
 	loc := window.Location()
 	zone := window.Timezone()
 	start, end := window.Bounds()
-	sum, err := s.queries.SumUsageForAPIKey(ctx, db.SumUsageForAPIKeyParams{
+	sum, err := s.repo.SumUsageForAPIKey(ctx, db.SumUsageForAPIKeyParams{
 		ApiKeyID: key.ID,
 		Ts:       toPgTime(start),
 		Ts_2:     toPgTime(end),
@@ -227,7 +227,7 @@ func (s *Service) SummarizeAPIKeyUsage(ctx context.Context, key db.ApiKey, perio
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return APIKeyUsageSummary{}, err
 	}
-	rows, err := s.queries.AggregateAPIKeyUsageDaily(ctx, db.AggregateAPIKeyUsageDailyParams{
+	rows, err := s.repo.AggregateAPIKeyUsageDaily(ctx, db.AggregateAPIKeyUsageDailyParams{
 		ApiKeyID: key.ID,
 		Ts:       toPgTime(start),
 		Ts_2:     toPgTime(end),
@@ -258,7 +258,7 @@ func (s *Service) sumUsageForUserTenant(ctx context.Context, user db.User, tenan
 		return UsageTotals{}, nil
 	}
 	start, end := window.Bounds()
-	sum, err := s.queries.SumUsageForUserTenant(ctx, db.SumUsageForUserTenantParams{
+	sum, err := s.repo.SumUsageForUserTenant(ctx, db.SumUsageForUserTenantParams{
 		OwnerUserID: user.ID,
 		TenantID:    toPgUUID(tenantID),
 		Ts:          toPgTime(start),
@@ -289,7 +289,7 @@ func (s *Service) buildScopeDetail(ctx context.Context, user db.User, entry scop
 	zone := window.Timezone()
 	loc := window.Location()
 
-	rows, err := s.queries.AggregateUsageDailyForUserTenant(ctx, db.AggregateUsageDailyForUserTenantParams{
+	rows, err := s.repo.AggregateUsageDailyForUserTenant(ctx, db.AggregateUsageDailyForUserTenantParams{
 		OwnerUserID: user.ID,
 		TenantID:    toPgUUID(entry.tenant),
 		Ts:          toPgTime(start),
@@ -383,7 +383,7 @@ func buildAPIKeyUsagePoints(start, end time.Time, rows []db.AggregateAPIKeyUsage
 func (s *Service) summarizeKeysForTenant(ctx context.Context, user db.User, tenantID uuid.UUID, window timeutil.Window) ([]APIKeyUsageDigest, []RecentRequest, error) {
 	start, end := window.Bounds()
 	loc := window.Location()
-	keys, err := s.queries.ListAPIKeysByOwnerAndTenant(ctx, db.ListAPIKeysByOwnerAndTenantParams{
+	keys, err := s.repo.ListAPIKeysByOwnerAndTenant(ctx, db.ListAPIKeysByOwnerAndTenantParams{
 		OwnerUserID: user.ID,
 		TenantID:    toPgUUID(tenantID),
 	})
@@ -397,7 +397,7 @@ func (s *Service) summarizeKeysForTenant(ctx context.Context, user db.User, tena
 	keyIDs := make([]pgtype.UUID, 0, len(keys))
 	nameMap := make(map[string]string, len(keys))
 	for _, key := range keys {
-		sum, err := s.queries.SumUsageForAPIKey(ctx, db.SumUsageForAPIKeyParams{
+		sum, err := s.repo.SumUsageForAPIKey(ctx, db.SumUsageForAPIKeyParams{
 			ApiKeyID: key.ID,
 			Ts:       toPgTime(start),
 			Ts_2:     toPgTime(end),
@@ -426,7 +426,7 @@ func (s *Service) summarizeKeysForTenant(ctx context.Context, user db.User, tena
 	if len(keyIDs) == 0 {
 		return digests, nil, nil
 	}
-	reqs, err := s.queries.ListRecentRequestsByAPIKeys(ctx, db.ListRecentRequestsByAPIKeysParams{
+	reqs, err := s.repo.ListRecentRequestsByAPIKeys(ctx, db.ListRecentRequestsByAPIKeysParams{
 		Column1: keyIDs,
 		Limit:   10,
 	})

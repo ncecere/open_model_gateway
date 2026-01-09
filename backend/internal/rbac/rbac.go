@@ -44,8 +44,14 @@ func AtLeast(current, required db.MembershipRole) bool {
 var ErrForbidden = errors.New("forbidden")
 
 // Ensure enforces that the user has the required role for the tenant.
+// Deprecated: Use EnsureWithRepo for new code.
 func Ensure(ctx context.Context, queries *db.Queries, tenantID uuid.UUID, userID uuid.UUID, required db.MembershipRole) (db.TenantMembership, error) {
-	membership, err := queries.GetTenantMembership(ctx, db.GetTenantMembershipParams{
+	return EnsureWithRepo(ctx, NewQueriesRepository(queries), tenantID, userID, required)
+}
+
+// EnsureWithRepo enforces that the user has the required role for the tenant.
+func EnsureWithRepo(ctx context.Context, repo Repository, tenantID uuid.UUID, userID uuid.UUID, required db.MembershipRole) (db.TenantMembership, error) {
+	membership, err := repo.GetTenantMembership(ctx, db.GetTenantMembershipParams{
 		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
 		UserID:   pgtype.UUID{Bytes: userID, Valid: true},
 	})
@@ -60,8 +66,14 @@ func Ensure(ctx context.Context, queries *db.Queries, tenantID uuid.UUID, userID
 }
 
 // EnsureAny verifies that the user holds at least the required role for any tenant membership.
+// Deprecated: Use EnsureAnyWithRepo for new code.
 func EnsureAny(ctx context.Context, queries *db.Queries, userID uuid.UUID, required db.MembershipRole) (db.ListUserTenantsRow, error) {
-	memberships, err := queries.ListUserTenants(ctx, pgtype.UUID{Bytes: userID, Valid: true})
+	return EnsureAnyWithRepo(ctx, NewQueriesRepository(queries), userID, required)
+}
+
+// EnsureAnyWithRepo verifies that the user holds at least the required role for any tenant membership.
+func EnsureAnyWithRepo(ctx context.Context, repo Repository, userID uuid.UUID, required db.MembershipRole) (db.ListUserTenantsRow, error) {
+	memberships, err := repo.ListUserTenants(ctx, pgtype.UUID{Bytes: userID, Valid: true})
 	if err != nil {
 		return db.ListUserTenantsRow{}, err
 	}

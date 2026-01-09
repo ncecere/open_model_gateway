@@ -23,12 +23,19 @@ var (
 
 // Service wraps DB + config helpers for admin budget operations.
 type Service struct {
-	queries *db.Queries
-	cfg     *config.Config
+	repo Repository
+	cfg  *config.Config
 }
 
+// NewService builds an admin budget service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries, cfg *config.Config) *Service {
-	return &Service{queries: queries, cfg: cfg}
+	return NewServiceWithRepository(NewQueriesRepository(queries), cfg)
+}
+
+// NewServiceWithRepository builds an admin budget service with a Repository interface.
+func NewServiceWithRepository(repo Repository, cfg *config.Config) *Service {
+	return &Service{repo: repo, cfg: cfg}
 }
 
 type DefaultUpdate struct {
@@ -51,7 +58,7 @@ type OverrideRequest struct {
 }
 
 func (s *Service) UpdateDefaults(ctx context.Context, req DefaultUpdate) (db.BudgetDefault, error) {
-	if s == nil || s.queries == nil || s.cfg == nil {
+	if s == nil || s.repo == nil || s.cfg == nil {
 		return db.BudgetDefault{}, ErrServiceUnavailable
 	}
 	if req.DefaultUSD <= 0 {
@@ -67,7 +74,7 @@ func (s *Service) UpdateDefaults(ctx context.Context, req DefaultUpdate) (db.Bud
 	if cooldown <= 0 {
 		cooldown = int32(time.Hour / time.Second)
 	}
-	return s.queries.UpsertBudgetDefaults(ctx, db.UpsertBudgetDefaultsParams{
+	return s.repo.UpsertBudgetDefaults(ctx, db.UpsertBudgetDefaultsParams{
 		DefaultUsd:           decimal.NewFromFloat(req.DefaultUSD).Round(2),
 		WarningThreshold:     decimal.NewFromFloat(req.WarningThreshold),
 		RefreshSchedule:      refresh,
@@ -80,28 +87,28 @@ func (s *Service) UpdateDefaults(ctx context.Context, req DefaultUpdate) (db.Bud
 }
 
 func (s *Service) GetDefaults(ctx context.Context) (db.BudgetDefault, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.BudgetDefault{}, ErrServiceUnavailable
 	}
-	return s.queries.GetBudgetDefaults(ctx)
+	return s.repo.GetBudgetDefaults(ctx)
 }
 
 func (s *Service) ListOverrides(ctx context.Context) ([]db.TenantBudgetOverride, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.queries.ListTenantBudgetOverrides(ctx)
+	return s.repo.ListTenantBudgetOverrides(ctx)
 }
 
 func (s *Service) GetOverride(ctx context.Context, tenantID uuid.UUID) (db.TenantBudgetOverride, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.TenantBudgetOverride{}, ErrServiceUnavailable
 	}
-	return s.queries.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
+	return s.repo.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
 }
 
 func (s *Service) UpsertOverride(ctx context.Context, tenantID uuid.UUID, req OverrideRequest) (db.TenantBudgetOverride, error) {
-	if s == nil || s.queries == nil || s.cfg == nil {
+	if s == nil || s.repo == nil || s.cfg == nil {
 		return db.TenantBudgetOverride{}, ErrServiceUnavailable
 	}
 	if req.BudgetUSD <= 0 {
@@ -111,14 +118,14 @@ func (s *Service) UpsertOverride(ctx context.Context, tenantID uuid.UUID, req Ov
 		return db.TenantBudgetOverride{}, ErrInvalidThreshold
 	}
 	params := s.buildOverrideParams(tenantID, req)
-	return s.queries.UpsertTenantBudgetOverride(ctx, params)
+	return s.repo.UpsertTenantBudgetOverride(ctx, params)
 }
 
 func (s *Service) DeleteOverride(ctx context.Context, tenantID uuid.UUID) error {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return ErrServiceUnavailable
 	}
-	return s.queries.DeleteTenantBudgetOverride(ctx, toPgUUID(tenantID))
+	return s.repo.DeleteTenantBudgetOverride(ctx, toPgUUID(tenantID))
 }
 
 func (s *Service) buildOverrideParams(tenantID uuid.UUID, req OverrideRequest) db.UpsertTenantBudgetOverrideParams {

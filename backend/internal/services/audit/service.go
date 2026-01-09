@@ -14,11 +14,18 @@ import (
 
 // Service provides read access to admin audit logs.
 type Service struct {
-	queries *db.Queries
+	repo Repository
 }
 
+// NewService builds an audit service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries) *Service {
-	return &Service{queries: queries}
+	return NewServiceWithRepository(NewQueriesRepository(queries))
+}
+
+// NewServiceWithRepository builds an audit service with a Repository interface.
+func NewServiceWithRepository(repo Repository) *Service {
+	return &Service{repo: repo}
 }
 
 var ErrServiceUnavailable = errors.New("audit service not initialized")
@@ -44,7 +51,7 @@ type LogEntry struct {
 }
 
 func (s *Service) List(ctx context.Context, filter Filter) ([]LogEntry, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, errors.New("audit service not initialized")
 	}
 	limit := filter.Limit
@@ -58,7 +65,7 @@ func (s *Service) List(ctx context.Context, filter Filter) ([]LogEntry, error) {
 		ListOffset:     filter.Offset,
 		ListLimit:      limit,
 	}
-	rows, err := s.queries.ListAuditLogs(ctx, params)
+	rows, err := s.repo.ListAuditLogs(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -93,10 +100,10 @@ func (s *Service) List(ctx context.Context, filter Filter) ([]LogEntry, error) {
 
 // Record inserts an audit log row.
 func (s *Service) Record(ctx context.Context, params db.InsertAuditLogParams) error {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return ErrServiceUnavailable
 	}
-	_, err := s.queries.InsertAuditLog(ctx, params)
+	_, err := s.repo.InsertAuditLog(ctx, params)
 	return err
 }
 

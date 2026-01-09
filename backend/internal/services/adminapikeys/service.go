@@ -35,8 +35,8 @@ var (
 )
 
 type Service struct {
-	queries *db.Queries
-	now     func() time.Time
+	repo Repository
+	now  func() time.Time
 }
 
 type CreateParams struct {
@@ -52,15 +52,22 @@ type CreateResult struct {
 	Token string
 }
 
+// NewService builds an admin API key service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries) *Service {
+	return NewServiceWithRepository(NewQueriesRepository(queries))
+}
+
+// NewServiceWithRepository builds an admin API key service with a Repository interface.
+func NewServiceWithRepository(repo Repository) *Service {
 	return &Service{
-		queries: queries,
-		now:     time.Now,
+		repo: repo,
+		now:  time.Now,
 	}
 }
 
 func (s *Service) Create(ctx context.Context, params CreateParams) (CreateResult, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return CreateResult{}, ErrServiceUnavailable
 	}
 	name := strings.TrimSpace(params.Name)
@@ -108,7 +115,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (CreateResult
 	if params.OwnerUserID != nil && *params.OwnerUserID != uuid.Nil {
 		owner = toPgUUID(*params.OwnerUserID)
 	}
-	record, err := s.queries.CreateAdminAPIKey(ctx, db.CreateAdminAPIKeyParams{
+	record, err := s.repo.CreateAdminAPIKey(ctx, db.CreateAdminAPIKeyParams{
 		Name:            name,
 		Prefix:          prefix,
 		SecretHash:      hash,
@@ -125,17 +132,17 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (CreateResult
 }
 
 func (s *Service) List(ctx context.Context) ([]db.ListAdminAPIKeysRow, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.queries.ListAdminAPIKeys(ctx)
+	return s.repo.ListAdminAPIKeys(ctx)
 }
 
 func (s *Service) ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]db.ListAdminAPIKeysRow, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	rows, err := s.queries.ListAdminAPIKeysByOwner(ctx, toPgUUID(ownerID))
+	rows, err := s.repo.ListAdminAPIKeysByOwner(ctx, toPgUUID(ownerID))
 	if err != nil {
 		return nil, err
 	}
@@ -147,28 +154,28 @@ func (s *Service) ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]db.List
 }
 
 func (s *Service) Revoke(ctx context.Context, id uuid.UUID) (db.AdminApiKey, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.AdminApiKey{}, ErrServiceUnavailable
 	}
-	return s.queries.RevokeAdminAPIKey(ctx, toPgUUID(id))
+	return s.repo.RevokeAdminAPIKey(ctx, toPgUUID(id))
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (db.AdminApiKey, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.AdminApiKey{}, ErrServiceUnavailable
 	}
-	return s.queries.GetAdminAPIKeyByID(ctx, toPgUUID(id))
+	return s.repo.GetAdminAPIKeyByID(ctx, toPgUUID(id))
 }
 
 func (s *Service) Authorize(ctx context.Context, token string) (db.User, db.AdminApiKey, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.User{}, db.AdminApiKey{}, ErrServiceUnavailable
 	}
 	prefix, secret, err := splitToken(token)
 	if err != nil {
 		return db.User{}, db.AdminApiKey{}, ErrTokenInvalid
 	}
-	record, err := s.queries.GetAdminAPIKeyByPrefix(ctx, prefix)
+	record, err := s.repo.GetAdminAPIKeyByPrefix(ctx, prefix)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return db.User{}, db.AdminApiKey{}, ErrTokenInvalid
@@ -198,11 +205,11 @@ func (s *Service) Authorize(ctx context.Context, token string) (db.User, db.Admi
 		}
 	}
 
-	user, err := s.queries.GetUserByID(ctx, userID)
+	user, err := s.repo.GetUserByID(ctx, userID)
 	if err != nil {
 		return db.User{}, db.AdminApiKey{}, ErrTokenInvalid
 	}
-	_ = s.queries.UpdateAdminAPIKeyLastUsed(ctx, record.ID)
+	_ = s.repo.UpdateAdminAPIKeyLastUsed(ctx, record.ID)
 	return user, record, nil
 }
 

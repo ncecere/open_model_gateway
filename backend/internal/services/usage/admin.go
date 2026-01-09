@@ -15,7 +15,7 @@ import (
 )
 
 func (s *Service) SummarizeAdminUsage(ctx context.Context, period string, tenantID *uuid.UUID, timezone string, startOverride, endOverride *time.Time) (AdminUsageSummary, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return AdminUsageSummary{}, errors.New("usage service not initialized")
 	}
 	var (
@@ -69,7 +69,7 @@ func (s *Service) SummarizeAdminUsage(ctx context.Context, period string, tenant
 		tenantRef = &idCopy
 	}
 
-	sum, err := s.queries.SumUsage(ctx, db.SumUsageParams{
+	sum, err := s.repo.SumUsage(ctx, db.SumUsageParams{
 		Column1: tenantParam,
 		Ts:      toPgTime(start),
 		Ts_2:    toPgTime(end),
@@ -78,7 +78,7 @@ func (s *Service) SummarizeAdminUsage(ctx context.Context, period string, tenant
 		return AdminUsageSummary{}, err
 	}
 
-	dailyRows, err := s.queries.AggregateUsageDaily(ctx, db.AggregateUsageDailyParams{
+	dailyRows, err := s.repo.AggregateUsageDaily(ctx, db.AggregateUsageDailyParams{
 		Column1: tenantParam,
 		Ts:      toPgTime(start),
 		Ts_2:    toPgTime(end),
@@ -106,7 +106,7 @@ func (s *Service) SummarizeAdminUsage(ctx context.Context, period string, tenant
 // BreakdownAdminUsage returns aggregate lists + series grouped by tenant or model.
 
 func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdownParams) (AdminBreakdown, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return AdminBreakdown{}, errors.New("usage service not initialized")
 	}
 	var (
@@ -176,7 +176,7 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 
 	switch group {
 	case "tenant":
-		rows, err := s.queries.AggregateUsageByTenant(ctx, db.AggregateUsageByTenantParams{
+		rows, err := s.repo.AggregateUsageByTenant(ctx, db.AggregateUsageByTenantParams{
 			Ts:    toPgTime(start),
 			Ts_2:  toPgTime(end),
 			Limit: int32(limit),
@@ -206,7 +206,7 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 		}
 		if selected != "" {
 			if tenantUUID, err := uuid.Parse(selected); err == nil {
-				dailyRows, err := s.queries.AggregateTenantUsageDaily(ctx, db.AggregateTenantUsageDailyParams{
+				dailyRows, err := s.repo.AggregateTenantUsageDaily(ctx, db.AggregateTenantUsageDailyParams{
 					TenantID: toPgUUID(tenantUUID),
 					Ts:       toPgTime(start),
 					Ts_2:     toPgTime(end),
@@ -225,7 +225,7 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 			}
 		}
 	case "model":
-		rows, err := s.queries.AggregateUsageByModel(ctx, db.AggregateUsageByModelParams{
+		rows, err := s.repo.AggregateUsageByModel(ctx, db.AggregateUsageByModelParams{
 			Ts:    toPgTime(start),
 			Ts_2:  toPgTime(end),
 			Limit: int32(limit),
@@ -253,7 +253,7 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 			selected = result.Items[0].ID
 		}
 		if selected != "" {
-			dailyRows, err := s.queries.AggregateModelUsageDaily(ctx, db.AggregateModelUsageDailyParams{
+			dailyRows, err := s.repo.AggregateModelUsageDaily(ctx, db.AggregateModelUsageDailyParams{
 				ModelAlias: selected,
 				Ts:         toPgTime(start),
 				Ts_2:       toPgTime(end),
@@ -271,7 +271,7 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 			result.Series.Points = buildModelUsagePoints(start, end, dailyRows, loc)
 		}
 	case "user":
-		rows, err := s.queries.AggregateUsageByUser(ctx, db.AggregateUsageByUserParams{
+		rows, err := s.repo.AggregateUsageByUser(ctx, db.AggregateUsageByUserParams{
 			Ts:    toPgTime(start),
 			Ts_2:  toPgTime(end),
 			Limit: int32(limit),
@@ -309,7 +309,7 @@ func (s *Service) BreakdownAdminUsage(ctx context.Context, params AdminBreakdown
 		if selected != "" {
 			if userUUID, err := uuid.Parse(selected); err == nil {
 				pgIDs := toPgUUIDArray([]uuid.UUID{userUUID})
-				dailyRows, err := s.queries.AggregateUsageDailyByUsers(ctx, db.AggregateUsageDailyByUsersParams{
+				dailyRows, err := s.repo.AggregateUsageDailyByUsers(ctx, db.AggregateUsageDailyByUsersParams{
 					Column1: pgIDs,
 					Ts:      toPgTime(start),
 					Ts_2:    toPgTime(end),

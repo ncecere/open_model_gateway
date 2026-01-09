@@ -23,7 +23,7 @@ import (
 
 // Service centralizes admin-facing tenant operations.
 type Service struct {
-	queries         *db.Queries
+	repo            Repository
 	cfg             *config.Config
 	timezone        *time.Location
 	dbPool          *pgxpool.Pool
@@ -35,13 +35,19 @@ type Service struct {
 }
 
 // NewService builds an admin tenant service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(cfg *config.Config, queries *db.Queries, tz *time.Location, pool *pgxpool.Pool, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, setTenantModels func(uuid.UUID, []string), setTenantRate func(uuid.UUID, *limits.LimitConfig), setAPIKeyRate func(string, *limits.LimitConfig)) *Service {
+	return NewServiceWithRepository(cfg, NewQueriesRepository(queries), tz, pool, accounts, adminAuth, setTenantModels, setTenantRate, setAPIKeyRate)
+}
+
+// NewServiceWithRepository builds an admin tenant service with a Repository interface.
+func NewServiceWithRepository(cfg *config.Config, repo Repository, tz *time.Location, pool *pgxpool.Pool, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, setTenantModels func(uuid.UUID, []string), setTenantRate func(uuid.UUID, *limits.LimitConfig), setAPIKeyRate func(string, *limits.LimitConfig)) *Service {
 	if tz == nil {
 		tz = time.UTC
 	}
 	return &Service{
 		cfg:             cfg,
-		queries:         queries,
+		repo:            repo,
 		timezone:        tz,
 		dbPool:          pool,
 		accounts:        accounts,
@@ -88,17 +94,17 @@ type PersonalListItem struct {
 
 // List returns tenant summaries with budget usage.
 func (s *Service) List(ctx context.Context, limit, offset int32) ([]ListItem, error) {
-	if s == nil || s.queries == nil || s.cfg == nil {
+	if s == nil || s.repo == nil || s.cfg == nil {
 		return nil, ErrServiceUnavailable
 	}
-	rows, err := s.queries.ListTenants(ctx, db.ListTenantsParams{
+	rows, err := s.repo.ListTenants(ctx, db.ListTenantsParams{
 		Limit:  limit,
 		Offset: offset,
 	})
 	if err != nil {
 		return nil, err
 	}
-	overrides, err := s.queries.ListTenantBudgetOverrides(ctx)
+	overrides, err := s.repo.ListTenantBudgetOverrides(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -158,17 +164,17 @@ func (s *Service) List(ctx context.Context, limit, offset int32) ([]ListItem, er
 
 // ListPersonal returns personal tenants grouped by user.
 func (s *Service) ListPersonal(ctx context.Context, limit, offset int32) ([]PersonalListItem, error) {
-	if s == nil || s.queries == nil || s.cfg == nil {
+	if s == nil || s.repo == nil || s.cfg == nil {
 		return nil, ErrServiceUnavailable
 	}
-	rows, err := s.queries.ListPersonalTenants(ctx, db.ListPersonalTenantsParams{
+	rows, err := s.repo.ListPersonalTenants(ctx, db.ListPersonalTenantsParams{
 		Limit:  limit,
 		Offset: offset,
 	})
 	if err != nil {
 		return nil, err
 	}
-	overrides, err := s.queries.ListTenantBudgetOverrides(ctx)
+	overrides, err := s.repo.ListTenantBudgetOverrides(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -232,10 +238,10 @@ func (s *Service) ListPersonal(ctx context.Context, limit, offset int32) ([]Pers
 
 // CreateTenant inserts a new tenant record.
 func (s *Service) CreateTenant(ctx context.Context, name string, status db.TenantStatus) (db.Tenant, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.Tenant{}, ErrServiceUnavailable
 	}
-	return s.queries.CreateTenant(ctx, db.CreateTenantParams{
+	return s.repo.CreateTenant(ctx, db.CreateTenantParams{
 		Name:   name,
 		Status: status,
 		Kind:   db.TenantKindOrganization,
@@ -244,10 +250,10 @@ func (s *Service) CreateTenant(ctx context.Context, name string, status db.Tenan
 
 // UpdateTenantName updates tenant metadata.
 func (s *Service) UpdateTenantName(ctx context.Context, tenantID uuid.UUID, name string) (db.Tenant, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.Tenant{}, ErrServiceUnavailable
 	}
-	return s.queries.UpdateTenantName(ctx, db.UpdateTenantNameParams{
+	return s.repo.UpdateTenantName(ctx, db.UpdateTenantNameParams{
 		ID:   toPgUUID(tenantID),
 		Name: name,
 	})
@@ -255,10 +261,10 @@ func (s *Service) UpdateTenantName(ctx context.Context, tenantID uuid.UUID, name
 
 // UpdateTenantStatus updates tenant status.
 func (s *Service) UpdateTenantStatus(ctx context.Context, tenantID uuid.UUID, status db.TenantStatus) (db.Tenant, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.Tenant{}, ErrServiceUnavailable
 	}
-	return s.queries.UpdateTenantStatus(ctx, db.UpdateTenantStatusParams{
+	return s.repo.UpdateTenantStatus(ctx, db.UpdateTenantStatusParams{
 		ID:     toPgUUID(tenantID),
 		Status: status,
 	})
@@ -266,15 +272,15 @@ func (s *Service) UpdateTenantStatus(ctx context.Context, tenantID uuid.UUID, st
 
 // ListModels returns tenant model aliases.
 func (s *Service) ListModels(ctx context.Context, tenantID uuid.UUID) ([]string, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.queries.ListTenantModels(ctx, toPgUUID(tenantID))
+	return s.repo.ListTenantModels(ctx, toPgUUID(tenantID))
 }
 
 // SetModels replaces tenant model list after validating aliases.
 func (s *Service) SetModels(ctx context.Context, tenantID uuid.UUID, aliases []string) ([]string, error) {
-	if s == nil || s.queries == nil || s.dbPool == nil {
+	if s == nil || s.repo == nil || s.dbPool == nil {
 		return nil, ErrServiceUnavailable
 	}
 	finalList, err := s.normalizeModelAliases(ctx, aliases)
@@ -286,7 +292,7 @@ func (s *Service) SetModels(ctx context.Context, tenantID uuid.UUID, aliases []s
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	qtx := s.queries.WithTx(tx)
+	qtx := s.repo.WithTx(tx)
 	if err := qtx.DeleteTenantModels(ctx, toPgUUID(tenantID)); err != nil {
 		return nil, err
 	}
@@ -309,10 +315,10 @@ func (s *Service) SetModels(ctx context.Context, tenantID uuid.UUID, aliases []s
 
 // DeleteModels removes all tenant models.
 func (s *Service) DeleteModels(ctx context.Context, tenantID uuid.UUID) error {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return ErrServiceUnavailable
 	}
-	if err := s.queries.DeleteTenantModels(ctx, toPgUUID(tenantID)); err != nil {
+	if err := s.repo.DeleteTenantModels(ctx, toPgUUID(tenantID)); err != nil {
 		return err
 	}
 	if s.setTenantModels != nil {
@@ -330,7 +336,7 @@ type APIKeyCreateResult struct {
 
 // CreateAPIKey issues a new service key.
 func (s *Service) CreateAPIKey(ctx context.Context, tenantID uuid.UUID, name string, scopesJSON, quotaJSON []byte, rateLimit *limits.LimitConfig) (APIKeyCreateResult, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return APIKeyCreateResult{}, ErrServiceUnavailable
 	}
 	prefix, secret, token, err := auth.GenerateAPIKey()
@@ -341,7 +347,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, tenantID uuid.UUID, name str
 	if err != nil {
 		return APIKeyCreateResult{}, err
 	}
-	key, err := s.queries.CreateAPIKey(ctx, db.CreateAPIKeyParams{
+	key, err := s.repo.CreateAPIKey(ctx, db.CreateAPIKeyParams{
 		TenantID:    toPgUUID(tenantID),
 		Prefix:      prefix,
 		SecretHash:  hash,
@@ -355,7 +361,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, tenantID uuid.UUID, name str
 		return APIKeyCreateResult{}, err
 	}
 	if rateLimit != nil {
-		if _, err := s.queries.UpsertAPIKeyRateLimit(ctx, db.UpsertAPIKeyRateLimitParams{
+		if _, err := s.repo.UpsertAPIKeyRateLimit(ctx, db.UpsertAPIKeyRateLimitParams{
 			ApiKeyID:          key.ID,
 			RequestsPerMinute: int32(rateLimit.RequestsPerMinute),
 			TokensPerMinute:   int32(rateLimit.TokensPerMinute),
@@ -372,21 +378,21 @@ func (s *Service) CreateAPIKey(ctx context.Context, tenantID uuid.UUID, name str
 
 // ListAPIKeys returns keys for tenant.
 func (s *Service) ListAPIKeys(ctx context.Context, tenantID uuid.UUID) ([]db.ApiKey, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.queries.ListAPIKeysByTenant(ctx, toPgUUID(tenantID))
+	return s.repo.ListAPIKeysByTenant(ctx, toPgUUID(tenantID))
 }
 
 // RevokeAPIKey revokes a key ensuring tenant ownership.
 func (s *Service) RevokeAPIKey(ctx context.Context, tenantID, apiKeyID uuid.UUID) (db.ApiKey, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.ApiKey{}, ErrServiceUnavailable
 	}
-	if _, err := s.queries.GetTenantByID(ctx, toPgUUID(tenantID)); err != nil {
+	if _, err := s.repo.GetTenantByID(ctx, toPgUUID(tenantID)); err != nil {
 		return db.ApiKey{}, err
 	}
-	record, err := s.queries.RevokeAPIKey(ctx, toPgUUID(apiKeyID))
+	record, err := s.repo.RevokeAPIKey(ctx, toPgUUID(apiKeyID))
 	if err != nil {
 		return db.ApiKey{}, err
 	}
@@ -414,10 +420,10 @@ type Membership struct {
 
 // ListMemberships fetches tenant members.
 func (s *Service) ListMemberships(ctx context.Context, tenantID uuid.UUID) ([]Membership, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	rows, err := s.queries.ListTenantMembers(ctx, toPgUUID(tenantID))
+	rows, err := s.repo.ListTenantMembers(ctx, toPgUUID(tenantID))
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +457,7 @@ func (s *Service) ListMemberships(ctx context.Context, tenantID uuid.UUID) ([]Me
 
 // UpsertMembership ensures membership exists and optional password set.
 func (s *Service) UpsertMembership(ctx context.Context, tenantID uuid.UUID, email string, role db.MembershipRole, password string) (Membership, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Membership{}, ErrServiceUnavailable
 	}
 	user, err := s.ensureUser(ctx, email)
@@ -497,10 +503,10 @@ func (s *Service) UpsertMembership(ctx context.Context, tenantID uuid.UUID, emai
 
 // RemoveMembership deletes membership.
 func (s *Service) RemoveMembership(ctx context.Context, tenantID, userID uuid.UUID) error {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return ErrServiceUnavailable
 	}
-	return s.queries.RemoveTenantMembership(ctx, db.RemoveTenantMembershipParams{
+	return s.repo.RemoveTenantMembership(ctx, db.RemoveTenantMembershipParams{
 		TenantID: toPgUUID(tenantID),
 		UserID:   toPgUUID(userID),
 	})
@@ -508,10 +514,10 @@ func (s *Service) RemoveMembership(ctx context.Context, tenantID, userID uuid.UU
 
 // GetTenantRateLimitOverride returns the tenant-level rate limit override (if any).
 func (s *Service) GetTenantRateLimitOverride(ctx context.Context, tenantID uuid.UUID) (limits.LimitConfig, bool, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return limits.LimitConfig{}, false, ErrServiceUnavailable
 	}
-	record, err := s.queries.GetTenantRateLimit(ctx, toPgUUID(tenantID))
+	record, err := s.repo.GetTenantRateLimit(ctx, toPgUUID(tenantID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return limits.LimitConfig{}, false, nil
@@ -528,13 +534,13 @@ func (s *Service) GetTenantRateLimitOverride(ctx context.Context, tenantID uuid.
 
 // UpsertTenantRateLimitOverride stores a tenant-specific override.
 func (s *Service) UpsertTenantRateLimitOverride(ctx context.Context, tenantID uuid.UUID, req limits.LimitConfig) (limits.LimitConfig, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return limits.LimitConfig{}, ErrServiceUnavailable
 	}
 	if req.RequestsPerMinute <= 0 || req.TokensPerMinute <= 0 || req.ParallelRequests <= 0 {
 		return limits.LimitConfig{}, ErrInvalidRateLimit
 	}
-	record, err := s.queries.UpsertTenantRateLimit(ctx, db.UpsertTenantRateLimitParams{
+	record, err := s.repo.UpsertTenantRateLimit(ctx, db.UpsertTenantRateLimitParams{
 		TenantID:          toPgUUID(tenantID),
 		RequestsPerMinute: int32(req.RequestsPerMinute),
 		TokensPerMinute:   int32(req.TokensPerMinute),
@@ -556,10 +562,10 @@ func (s *Service) UpsertTenantRateLimitOverride(ctx context.Context, tenantID uu
 
 // DeleteTenantRateLimitOverride removes the tenant-level override (if set).
 func (s *Service) DeleteTenantRateLimitOverride(ctx context.Context, tenantID uuid.UUID) error {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return ErrServiceUnavailable
 	}
-	if err := s.queries.DeleteTenantRateLimit(ctx, toPgUUID(tenantID)); err != nil {
+	if err := s.repo.DeleteTenantRateLimit(ctx, toPgUUID(tenantID)); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -586,7 +592,7 @@ func (s *Service) normalizeModelAliases(ctx context.Context, aliases []string) (
 		if _, exists := unique[norm]; exists {
 			continue
 		}
-		if _, err := s.queries.GetModelByAlias(ctx, trimmed); err != nil {
+		if _, err := s.repo.GetModelByAlias(ctx, trimmed); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, fmt.Errorf("%w: %s", ErrModelNotFound, trimmed)
 			}
@@ -603,10 +609,10 @@ func (s *Service) normalizeModelAliases(ctx context.Context, aliases []string) (
 }
 
 func (s *Service) ensureUser(ctx context.Context, email string) (db.User, error) {
-	user, err := s.queries.GetUserByEmail(ctx, email)
+	user, err := s.repo.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			user, err = s.queries.CreateUser(ctx, db.CreateUserParams{
+			user, err = s.repo.CreateUser(ctx, db.CreateUserParams{
 				Email: email,
 				Name:  email,
 			})
@@ -628,13 +634,13 @@ func (s *Service) ensureUser(ctx context.Context, email string) (db.User, error)
 }
 
 func (s *Service) upsertMembershipRecord(ctx context.Context, tenantID pgtype.UUID, userID pgtype.UUID, role db.MembershipRole) (db.TenantMembership, error) {
-	existing, err := s.queries.GetTenantMembership(ctx, db.GetTenantMembershipParams{
+	existing, err := s.repo.GetTenantMembership(ctx, db.GetTenantMembershipParams{
 		TenantID: tenantID,
 		UserID:   userID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return s.queries.AddTenantMembership(ctx, db.AddTenantMembershipParams{
+			return s.repo.AddTenantMembership(ctx, db.AddTenantMembershipParams{
 				TenantID: tenantID,
 				UserID:   userID,
 				Role:     role,
@@ -645,7 +651,7 @@ func (s *Service) upsertMembershipRecord(ctx context.Context, tenantID pgtype.UU
 	if existing.Role == role {
 		return existing, nil
 	}
-	return s.queries.UpdateTenantMembershipRole(ctx, db.UpdateTenantMembershipRoleParams{
+	return s.repo.UpdateTenantMembershipRole(ctx, db.UpdateTenantMembershipRoleParams{
 		TenantID: tenantID,
 		UserID:   userID,
 		Role:     role,
@@ -654,7 +660,7 @@ func (s *Service) upsertMembershipRecord(ctx context.Context, tenantID pgtype.UU
 
 func (s *Service) computeUsageUSD(ctx context.Context, tenantID uuid.UUID, schedule string, now time.Time) (float64, error) {
 	start, end := budgetWindowBounds(now, schedule)
-	row, err := s.queries.SumUsageForTenant(ctx, db.SumUsageForTenantParams{
+	row, err := s.repo.SumUsageForTenant(ctx, db.SumUsageForTenantParams{
 		TenantID: toPgUUID(tenantID),
 		Ts:       pgtype.Timestamptz{Time: start, Valid: true},
 		Ts_2:     pgtype.Timestamptz{Time: end, Valid: true},

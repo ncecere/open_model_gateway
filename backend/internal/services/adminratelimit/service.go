@@ -15,12 +15,19 @@ var (
 
 // Service manages platform-level rate limit defaults.
 type Service struct {
-	queries *db.Queries
-	cfg     *config.Config
+	repo Repository
+	cfg  *config.Config
 }
 
+// NewService builds an admin rate limit service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries, cfg *config.Config) *Service {
-	return &Service{queries: queries, cfg: cfg}
+	return NewServiceWithRepository(NewQueriesRepository(queries), cfg)
+}
+
+// NewServiceWithRepository builds an admin rate limit service with a Repository interface.
+func NewServiceWithRepository(repo Repository, cfg *config.Config) *Service {
+	return &Service{repo: repo, cfg: cfg}
 }
 
 // DefaultUpdate captures the editable request payload for defaults.
@@ -33,14 +40,14 @@ type DefaultUpdate struct {
 
 // UpdateDefaults validates + persists the new defaults, returning the refreshed config snapshot.
 func (s *Service) UpdateDefaults(ctx context.Context, req DefaultUpdate) (config.RateLimitConfig, error) {
-	if s == nil || s.queries == nil || s.cfg == nil {
+	if s == nil || s.repo == nil || s.cfg == nil {
 		return config.RateLimitConfig{}, ErrServiceUnavailable
 	}
 	if req.RequestsPerMinute <= 0 || req.TokensPerMinute <= 0 || req.ParallelRequestsKey <= 0 || req.ParallelRequestsTenant <= 0 {
 		return config.RateLimitConfig{}, ErrInvalidRateLimit
 	}
 
-	if _, err := s.queries.UpsertRateLimitDefaults(ctx, db.UpsertRateLimitDefaultsParams{
+	if _, err := s.repo.UpsertRateLimitDefaults(ctx, db.UpsertRateLimitDefaultsParams{
 		RequestsPerMinute:      int32(req.RequestsPerMinute),
 		TokensPerMinute:        int32(req.TokensPerMinute),
 		ParallelRequestsKey:    int32(req.ParallelRequestsKey),

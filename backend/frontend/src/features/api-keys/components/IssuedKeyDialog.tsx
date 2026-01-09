@@ -1,11 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DetailsDialog } from "@/components/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,46 +21,41 @@ export function IssuedKeyDialog({ issuedKey, onCopy, onClose }: IssuedKeyDialogP
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>API key issued</DialogTitle>
-          <DialogDescription>
-            Copy the secret now—this is the only time it will be shown.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label>Key token</Label>
-            <div className="flex items-center gap-2">
-              <Input value={issuedKey.token} readOnly className="font-mono" />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => onCopy(issuedKey.token, "Token")}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Secret</Label>
-            <div className="flex items-center gap-2">
-              <Input value={issuedKey.secret} readOnly className="font-mono" />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => onCopy(issuedKey.secret, "Secret")}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
+    <DetailsDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title="API key issued"
+      description="Copy the secret now—this is the only time it will be shown."
+      closeText="Done"
+    >
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Key token</Label>
+          <div className="flex items-center gap-2">
+            <Input value={issuedKey.token} readOnly className="font-mono" />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => onCopy(issuedKey.token, "Token")}
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
           </div>
         </div>
-        <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="space-y-2">
+          <Label>Secret</Label>
+          <div className="flex items-center gap-2">
+            <Input value={issuedKey.secret} readOnly className="font-mono" />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => onCopy(issuedKey.secret, "Secret")}
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </DetailsDialog>
   );
 }

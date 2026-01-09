@@ -2,14 +2,7 @@ import type { BudgetDefaults } from "@/api/budgets";
 import type { ModelCatalogEntry } from "@/api/model-catalog";
 import type { TenantStatus } from "@/api/tenants";
 import type { RateLimitDefaults } from "@/api/rate-limits";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/dialogs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,7 +13,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
 import { ModelAccessSelector } from "./ModelAccessSelector";
@@ -71,15 +63,19 @@ export function TenantCreateDialog({
   };
 
   return (
-    <Dialog open={dialog.open} onOpenChange={dialog.setOpen}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Create tenant</DialogTitle>
-          <DialogDescription>
-            Provide the tenant name, lifecycle status, and optional budget overrides.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
+    <FormDialog
+      open={dialog.open}
+      onOpenChange={dialog.setOpen}
+      title="Create tenant"
+      description="Provide the tenant name, lifecycle status, and optional budget overrides."
+      maxWidth="sm:max-w-3xl"
+      contentClassName="max-h-[90vh] overflow-y-auto"
+      isSubmitting={isSubmitting}
+      submitText="Create"
+      submittingText="Creating..."
+      onSubmit={onSubmit}
+    >
+      <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="tenant-name">Name</Label>
             <Input
@@ -248,19 +244,6 @@ export function TenantCreateDialog({
             disabled={isSubmitting}
           />
         </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => dialog.setOpen(false)}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button onClick={onSubmit} disabled={isSubmitting}>
-            {isSubmitting ? "Creating…" : "Create"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
   );
 }

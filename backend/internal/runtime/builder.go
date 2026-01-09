@@ -11,6 +11,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/batchworker"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 	"github.com/ncecere/open_model_gateway/backend/internal/redisclient"
 	exportsvc "github.com/ncecere/open_model_gateway/backend/internal/services/exports"
 )
@@ -23,6 +24,7 @@ type Builder struct {
 	opts       Options
 	datastores *Datastores
 	config     *config.Config
+	logger     *logging.Logger
 	redis      *redis.Client
 	services   *servicesStage
 	routing    *routingStage
@@ -62,6 +64,7 @@ func (b *Builder) Build(ctx context.Context) (*Runtime, error) {
 	if err := b.loadDatastores(ctx); err != nil {
 		return nil, err
 	}
+	b.initLogger()
 	if err := b.connectRedis(ctx); err != nil {
 		b.closeDatastores()
 		return nil, err
@@ -97,6 +100,7 @@ func (b *Builder) Build(ctx context.Context) (*Runtime, error) {
 		b.closeDatastores()
 		return nil, fmt.Errorf("build container: %w", err)
 	}
+	container.Logger = b.logger
 	b.registerRouterHealth(container)
 	b.buildJobs(container)
 	return &Runtime{
@@ -147,6 +151,21 @@ func (b *Builder) closeDatastores() {
 		b.datastores.Close()
 		b.datastores = nil
 	}
+}
+
+// initLogger initializes the structured logger from configuration and sets
+// it as the default slog logger for the application.
+func (b *Builder) initLogger() {
+	if b.logger != nil || b.config == nil {
+		return
+	}
+	cfg := logging.Config{
+		Level:     b.config.Logging.Level,
+		Format:    b.config.Logging.Format,
+		AddSource: b.config.Logging.AddSource,
+	}
+	b.logger = logging.New(cfg)
+	slog.SetDefault(b.logger.Logger)
 }
 
 // buildServices will eventually construct the core service layer (accounts,

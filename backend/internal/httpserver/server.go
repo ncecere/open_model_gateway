@@ -7,7 +7,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"go.opentelemetry.io/otel"
@@ -17,6 +16,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
 	adminroutes "github.com/ncecere/open_model_gateway/backend/internal/httpserver/admin"
+	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/middleware"
 	publicroutes "github.com/ncecere/open_model_gateway/backend/internal/httpserver/public"
 	userroutes "github.com/ncecere/open_model_gateway/backend/internal/httpserver/user"
 	"github.com/ncecere/open_model_gateway/backend/internal/runtime"
@@ -53,7 +53,10 @@ func New(container *app.Container, health runtime.HealthReporter) (*Server, erro
 	})
 
 	app.Use(requestid.New())
-	app.Use(logger.New())
+	app.Use(middleware.Logger(middleware.LoggerConfig{
+		Logger:    container.Log(),
+		SkipPaths: []string{"/healthz", "/metrics"},
+	}))
 	app.Use(recover.New())
 
 	if container.Observability != nil {

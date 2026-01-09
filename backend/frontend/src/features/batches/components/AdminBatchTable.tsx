@@ -7,14 +7,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -23,23 +15,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  AlertTriangle,
-  Eye,
-  MoreHorizontal,
-  RouteIcon,
-  Search,
-  Trash2,
-} from "lucide-react";
+  ActionsMenu,
+  EmptyState,
+  FilterBar,
+  TableSkeleton,
+  type FilterOption,
+} from "@/components/tables";
+import { AlertTriangle, Eye, RouteIcon, Trash2 } from "lucide-react";
 import type { BatchRecord } from "@/api/batches";
 import {
   formatFinishedTimestamp,
@@ -101,6 +84,21 @@ export function AdminBatchTable({
   const showErrorPill = (batch: BatchRecord) =>
     (batch.errors?.data?.length ?? 0) > 0;
 
+  const tenantOptions: FilterOption[] = [
+    { value: "all", label: "All tenants" },
+    ...tenants
+      .filter((tenant) => !personalTenantIds.has(tenant.id))
+      .map((tenant) => ({ value: tenant.id, label: tenant.name })),
+  ];
+
+  const statusOptions: FilterOption[] = [
+    { value: "all", label: "All statuses" },
+    ...Object.keys(statusVariants).map((status) => ({
+      value: status,
+      label: status.replace(/_/g, " "),
+    })),
+  ];
+
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -110,57 +108,49 @@ export function AdminBatchTable({
             Inspect async workloads, filter by tenant/status, and manage stuck batches.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={filters.search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search batch id, tenant, or endpoint"
-              className="pl-9"
-            />
-          </div>
-          <Select
-            value={filters.tenant}
-            onValueChange={(value) => onFiltersChange({ tenant: value })}
-          >
-            <SelectTrigger className="sm:w-48">
-              <SelectValue placeholder="All tenants" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All tenants</SelectItem>
-              {tenants
-                .filter((tenant) => !personalTenantIds.has(tenant.id))
-                .map((tenant) => (
-                  <SelectItem key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.status}
-            onValueChange={(value) => onFiltersChange({ status: value })}
-          >
-            <SelectTrigger className="sm:w-40">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {Object.keys(statusVariants).map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status.replace(/_/g, " ")}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <FilterBar
+          filters={[
+            {
+              type: "search",
+              key: "search",
+              value: filters.search,
+              onChange: onSearchChange,
+              placeholder: "Search batch id, tenant, or endpoint",
+              className: "sm:w-64",
+            },
+            {
+              type: "select",
+              key: "tenant",
+              value: filters.tenant,
+              onChange: (value) => onFiltersChange({ tenant: value }),
+              options: tenantOptions,
+              placeholder: "All tenants",
+              className: "sm:w-48",
+            },
+            {
+              type: "select",
+              key: "status",
+              value: filters.status,
+              onChange: (value) => onFiltersChange({ status: value }),
+              options: statusOptions,
+              placeholder: "All statuses",
+              className: "sm:w-40",
+            },
+          ]}
+        />
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <SkeletonTable />
+          <TableSkeleton rows={4} />
         ) : rows.length === 0 ? (
-          <EmptyState filtersActive={filtersActive} />
+          <EmptyState
+            message={filtersActive ? "No batches match the current filters" : "No batches submitted yet"}
+            description={
+              filtersActive
+                ? "Try adjusting your filter criteria."
+                : "Upload a JSONL file via the /v1/batches API to populate this feed."
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -241,32 +231,23 @@ export function AdminBatchTable({
                       </p>
                     </TableCell>
                     <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">Open actions</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem
-                            onClick={() => onView(batch, tenantLabel)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            View details
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            disabled={!canCancel(batch.status)}
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => onCancel(batch)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Cancel batch
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <ActionsMenu
+                        label="Actions"
+                        actions={[
+                          {
+                            label: "View details",
+                            icon: <Eye className="h-4 w-4" />,
+                            onClick: () => onView(batch, tenantLabel),
+                          },
+                          {
+                            label: "Cancel batch",
+                            icon: <Trash2 className="h-4 w-4" />,
+                            onClick: () => onCancel(batch),
+                            disabled: !canCancel(batch.status),
+                            destructive: true,
+                          },
+                        ]}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -300,29 +281,6 @@ export function AdminBatchTable({
         </div>
       </CardFooter>
     </Card>
-  );
-}
-
-function SkeletonTable() {
-  return (
-    <div className="space-y-2">
-      {[...Array(4)].map((_, idx) => (
-        <Skeleton key={idx} className="h-12 w-full" />
-      ))}
-    </div>
-  );
-}
-
-function EmptyState({ filtersActive }: { filtersActive: boolean }) {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-      <AlertTriangle className="h-8 w-8 text-muted-foreground" />
-      <div>
-        {filtersActive
-          ? "No batches match the current filters."
-          : "No batches have been submitted yet. Upload a JSONL file via the /v1/batches API to populate this feed."}
-      </div>
-    </div>
   );
 }
 

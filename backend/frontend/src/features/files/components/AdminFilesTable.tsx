@@ -1,16 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,10 +8,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ActionsMenu,
+  EmptyState,
+  FilterBar,
+  TableSkeleton,
+  TablePagination,
+  usePaginationFromOffset,
+  type FilterOption,
+} from "@/components/tables";
 import type { AdminFileRecord } from "@/api/files";
 import { dateFormatter, formatBytes } from "../utils";
-import { AlertTriangle, Download, Eye, MoreHorizontal, Search, Trash2 } from "lucide-react";
+import { Download, Eye, Trash2 } from "lucide-react";
 import { FileStatusBadge } from "./FileStatusBadge";
 
 const PURPOSE_OPTIONS = [
@@ -80,84 +77,63 @@ export function AdminFilesTable({
   onDelete,
   onDownload,
 }: AdminFilesTableProps) {
-  const tenantOptions = tenants.filter((tenant) => !personalTenantIds.has(tenant.id));
+  const tenantFilterOptions: FilterOption[] = [
+    { value: "all", label: "All tenants" },
+    ...tenants
+      .filter((tenant) => !personalTenantIds.has(tenant.id))
+      .map((tenant) => ({ value: tenant.id, label: tenant.name })),
+  ];
 
   const rows = files.map((file) => {
     const isPersonal = personalTenantIds.has(file.tenant_id);
     return { file, isPersonal };
   });
 
+  const { page, totalPages } = usePaginationFromOffset(offset, pageSize, total);
+
   return (
     <div className="space-y-4">
-      <section className="grid gap-4 lg:grid-cols-4">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Tenant</p>
-          <Select
-            value={filters.tenant}
-            onValueChange={(value) => onFiltersChange({ tenant: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All tenants" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All tenants</SelectItem>
-              {tenantOptions.map((tenant) => (
-                <SelectItem key={tenant.id} value={tenant.id}>
-                  {tenant.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Purpose</p>
-          <Select
-            value={filters.purpose}
-            onValueChange={(value) => onFiltersChange({ purpose: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All purposes" />
-            </SelectTrigger>
-            <SelectContent>
-              {PURPOSE_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">State</p>
-          <Select
-            value={filters.state}
-            onValueChange={(value) => onFiltersChange({ state: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Active" />
-            </SelectTrigger>
-            <SelectContent>
-              {STATE_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Search</p>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Filter by filename"
-              value={filters.search}
-              onChange={(event) => onSearchChange(event.target.value)}
-            />
-          </div>
-        </div>
-      </section>
+      <FilterBar
+        layout="stacked"
+        columns={4}
+        filters={[
+          {
+            type: "select",
+            key: "tenant",
+            label: "Tenant",
+            value: filters.tenant,
+            onChange: (value) => onFiltersChange({ tenant: value }),
+            options: tenantFilterOptions,
+            placeholder: "All tenants",
+          },
+          {
+            type: "select",
+            key: "purpose",
+            label: "Purpose",
+            value: filters.purpose,
+            onChange: (value) => onFiltersChange({ purpose: value }),
+            options: PURPOSE_OPTIONS,
+            placeholder: "All purposes",
+          },
+          {
+            type: "select",
+            key: "state",
+            label: "State",
+            value: filters.state,
+            onChange: (value) => onFiltersChange({ state: value }),
+            options: STATE_OPTIONS,
+            placeholder: "Active",
+          },
+          {
+            type: "search",
+            key: "search",
+            label: "Search",
+            value: filters.search,
+            onChange: onSearchChange,
+            placeholder: "Filter by filename",
+          },
+        ]}
+      />
 
       <Card>
         <CardHeader className="flex items-center justify-between">
@@ -170,9 +146,12 @@ export function AdminFilesTable({
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <SkeletonTable />
+            <TableSkeleton rows={4} />
           ) : !rows.length ? (
-            <EmptyState />
+            <EmptyState
+              message="No files found"
+              description="Uploads will appear here in reverse chronological order."
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -216,30 +195,28 @@ export function AdminFilesTable({
                       {dateFormatter.format(new Date(file.created_at))}
                     </TableCell>
                     <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => onViewDetails(file)}>
-                            <Eye className="mr-2 h-4 w-4" /> View details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onDownload(file)}>
-                            <Download className="mr-2 h-4 w-4" /> Download
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={Boolean(file.deleted_at)}
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => onDelete(file)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <ActionsMenu
+                        label="Actions"
+                        actions={[
+                          {
+                            label: "View details",
+                            icon: <Eye className="h-4 w-4" />,
+                            onClick: () => onViewDetails(file),
+                          },
+                          {
+                            label: "Download",
+                            icon: <Download className="h-4 w-4" />,
+                            onClick: () => onDownload(file),
+                          },
+                          {
+                            label: "Delete",
+                            icon: <Trash2 className="h-4 w-4" />,
+                            onClick: () => onDelete(file),
+                            disabled: Boolean(file.deleted_at),
+                            destructive: true,
+                          },
+                        ]}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -247,39 +224,18 @@ export function AdminFilesTable({
             </Table>
           )}
         </CardContent>
-        <CardFooter className="flex items-center justify-between">
-          <Button variant="outline" disabled={!hasPrev} onClick={() => onLoadMore("prev")}>
-            Previous
-          </Button>
-          <p className="text-sm text-muted-foreground">
-            Page {Math.floor(offset / pageSize) + 1} of {Math.ceil(total / pageSize) || 1}
-          </p>
-          <Button variant="outline" disabled={!hasNext} onClick={() => onLoadMore("next")}>
-            Next
-          </Button>
+        <CardFooter>
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={() => onLoadMore("prev")}
+            onNext={() => onLoadMore("next")}
+            className="w-full"
+          />
         </CardFooter>
       </Card>
     </div>
   );
 }
-
-function SkeletonTable() {
-  return (
-    <div className="space-y-2">
-      {[...Array(4)].map((_, idx) => (
-        <Skeleton key={idx} className="h-12 w-full" />
-      ))}
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-      <AlertTriangle className="h-8 w-8 text-muted-foreground" />
-      <div>No files found. Uploads will appear here in reverse chronological order.</div>
-    </div>
-  );
-}
-
-// formatFileStatus re-exported for dialog usage if needed

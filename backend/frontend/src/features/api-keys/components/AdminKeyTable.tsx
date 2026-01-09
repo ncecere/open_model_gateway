@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -8,18 +7,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionsMenu, EmptyState, TableSkeleton } from "@/components/tables";
 import type { ApiKeyRecord } from "@/api/tenants";
 import { formatScheduleLabel } from "../utils";
 import { shortDateFormatter as dateFormatter } from "@/lib/formatters";
-import { Eye, MoreHorizontal, Trash2 } from "lucide-react";
+import { Eye, Trash2 } from "lucide-react";
 
 type AdminKeyTableProps = {
   allKeys: ApiKeyRecord[];
@@ -43,23 +35,16 @@ export function AdminKeyTable({
   formatWarningThresholdValue,
 }: AdminKeyTableProps) {
   if (isLoading) {
-    return (
-      <div className="space-y-3">
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-12 w-full" />
-      </div>
-    );
+    return <TableSkeleton rows={3} />;
   }
 
   if (!filteredKeys.length) {
-    const message = allKeys.length
-      ? "No keys match your filters."
-      : "No keys issued yet.";
+    const hasFilters = allKeys.length > 0;
     return (
-      <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-        {message}
-      </div>
+      <EmptyState
+        message={hasFilters ? "No keys match your filters" : "No keys issued yet"}
+        description={hasFilters ? "Try adjusting your filter criteria." : undefined}
+      />
     );
   }
 
@@ -116,29 +101,23 @@ export function AdminKeyTable({
               {formatScheduleLabel(key.budget_refresh_schedule)}
             </TableCell>
             <TableCell className="text-right">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon">
-                    <MoreHorizontal className="h-4 w-4" />
-                    <span className="sr-only">Open actions</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onViewDetails(key)}>
-                    <Eye className="mr-2 h-4 w-4" />
-                    View details
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={key.revoked || revokeDisabled}
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => onRequestRevoke(key)}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Revoke key
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <ActionsMenu
+                variant="outline"
+                actions={[
+                  {
+                    label: "View details",
+                    icon: <Eye className="h-4 w-4" />,
+                    onClick: () => onViewDetails(key),
+                  },
+                  {
+                    label: "Revoke key",
+                    icon: <Trash2 className="h-4 w-4" />,
+                    onClick: () => onRequestRevoke(key),
+                    disabled: key.revoked || revokeDisabled,
+                    destructive: true,
+                  },
+                ]}
+              />
             </TableCell>
           </TableRow>
         ))}

@@ -1,10 +1,13 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  EmptyState,
+  FilterBar,
+  TableSkeleton,
+  type FilterOption,
+} from "@/components/tables";
 import type { UserFileRecord } from "@/api/user/files";
 import type { UserTenant } from "@/api/user/tenants";
 import { dateFormatter, formatBytes } from "../utils";
@@ -51,77 +54,73 @@ export function UserFilesTable({
   const formatTenantLabel = (tenant?: UserTenant) =>
     tenant?.is_personal ? "Personal" : tenant?.name ?? "—";
 
+  const tenantFilterOptions: FilterOption[] = tenants.map((tenant) => ({
+    value: tenant.tenant_id,
+    label: formatTenantLabel(tenant),
+  }));
+
+  const purposeFilterOptions: FilterOption[] = [
+    { value: "all", label: "All purposes" },
+    ...purposeOptions.map((purpose) => ({ value: purpose, label: purpose })),
+  ];
+
+  const showNoTenantsMessage = !tenantsLoading && !tenants.length;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Files</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-1.5">
-            <p className="text-sm font-medium text-muted-foreground">Tenant</p>
-            {tenantsLoading ? (
-              <Skeleton className="h-10 w-full" />
-            ) : !tenants.length ? (
-              <p className="text-sm text-muted-foreground">You are not part of any tenants yet.</p>
-            ) : (
-              <Select
-                value={selectedTenantId}
-                onValueChange={onTenantChange}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select tenant" />
-                </SelectTrigger>
-                <SelectContent>
-                  {tenants.map((tenant) => (
-                    <SelectItem key={tenant.tenant_id} value={tenant.tenant_id}>
-                      {formatTenantLabel(tenant)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <p className="text-sm font-medium text-muted-foreground">Search</p>
-            <Input
-              value={searchTerm}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Filter by filename or purpose"
-              disabled={isLoading}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <p className="text-sm font-medium text-muted-foreground">Purpose</p>
-            <Select
-              value={purposeFilter}
-              onValueChange={onPurposeChange}
-              disabled={!purposeOptions.length}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="All purposes" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All purposes</SelectItem>
-                {purposeOptions.map((purpose) => (
-                  <SelectItem key={purpose} value={purpose}>
-                    {purpose}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        {showNoTenantsMessage ? (
+          <p className="text-sm text-muted-foreground">You are not part of any tenants yet.</p>
+        ) : (
+          <FilterBar
+            layout="stacked"
+            columns={3}
+            filters={[
+              {
+                type: "select",
+                key: "tenant",
+                label: "Tenant",
+                value: selectedTenantId ?? "",
+                onChange: onTenantChange,
+                options: tenantFilterOptions,
+                placeholder: "Select tenant",
+                loading: tenantsLoading,
+                disabled: tenantsLoading,
+              },
+              {
+                type: "search",
+                key: "search",
+                label: "Search",
+                value: searchTerm,
+                onChange: onSearchChange,
+                placeholder: "Filter by filename or purpose",
+                disabled: isLoading,
+              },
+              {
+                type: "select",
+                key: "purpose",
+                label: "Purpose",
+                value: purposeFilter,
+                onChange: onPurposeChange,
+                options: purposeFilterOptions,
+                placeholder: "All purposes",
+                disabled: !purposeOptions.length,
+              },
+            ]}
+          />
+        )}
 
         <div className="mt-6">
           {isLoading ? (
-            <div className="space-y-2">
-              {[...Array(4)].map((_, idx) => (
-                <div key={idx} className="h-10 animate-pulse rounded bg-muted" />
-              ))}
-            </div>
+            <TableSkeleton rows={4} rowHeight="h-10" />
           ) : !files.length ? (
-            <p className="text-sm text-muted-foreground">No files uploaded for this tenant.</p>
+            <EmptyState
+              message="No files uploaded"
+              description="Files uploaded for this tenant will appear here."
+            />
           ) : (
             <Table>
               <TableHeader>

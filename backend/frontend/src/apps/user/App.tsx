@@ -9,14 +9,17 @@ import { UserAuthProvider } from "./auth/UserAuthProvider";
 import { useUserAuth } from "./hooks";
 import { useUserProfileQuery } from "./hooks/useUserData";
 import { UserRoutes } from "./routes";
+import { AppErrorBoundary, PageErrorBoundary } from "@/components/errors";
 
 export function UserApp() {
   return (
-    <QueryProvider>
-      <UserAuthProvider>
-        <UserThemeBoundary />
-      </UserAuthProvider>
-    </QueryProvider>
+    <AppErrorBoundary appName="user">
+      <QueryProvider>
+        <UserAuthProvider>
+          <UserThemeBoundary />
+        </UserAuthProvider>
+      </QueryProvider>
+    </AppErrorBoundary>
   );
 }
 
@@ -55,7 +58,9 @@ function UserThemeBoundary() {
       profileQuery={profileQuery}
     >
       <BrowserRouter>
-        <UserRoutes />
+        <PageErrorBoundary pageName="user">
+          <UserRoutes />
+        </PageErrorBoundary>
       </BrowserRouter>
       <Toaster />
       <SonnerToaster richColors position="top-right" />

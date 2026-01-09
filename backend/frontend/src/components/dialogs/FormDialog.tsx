@@ -25,6 +25,8 @@ export type FormDialogProps = {
   maxWidth?: string;
   /** Additional content class */
   contentClassName?: string;
+  /** Class name for the body wrapper (defaults to "space-y-4 py-4") */
+  bodyClassName?: string;
   /** Whether the form is submitting */
   isSubmitting?: boolean;
   /** Submit button text (defaults to "Save") */
@@ -39,6 +41,8 @@ export type FormDialogProps = {
   onSubmit: () => void;
   /** Optional extra footer content (appears before action buttons) */
   extraFooter?: ReactNode;
+  /** Whether to use a form element (set false for non-form content like tabs) */
+  useForm?: boolean;
 };
 
 /**
@@ -53,6 +57,7 @@ export function FormDialog({
   children,
   maxWidth = "sm:max-w-lg",
   contentClassName,
+  bodyClassName = "space-y-4 py-4",
   isSubmitting = false,
   submitText = "Save",
   submittingText = "Saving...",
@@ -60,36 +65,59 @@ export function FormDialog({
   submitDisabled = false,
   onSubmit,
   extraFooter,
+  useForm = true,
 }: FormDialogProps) {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     onSubmit();
   };
 
+  const header = (
+    <DialogHeader>
+      <DialogTitle>{title}</DialogTitle>
+      {description && <DialogDescription>{description}</DialogDescription>}
+    </DialogHeader>
+  );
+
+  const body = <div className={bodyClassName}>{children}</div>;
+
+  const footer = (
+    <DialogFooter>
+      {extraFooter}
+      <Button
+        type={useForm ? "button" : undefined}
+        variant="outline"
+        onClick={() => onOpenChange(false)}
+        disabled={isSubmitting}
+      >
+        {cancelText}
+      </Button>
+      <Button
+        type={useForm ? "submit" : undefined}
+        onClick={useForm ? undefined : onSubmit}
+        disabled={isSubmitting || submitDisabled}
+      >
+        {isSubmitting ? submittingText : submitText}
+      </Button>
+    </DialogFooter>
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn(maxWidth, contentClassName)}>
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            {description && <DialogDescription>{description}</DialogDescription>}
-          </DialogHeader>
-          <div className="space-y-4 py-4">{children}</div>
-          <DialogFooter>
-            {extraFooter}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              {cancelText}
-            </Button>
-            <Button type="submit" disabled={isSubmitting || submitDisabled}>
-              {isSubmitting ? submittingText : submitText}
-            </Button>
-          </DialogFooter>
-        </form>
+        {useForm ? (
+          <form onSubmit={handleSubmit}>
+            {header}
+            {body}
+            {footer}
+          </form>
+        ) : (
+          <>
+            {header}
+            {body}
+            {footer}
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

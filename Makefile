@@ -3,7 +3,7 @@ DB_URL ?= postgres://open_gateway:open_gateway@localhost:5432/open_gateway?sslmo
 REDIS_URL ?= redis://localhost:6379/0
 COMPOSE ?= docker compose -f deploy/docker-compose.yml
 
-.PHONY: help compose-up compose-down compose-logs run-backend test-backend build-ui
+.PHONY: help compose-up compose-down compose-logs run-backend test-backend test-frontend test-all build-ui lint lint-backend typecheck
 
 help:
 	@echo "Useful targets:"
@@ -11,7 +11,12 @@ help:
 	@echo "  compose-down      Stop containers and remove volumes"
 	@echo "  compose-logs      Tail logs from Compose services"
 	@echo "  run-backend       Build UI + run router with deploy/router.local.yaml"
-	@echo "  test-backend      go test ./... inside backend/"
+	@echo "  test-backend      Run Go tests"
+	@echo "  test-frontend     Run frontend tests (Vitest)"
+	@echo "  test-all          Run all tests"
+	@echo "  lint              Run all linters (golangci-lint + tsc)"
+	@echo "  lint-backend      Run Go linter (golangci-lint)"
+	@echo "  typecheck         Run TypeScript type checking"
 
 compose-up:
 	$(COMPOSE) up -d
@@ -38,3 +43,17 @@ run-backend: build-ui
 
 test-backend:
 	cd backend && go test ./...
+
+lint: lint-backend typecheck
+
+lint-backend:
+	@which golangci-lint > /dev/null || (echo "Install golangci-lint: https://golangci-lint.run/usage/install/" && exit 1)
+	cd backend && golangci-lint run ./...
+
+typecheck:
+	cd backend/frontend && tsc --noEmit
+
+test-frontend:
+	cd backend/frontend && bun run test
+
+test-all: test-backend test-frontend

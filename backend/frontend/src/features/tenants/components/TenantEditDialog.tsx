@@ -2,14 +2,7 @@ import type { BudgetDefaults } from "@/api/budgets";
 import type { ModelCatalogEntry } from "@/api/model-catalog";
 import type { TenantStatus } from "@/api/tenants";
 import type { RateLimitDefaults } from "@/api/rate-limits";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/dialogs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -100,28 +93,33 @@ export function TenantEditDialog({
   const rateLimitDisabled = editRateLoading || fullyDisabled;
 
   return (
-    <Dialog open={dialog.open} onOpenChange={dialog.setOpen}>
-      <DialogContent className="flex h-[85vh] max-w-3xl flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>
-            {dialog.tenant ? `Edit ${dialog.tenant.name}` : "Edit tenant"}
-          </DialogTitle>
-          <DialogDescription>
-            Update tenant metadata, status, and budget overrides.
-          </DialogDescription>
-        </DialogHeader>
-        {dialog.tenant ? (
-          <Tabs
-            value={activeTab}
-            onValueChange={onTabChange}
-            className="flex h-full min-h-0 flex-col space-y-4 py-2"
-          >
-            <TabsList className="w-fit">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="alerts">Alerts</TabsTrigger>
-              <TabsTrigger value="models">Models</TabsTrigger>
-              <TabsTrigger value="members">Members</TabsTrigger>
-            </TabsList>
+    <FormDialog
+      open={dialog.open}
+      onOpenChange={dialog.setOpen}
+      title={dialog.tenant ? `Edit ${dialog.tenant.name}` : "Edit tenant"}
+      description="Update tenant metadata, status, and budget overrides."
+      maxWidth="max-w-3xl"
+      contentClassName="flex h-[85vh] flex-col overflow-hidden"
+      bodyClassName="flex-1 min-h-0 overflow-hidden"
+      useForm={false}
+      isSubmitting={isSubmitting}
+      submitText="Save changes"
+      submittingText="Saving…"
+      submitDisabled={editBudgetLoading || fullyDisabled}
+      onSubmit={onSubmit}
+    >
+      {dialog.tenant ? (
+        <Tabs
+          value={activeTab}
+          onValueChange={onTabChange}
+          className="flex h-full min-h-0 flex-col space-y-4"
+        >
+          <TabsList className="w-fit">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="alerts">Alerts</TabsTrigger>
+            <TabsTrigger value="models">Models</TabsTrigger>
+            <TabsTrigger value="members">Members</TabsTrigger>
+          </TabsList>
             <TabsContent value="overview" className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
               <div className="space-y-2">
                 <Label htmlFor="edit-tenant-name">Name</Label>
@@ -383,31 +381,13 @@ export function TenantEditDialog({
                   No members yet. Invite a collaborator to get started.
                 </p>
               )}
-            </TabsContent>
-          </Tabs>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Select a tenant to edit.
-          </p>
-        )}
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => dialog.setOpen(false)}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={onSubmit}
-            disabled={
-              isSubmitting || editBudgetLoading || fullyDisabled
-            }
-          >
-            {isSubmitting ? "Saving…" : "Save changes"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Select a tenant to edit.
+        </p>
+      )}
+    </FormDialog>
   );
 }

@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -9,15 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { AlertTriangle, Download, Eye, MoreHorizontal, Trash2 } from "lucide-react";
+import { ActionsMenu, EmptyState, TableSkeleton, type ActionItem } from "@/components/tables";
+import { AlertTriangle, Download, Eye, Trash2 } from "lucide-react";
 import type { UserBatchRecord } from "@/api/user/batches";
 import { dateFormatter, statusVariants, formatFinishedTimestamp } from "../utils";
 
@@ -55,11 +47,16 @@ export function UserBatchTable({
   onPrevPage,
 }: UserBatchTableProps) {
   if (isLoading) {
-    return <SkeletonTable />;
+    return <TableSkeleton rows={4} />;
   }
 
   if (!batches.length) {
-    return <EmptyState tenantName={tenantName} />;
+    return (
+      <EmptyState
+        message={`No batches queued${tenantName ? ` for ${tenantName}` : ""}`}
+        description="Submit requests via an API key belonging to this tenant."
+      />
+    );
   }
 
   return (
@@ -125,48 +122,39 @@ export function UserBatchTable({
                   </p>
                 </TableCell>
                 <TableCell className="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuItem onClick={() => onView(batch)}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        View details
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={outputDisabled}
-                        onClick={() => onDownload(batch, "output")}
-                      >
-                        <Download className="mr-2 h-4 w-4" />
-                        Download output
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={errorsDisabled}
-                        onClick={() => onDownload(batch, "errors")}
-                      >
-                        <Download className="mr-2 h-4 w-4" />
-                        Download errors
-                      </DropdownMenuItem>
-                      {canManage && onCancel ? (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            disabled={cancelDisabled}
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => onCancel(batch)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Cancel batch
-                          </DropdownMenuItem>
-                        </>
-                      ) : null}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <ActionsMenu
+                    label="Actions"
+                    actions={[
+                      {
+                        label: "View details",
+                        icon: <Eye className="h-4 w-4" />,
+                        onClick: () => onView(batch),
+                      },
+                      {
+                        label: "Download output",
+                        icon: <Download className="h-4 w-4" />,
+                        onClick: () => onDownload(batch, "output"),
+                        disabled: outputDisabled,
+                      },
+                      {
+                        label: "Download errors",
+                        icon: <Download className="h-4 w-4" />,
+                        onClick: () => onDownload(batch, "errors"),
+                        disabled: errorsDisabled,
+                      },
+                      ...(canManage && onCancel
+                        ? [
+                            {
+                              label: "Cancel batch",
+                              icon: <Trash2 className="h-4 w-4" />,
+                              onClick: () => onCancel(batch),
+                              disabled: cancelDisabled,
+                              destructive: true,
+                            } as ActionItem,
+                          ]
+                        : []),
+                    ]}
+                  />
                 </TableCell>
               </TableRow>
             );
@@ -196,29 +184,6 @@ export function UserBatchTable({
             Next
           </Button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SkeletonTable() {
-  return (
-    <div className="space-y-2">
-      {[...Array(4)].map((_, idx) => (
-        <Skeleton key={idx} className="h-12 w-full" />
-      ))}
-    </div>
-  );
-}
-
-function EmptyState({ tenantName }: { tenantName?: string }) {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-      <AlertTriangle className="h-8 w-8 text-muted-foreground" />
-      <div>
-        No batches queued
-        {tenantName ? ` for ${tenantName}` : ""}. Submit requests via an API key
-        belonging to this tenant.
       </div>
     </div>
   );

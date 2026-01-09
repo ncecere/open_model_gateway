@@ -8,14 +8,17 @@ import { useAuth } from "../../hooks/useAuth";
 import { AppRoutes } from "../../routes";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
+import { AppErrorBoundary, PageErrorBoundary } from "@/components/errors";
 
 export function AdminApp() {
   return (
-    <QueryProvider>
-      <AuthProvider>
-        <AdminThemeBoundary />
-      </AuthProvider>
-    </QueryProvider>
+    <AppErrorBoundary appName="admin">
+      <QueryProvider>
+        <AuthProvider>
+          <AdminThemeBoundary />
+        </AuthProvider>
+      </QueryProvider>
+    </AppErrorBoundary>
   );
 }
 
@@ -32,7 +35,9 @@ function AdminThemeBoundary() {
     >
       <DirectoryProvider>
         <BrowserRouter basename="/admin/ui">
-          <AppRoutes />
+          <PageErrorBoundary pageName="admin">
+            <AppRoutes />
+          </PageErrorBoundary>
         </BrowserRouter>
       </DirectoryProvider>
       <Toaster />

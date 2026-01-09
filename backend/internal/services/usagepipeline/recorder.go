@@ -17,13 +17,20 @@ import (
 
 // UsageRecorder persists request + usage rows inside a single transaction.
 type UsageRecorder struct {
-	pool    *pgxpool.Pool
-	queries *db.Queries
-	tracer  trace.Tracer
+	pool   *pgxpool.Pool
+	repo   Repository
+	tracer trace.Tracer
 }
 
+// NewUsageRecorder builds a usage recorder.
+// Deprecated: Use NewUsageRecorderWithRepository for new code.
 func NewUsageRecorder(pool *pgxpool.Pool, queries *db.Queries) *UsageRecorder {
-	return &UsageRecorder{pool: pool, queries: queries, tracer: otel.Tracer("open-model-gateway/usage-recorder")}
+	return NewUsageRecorderWithRepository(pool, NewQueriesRepository(queries, pool))
+}
+
+// NewUsageRecorderWithRepository builds a usage recorder with a Repository interface.
+func NewUsageRecorderWithRepository(pool *pgxpool.Pool, repo Repository) *UsageRecorder {
+	return &UsageRecorder{pool: pool, repo: repo, tracer: otel.Tracer("open-model-gateway/usage-recorder")}
 }
 
 // Persist writes the request + usage rows with the provided cost in cents/micros.
@@ -45,14 +52,14 @@ func (r *UsageRecorder) Persist(ctx context.Context, rec Record, ts time.Time, c
 	}
 	defer tx.Rollback(ctx)
 
-	qtx := r.queries.WithTx(tx)
-	if err := insertRequest(ctx, qtx, rec, ts, costCents, costMicros); err != nil {
+	qtx := r.repo.WithTx(tx)
+	if err := insertRequestWithRepo(ctx, qtx, rec, ts, costCents, costMicros); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	if rec.Success {
-		if err := insertUsage(ctx, qtx, rec, ts, costCents, costMicros); err != nil {
+		if err := insertUsageWithRepo(ctx, qtx, rec, ts, costCents, costMicros); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return err

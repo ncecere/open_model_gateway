@@ -16,8 +16,8 @@ import (
 
 // AlertDispatcher coordinates alert cooldown tracking + persistence.
 type AlertDispatcher struct {
-	sink    AlertSink
-	queries *db.Queries
+	sink AlertSink
+	repo Repository
 
 	stateMu sync.Mutex
 	state   map[uuid.UUID]alertSnapshot
@@ -25,15 +25,22 @@ type AlertDispatcher struct {
 	names   map[uuid.UUID]string
 }
 
+// NewAlertDispatcher builds an alert dispatcher.
+// Deprecated: Use NewAlertDispatcherWithRepository for new code.
 func NewAlertDispatcher(queries *db.Queries, sink AlertSink) *AlertDispatcher {
+	return NewAlertDispatcherWithRepository(NewQueriesRepository(queries, nil), sink)
+}
+
+// NewAlertDispatcherWithRepository builds an alert dispatcher with a Repository interface.
+func NewAlertDispatcherWithRepository(repo Repository, sink AlertSink) *AlertDispatcher {
 	if sink == nil {
 		sink = NewLogAlertSink(nil)
 	}
 	return &AlertDispatcher{
-		sink:    sink,
-		queries: queries,
-		state:   make(map[uuid.UUID]alertSnapshot),
-		names:   make(map[uuid.UUID]string),
+		sink:  sink,
+		repo:  repo,
+		state: make(map[uuid.UUID]alertSnapshot),
+		names: make(map[uuid.UUID]string),
 	}
 }
 
@@ -132,10 +139,10 @@ func (a *AlertDispatcher) lookupTenantName(ctx context.Context, tenantID uuid.UU
 		return name
 	}
 	a.nameMu.Unlock()
-	if a.queries == nil {
+	if a.repo == nil {
 		return tenantID.String()
 	}
-	row, err := a.queries.GetTenantByID(ctx, toPgUUID(tenantID))
+	row, err := a.repo.GetTenantByID(ctx, toPgUUID(tenantID))
 	if err != nil {
 		return tenantID.String()
 	}
@@ -180,7 +187,7 @@ func (a *AlertDispatcher) updateAlertState(ctx context.Context, rc *requestctx.C
 		params.LastAlertLevel = pgtype.Text{String: string(level), Valid: true}
 	}
 
-	return a.queries.UpdateTenantBudgetAlertState(ctx, params)
+	return a.repo.UpdateTenantBudgetAlertState(ctx, params)
 }
 
 func parseAlertLevel(value string) AlertLevel {
@@ -206,7 +213,7 @@ func alertSeverity(level AlertLevel) int {
 }
 
 func (a *AlertDispatcher) recordAlertEvent(ctx context.Context, payload AlertPayload, success bool, notifyErr error) {
-	if a == nil || a.queries == nil {
+	if a == nil || a.repo == nil {
 		return
 	}
 	channelsJSON, err := json.Marshal(payload.Channels)
@@ -239,7 +246,7 @@ func (a *AlertDispatcher) recordAlertEvent(ctx context.Context, payload AlertPay
 		Success:  success,
 		Error:    errText,
 	}
-	_ = a.queries.InsertBudgetAlertEvent(ctx, params)
+	_ = a.repo.InsertBudgetAlertEvent(ctx, params)
 }
 
 type alertEventBody struct {

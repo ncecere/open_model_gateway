@@ -30,14 +30,21 @@ const defaultCompletionWindow = "24h"
 
 // Service orchestrates batch metadata and ingestion.
 type Service struct {
-	pool    *pgxpool.Pool
-	queries *db.Queries
-	files   *filesvc.Service
-	cfg     *config.BatchesConfig
+	pool  *pgxpool.Pool
+	repo  Repository
+	files *filesvc.Service
+	cfg   *config.BatchesConfig
 }
 
+// NewService builds a batch service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(pool *pgxpool.Pool, queries *db.Queries, files *filesvc.Service, cfg *config.BatchesConfig) *Service {
-	return &Service{pool: pool, queries: queries, files: files, cfg: cfg}
+	return NewServiceWithRepository(pool, NewQueriesRepository(queries, pool), files, cfg)
+}
+
+// NewServiceWithRepository builds a batch service with a Repository interface.
+func NewServiceWithRepository(pool *pgxpool.Pool, repo Repository, files *filesvc.Service, cfg *config.BatchesConfig) *Service {
+	return &Service{pool: pool, repo: repo, files: files, cfg: cfg}
 }
 
 type CreateParams struct {
@@ -168,7 +175,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Batch, error
 	}
 	defer tx.Rollback(ctx)
 
-	qtx := s.queries.WithTx(tx)
+	qtx := s.repo.WithTx(tx)
 
 	batchRow, err := qtx.CreateBatch(ctx, db.CreateBatchParams{
 		TenantID:          toPgUUID(params.TenantID),
@@ -214,7 +221,7 @@ func (s *Service) List(ctx context.Context, tenantID uuid.UUID, limit, offset in
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := s.queries.ListBatches(ctx, db.ListBatchesParams{
+	rows, err := s.repo.ListBatches(ctx, db.ListBatchesParams{
 		TenantID: toPgUUID(tenantID),
 		Limit:    limit,
 		Offset:   offset,
@@ -248,7 +255,7 @@ func (s *Service) ListCursor(ctx context.Context, tenantID uuid.UUID, limit int3
 	if after != nil {
 		params.AfterID = toOptionalUUID(after)
 	}
-	rows, err := s.queries.ListBatchesCursor(ctx, params)
+	rows, err := s.repo.ListBatchesCursor(ctx, params)
 	if err != nil {
 		return nil, false, err
 	}
@@ -269,7 +276,7 @@ func (s *Service) ListCursor(ctx context.Context, tenantID uuid.UUID, limit int3
 
 // ListAll returns paginated batches across all tenants with optional filters.
 func (s *Service) ListAll(ctx context.Context, tenantID *uuid.UUID, statuses []string, search string, limit, offset int32) ([]BatchWithTenant, int64, error) {
-	if s.queries == nil {
+	if s.repo == nil {
 		return nil, 0, errors.New("batch queries unavailable")
 	}
 	if limit <= 0 {
@@ -284,7 +291,7 @@ func (s *Service) ListAll(ctx context.Context, tenantID *uuid.UUID, statuses []s
 	if trimmed := strings.TrimSpace(search); trimmed != "" {
 		params.Search = pgtype.Text{String: trimmed, Valid: true}
 	}
-	rows, err := s.queries.ListBatchesAdmin(ctx, params)
+	rows, err := s.repo.ListBatchesAdmin(ctx, params)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -305,7 +312,7 @@ func (s *Service) ListAll(ctx context.Context, tenantID *uuid.UUID, statuses []s
 }
 
 func (s *Service) Get(ctx context.Context, tenantID uuid.UUID, id uuid.UUID) (Batch, error) {
-	row, err := s.queries.GetBatch(ctx, db.GetBatchParams{
+	row, err := s.repo.GetBatch(ctx, db.GetBatchParams{
 		TenantID: toPgUUID(tenantID),
 		ID:       toPgUUID(id),
 	})
@@ -316,7 +323,7 @@ func (s *Service) Get(ctx context.Context, tenantID uuid.UUID, id uuid.UUID) (Ba
 }
 
 func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (Batch, error) {
-	row, err := s.queries.GetBatchByID(ctx, toPgUUID(id))
+	row, err := s.repo.GetBatchByID(ctx, toPgUUID(id))
 	if err != nil {
 		return Batch{}, err
 	}
@@ -332,7 +339,7 @@ func (s *Service) CancelByID(ctx context.Context, id uuid.UUID) (Batch, error) {
 }
 
 func (s *Service) Cancel(ctx context.Context, tenantID uuid.UUID, id uuid.UUID) (Batch, error) {
-	row, err := s.queries.CancelBatch(ctx, db.CancelBatchParams{
+	row, err := s.repo.CancelBatch(ctx, db.CancelBatchParams{
 		TenantID: toPgUUID(tenantID),
 		ID:       toPgUUID(id),
 	})
@@ -517,7 +524,7 @@ func (s *Service) ClaimNextBatch(ctx context.Context) (Batch, error) {
 	}
 	defer tx.Rollback(ctx)
 
-	qtx := s.queries.WithTx(tx)
+	qtx := s.repo.WithTx(tx)
 	row, err := qtx.GetOldestQueuedBatch(ctx)
 	if err != nil {
 		return Batch{}, err
@@ -534,12 +541,12 @@ func (s *Service) ClaimNextBatch(ctx context.Context) (Batch, error) {
 
 // ClaimNextItem locks and transitions the next queued batch item to running state.
 func (s *Service) ClaimNextItem(ctx context.Context, batchID uuid.UUID) (db.BatchItem, error) {
-	return s.queries.ClaimNextBatchItem(ctx, toPgUUID(batchID))
+	return s.repo.ClaimNextBatchItem(ctx, toPgUUID(batchID))
 }
 
 // CompleteItem marks the specified batch item as completed and stores the response payload.
 func (s *Service) CompleteItem(ctx context.Context, itemID uuid.UUID, payload []byte) error {
-	return s.queries.CompleteBatchItem(ctx, db.CompleteBatchItemParams{
+	return s.repo.CompleteBatchItem(ctx, db.CompleteBatchItemParams{
 		ID:       toPgUUID(itemID),
 		Response: payload,
 	})
@@ -547,7 +554,7 @@ func (s *Service) CompleteItem(ctx context.Context, itemID uuid.UUID, payload []
 
 // FailItem records a failed batch item with the provided error payload.
 func (s *Service) FailItem(ctx context.Context, itemID uuid.UUID, payload []byte) error {
-	return s.queries.FailBatchItem(ctx, db.FailBatchItemParams{
+	return s.repo.FailBatchItem(ctx, db.FailBatchItemParams{
 		ID:    toPgUUID(itemID),
 		Error: payload,
 	})
@@ -555,7 +562,7 @@ func (s *Service) FailItem(ctx context.Context, itemID uuid.UUID, payload []byte
 
 // IncrementCounts adjusts the aggregate batch counters.
 func (s *Service) IncrementCounts(ctx context.Context, batchID uuid.UUID, completed, failed, cancelled int) error {
-	return s.queries.IncrementBatchCounts(ctx, db.IncrementBatchCountsParams{
+	return s.repo.IncrementBatchCounts(ctx, db.IncrementBatchCountsParams{
 		ID:                    toPgUUID(batchID),
 		RequestCountCompleted: int32(completed),
 		RequestCountFailed:    int32(failed),
@@ -580,7 +587,7 @@ func (s *Service) FinalizeBatch(ctx context.Context, batchID uuid.UUID, status s
 			params.Errors = data
 		}
 	}
-	row, err := s.queries.MarkBatchFinalStatus(ctx, params)
+	row, err := s.repo.MarkBatchFinalStatus(ctx, params)
 	if err != nil {
 		return Batch{}, err
 	}

@@ -16,16 +16,23 @@ import (
 
 // Service centralizes tenant-related read operations consumed by HTTP handlers.
 type Service struct {
-	queries  *db.Queries
+	repo     Repository
 	cfg      *config.Config
 	timezone *time.Location
 }
 
+// NewService builds a tenant service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(cfg *config.Config, queries *db.Queries, timezone *time.Location) *Service {
+	return NewServiceWithRepository(cfg, NewQueriesRepository(queries), timezone)
+}
+
+// NewServiceWithRepository builds a tenant service with a Repository interface.
+func NewServiceWithRepository(cfg *config.Config, repo Repository, timezone *time.Location) *Service {
 	if timezone == nil {
 		timezone = time.UTC
 	}
-	return &Service{cfg: cfg, queries: queries, timezone: timezone}
+	return &Service{cfg: cfg, repo: repo, timezone: timezone}
 }
 
 // Membership represents a tenant membership for a specific user.
@@ -60,10 +67,10 @@ type BudgetSummary struct {
 
 // ListUserMemberships returns all tenants the user belongs to (including personal tenant).
 func (s *Service) ListUserMemberships(ctx context.Context, user db.User) ([]Membership, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, errors.New("tenant service not initialized")
 	}
-	rows, err := s.queries.ListUserTenants(ctx, user.ID)
+	rows, err := s.repo.ListUserTenants(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,17 +107,17 @@ func (s *Service) ListUserMemberships(ctx context.Context, user db.User) ([]Memb
 
 // GetTenantSummary returns tenant metadata/budget info for the provided tenant if the user is a member.
 func (s *Service) GetTenantSummary(ctx context.Context, user db.User, tenantID uuid.UUID) (Summary, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Summary{}, errors.New("tenant service not initialized")
 	}
-	membership, err := s.queries.GetTenantMembership(ctx, db.GetTenantMembershipParams{
+	membership, err := s.repo.GetTenantMembership(ctx, db.GetTenantMembershipParams{
 		TenantID: toPgUUID(tenantID),
 		UserID:   user.ID,
 	})
 	if err != nil {
 		return Summary{}, err
 	}
-	tenant, err := s.queries.GetTenantByID(ctx, toPgUUID(tenantID))
+	tenant, err := s.repo.GetTenantByID(ctx, toPgUUID(tenantID))
 	if err != nil {
 		return Summary{}, err
 	}
@@ -134,7 +141,7 @@ func (s *Service) GetTenantSummary(ctx context.Context, user db.User, tenantID u
 
 // GetBudgetSummary returns budget usage data for a tenant.
 func (s *Service) GetBudgetSummary(ctx context.Context, tenantID uuid.UUID) (BudgetSummary, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return BudgetSummary{}, errors.New("tenant service not initialized")
 	}
 	return s.buildBudgetSummary(ctx, tenantID)
@@ -144,7 +151,7 @@ func (s *Service) buildBudgetSummary(ctx context.Context, tenantID uuid.UUID) (B
 	limit := s.cfg.Budgets.DefaultUSD
 	warn := s.cfg.Budgets.WarningThresholdPerc
 	schedule := s.cfg.Budgets.RefreshSchedule
-	override, err := s.queries.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
+	override, err := s.repo.GetTenantBudgetOverride(ctx, toPgUUID(tenantID))
 	if err == nil {
 		if val, ok := override.BudgetUsd.Float64(); ok && val > 0 {
 			limit = val
@@ -177,7 +184,7 @@ func (s *Service) buildBudgetSummary(ctx context.Context, tenantID uuid.UUID) (B
 
 func (s *Service) calcUsageUSD(ctx context.Context, tenantID uuid.UUID, schedule string) (float64, error) {
 	start, end := budgetWindowBounds(time.Now().In(s.timezone), schedule)
-	row, err := s.queries.SumUsageForTenant(ctx, db.SumUsageForTenantParams{
+	row, err := s.repo.SumUsageForTenant(ctx, db.SumUsageForTenantParams{
 		TenantID: toPgUUID(tenantID),
 		Ts:       pgtype.Timestamptz{Time: start, Valid: true},
 		Ts_2:     pgtype.Timestamptz{Time: end, Valid: true},

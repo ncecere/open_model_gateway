@@ -90,15 +90,21 @@ type BudgetStatus struct {
 }
 
 // NewLogger constructs a usage logger using the shared pool and queries.
+// Deprecated: Use NewLoggerWithRepository for new code.
 func NewLogger(ctx context.Context, pool *pgxpool.Pool, queries *db.Queries, cfg config.BudgetConfig, sink AlertSink, metrics *observability.Provider) *Logger {
+	return NewLoggerWithRepository(ctx, pool, NewQueriesRepository(queries, pool), cfg, sink, metrics)
+}
+
+// NewLoggerWithRepository constructs a usage logger with a Repository interface.
+func NewLoggerWithRepository(ctx context.Context, pool *pgxpool.Pool, repo Repository, cfg config.BudgetConfig, sink AlertSink, metrics *observability.Provider) *Logger {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	l := &Logger{
-		recorder:         NewUsageRecorder(pool, queries),
-		budgets:          NewBudgetEvaluator(cfg, queries, metrics),
-		alerts:           NewAlertDispatcher(queries, sink),
+		recorder:         NewUsageRecorderWithRepository(pool, repo),
+		budgets:          NewBudgetEvaluatorWithRepository(cfg, repo, metrics),
+		alerts:           NewAlertDispatcherWithRepository(repo, sink),
 		metrics:          metrics,
 		pricing:          pricing.NewCache(),
 		tenantRemainders: make(map[uuid.UUID]decimal.Decimal),

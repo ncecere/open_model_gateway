@@ -49,7 +49,7 @@ var ErrInvalidExport = errors.New("invalid usage export request")
 
 // Service coordinates usage export records and the generated files.
 type Service struct {
-	queries   *db.Queries
+	repo      Repository
 	files     *filesvc.Service
 	location  *time.Location
 	maxWindow time.Duration
@@ -118,9 +118,16 @@ type parquetExportRow struct {
 	CostUSD       float64 `parquet:"name=cost_usd, type=DOUBLE"`
 }
 
+// NewService builds an exports service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries, files *filesvc.Service, loc *time.Location) *Service {
+	return NewServiceWithRepository(NewQueriesRepository(queries), files, loc)
+}
+
+// NewServiceWithRepository builds an exports service with a Repository interface.
+func NewServiceWithRepository(repo Repository, files *filesvc.Service, loc *time.Location) *Service {
 	return &Service{
-		queries:   queries,
+		repo:      repo,
 		files:     files,
 		location:  timeutil.EnsureLocation(loc),
 		maxWindow: time.Duration(maxExportRangeDays) * 24 * time.Hour,
@@ -128,7 +135,7 @@ func NewService(queries *db.Queries, files *filesvc.Service, loc *time.Location)
 }
 
 func (s *Service) Create(ctx context.Context, params CreateParams) (Export, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Export{}, fmt.Errorf("usage exports unavailable")
 	}
 	if params.RequestedBy == uuid.Nil || params.FileTenantID == uuid.Nil {
@@ -154,7 +161,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Export, erro
 		return Export{}, fmt.Errorf("export range exceeds %d days", maxExportRangeDays)
 	}
 	tenantIDs := dedupUUIDs(params.TenantIDs)
-	record, err := s.queries.CreateUsageExport(ctx, db.CreateUsageExportParams{
+	record, err := s.repo.CreateUsageExport(ctx, db.CreateUsageExportParams{
 		Scope:        scope,
 		Status:       StatusQueued,
 		Format:       format,
@@ -173,13 +180,13 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Export, erro
 }
 
 func (s *Service) ListAdmin(ctx context.Context, limit, offset int32) ([]Export, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("usage exports unavailable")
 	}
 	if limit <= 0 {
 		limit = 25
 	}
-	rows, err := s.queries.ListUsageExportsAdmin(ctx, db.ListUsageExportsAdminParams{Limit: limit, Offset: offset})
+	rows, err := s.repo.ListUsageExportsAdmin(ctx, db.ListUsageExportsAdminParams{Limit: limit, Offset: offset})
 	if err != nil {
 		return nil, err
 	}
@@ -187,13 +194,13 @@ func (s *Service) ListAdmin(ctx context.Context, limit, offset int32) ([]Export,
 }
 
 func (s *Service) ListByRequester(ctx context.Context, userID uuid.UUID, limit, offset int32) ([]Export, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("usage exports unavailable")
 	}
 	if limit <= 0 {
 		limit = 25
 	}
-	rows, err := s.queries.ListUsageExportsByRequester(ctx, db.ListUsageExportsByRequesterParams{
+	rows, err := s.repo.ListUsageExportsByRequester(ctx, db.ListUsageExportsByRequesterParams{
 		RequestedBy: toPgUUID(userID),
 		Limit:       limit,
 		Offset:      offset,
@@ -205,10 +212,10 @@ func (s *Service) ListByRequester(ctx context.Context, userID uuid.UUID, limit, 
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (Export, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Export{}, fmt.Errorf("usage exports unavailable")
 	}
-	row, err := s.queries.GetUsageExport(ctx, toPgUUID(id))
+	row, err := s.repo.GetUsageExport(ctx, toPgUUID(id))
 	if err != nil {
 		return Export{}, err
 	}
@@ -216,14 +223,14 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Export, error) {
 }
 
 func (s *Service) ClaimNext(ctx context.Context) (db.UsageExport, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return db.UsageExport{}, fmt.Errorf("usage exports unavailable")
 	}
-	return s.queries.ClaimUsageExport(ctx)
+	return s.repo.ClaimUsageExport(ctx)
 }
 
 func (s *Service) Process(ctx context.Context, record db.UsageExport) (Export, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Export{}, fmt.Errorf("usage exports unavailable")
 	}
 	export, err := exportFromDB(record)
@@ -241,7 +248,7 @@ func (s *Service) Process(ctx context.Context, record db.UsageExport) (Export, e
 	if err != nil {
 		return s.failExport(ctx, export.ID, err.Error())
 	}
-	updated, err := s.queries.CompleteUsageExport(ctx, db.CompleteUsageExportParams{
+	updated, err := s.repo.CompleteUsageExport(ctx, db.CompleteUsageExportParams{
 		ID:       toPgUUID(export.ID),
 		FileID:   toPgUUID(fileRec.ID),
 		RowCount: toPgInt32(int32(len(rows))),
@@ -257,7 +264,7 @@ func (s *Service) loadRows(ctx context.Context, export Export) ([]exportRow, err
 		return nil, ErrInvalidExport
 	}
 	trunc := granularityToTrunc(export.Granularity)
-	rows, err := s.queries.ExportUsageRows(ctx, db.ExportUsageRowsParams{
+	rows, err := s.repo.ExportUsageRows(ctx, db.ExportUsageRowsParams{
 		Ts:        toPgTime(export.PeriodStart),
 		Ts_2:      toPgTime(export.PeriodEnd),
 		Column3:   toPgUUIDArrayNullable(export.TenantIDs),
@@ -342,7 +349,7 @@ func (s *Service) writeExportFile(ctx context.Context, export Export, rows []exp
 }
 
 func (s *Service) failExport(ctx context.Context, id uuid.UUID, reason string) (Export, error) {
-	updated, err := s.queries.FailUsageExport(ctx, db.FailUsageExportParams{
+	updated, err := s.repo.FailUsageExport(ctx, db.FailUsageExportParams{
 		ID:    toPgUUID(id),
 		Error: toPgText(reason),
 	})

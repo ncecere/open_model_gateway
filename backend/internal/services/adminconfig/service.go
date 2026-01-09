@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/config"
@@ -27,14 +26,21 @@ const (
 )
 
 type Service struct {
-	queries *db.Queries
+	repo    Repository
 	cfg     *config.Config
 	files   *filesvc.Service
 	batches *batchsvc.Service
 }
 
+// NewService builds an admin config service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries, cfg *config.Config, files *filesvc.Service, batches *batchsvc.Service) *Service {
-	return &Service{queries: queries, cfg: cfg, files: files, batches: batches}
+	return NewServiceWithRepository(NewQueriesRepository(queries), cfg, files, batches)
+}
+
+// NewServiceWithRepository builds an admin config service with a Repository interface.
+func NewServiceWithRepository(repo Repository, cfg *config.Config, files *filesvc.Service, batches *batchsvc.Service) *Service {
+	return &Service{repo: repo, cfg: cfg, files: files, batches: batches}
 }
 
 type FileSettings struct {
@@ -95,7 +101,7 @@ func (s *Service) UpdateFileSettings(ctx context.Context, req FileSettings, upda
 	s.cfg.Files.MaxTTL = time.Duration(req.MaxTTLSeconds) * time.Second
 
 	payload, _ := json.Marshal(req)
-	if _, err := s.queries.UpsertSystemSetting(ctx, db.UpsertSystemSettingParams{
+	if _, err := s.repo.UpsertSystemSetting(ctx, db.UpsertSystemSettingParams{
 		Key:       filesSettingKey,
 		Value:     payload,
 		UpdatedBy: toPgUUID(updatedBy),
@@ -122,7 +128,7 @@ func (s *Service) UpdateBatchSettings(ctx context.Context, req BatchSettings, up
 	s.cfg.Batches.MaxTTL = time.Duration(req.MaxTTLSeconds) * time.Second
 
 	payload, _ := json.Marshal(req)
-	if _, err := s.queries.UpsertSystemSetting(ctx, db.UpsertSystemSettingParams{
+	if _, err := s.repo.UpsertSystemSetting(ctx, db.UpsertSystemSettingParams{
 		Key:       batchesSettingKey,
 		Value:     payload,
 		UpdatedBy: toPgUUID(updatedBy),
@@ -150,7 +156,7 @@ func (s *Service) UpdateAlertSettings(ctx context.Context, req AlertSettings, up
 	s.cfg.Budgets.Alert.Webhook = req.Webhook
 
 	payload, _ := json.Marshal(req)
-	if _, err := s.queries.UpsertSystemSetting(ctx, db.UpsertSystemSettingParams{
+	if _, err := s.repo.UpsertSystemSetting(ctx, db.UpsertSystemSettingParams{
 		Key:       alertsSettingKey,
 		Value:     payload,
 		UpdatedBy: toPgUUID(updatedBy),
@@ -280,11 +286,17 @@ func toPgUUID(id uuid.UUID) pgtype.UUID {
 }
 
 // ApplyOverrides loads stored file/batch settings and mutates cfg accordingly.
+// Deprecated: Use ApplyOverridesWithRepo for new code.
 func ApplyOverrides(ctx context.Context, queries *db.Queries, cfg *config.Config) {
-	if cfg == nil || queries == nil {
+	ApplyOverridesWithRepo(ctx, NewQueriesRepository(queries), cfg)
+}
+
+// ApplyOverridesWithRepo loads stored file/batch settings and mutates cfg accordingly.
+func ApplyOverridesWithRepo(ctx context.Context, repo Repository, cfg *config.Config) {
+	if cfg == nil || repo == nil {
 		return
 	}
-	if setting, err := queries.GetSystemSetting(ctx, filesSettingKey); err == nil {
+	if setting, err := repo.GetSystemSetting(ctx, filesSettingKey); err == nil {
 		var payload FileSettings
 		if err := json.Unmarshal(setting.Value, &payload); err == nil {
 			if payload.MaxSizeMB > 0 {
@@ -298,7 +310,7 @@ func ApplyOverrides(ctx context.Context, queries *db.Queries, cfg *config.Config
 			}
 		}
 	}
-	if setting, err := queries.GetSystemSetting(ctx, batchesSettingKey); err == nil {
+	if setting, err := repo.GetSystemSetting(ctx, batchesSettingKey); err == nil {
 		var payload BatchSettings
 		if err := json.Unmarshal(setting.Value, &payload); err == nil {
 			if payload.MaxRequests > 0 {
@@ -314,10 +326,8 @@ func ApplyOverrides(ctx context.Context, queries *db.Queries, cfg *config.Config
 				cfg.Batches.MaxTTL = time.Duration(payload.MaxTTLSeconds) * time.Second
 			}
 		}
-	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		_ = err
 	}
-	if setting, err := queries.GetSystemSetting(ctx, alertsSettingKey); err == nil {
+	if setting, err := repo.GetSystemSetting(ctx, alertsSettingKey); err == nil {
 		var payload AlertSettings
 		if err := json.Unmarshal(setting.Value, &payload); err == nil {
 			cfg.Budgets.Alert.SMTP = payload.SMTP

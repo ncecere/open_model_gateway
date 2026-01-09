@@ -22,15 +22,22 @@ import (
 
 // BudgetEvaluator centralizes budget config, window math, and usage aggregation.
 type BudgetEvaluator struct {
-	queries *db.Queries
+	repo    Repository
 	cfgMu   sync.RWMutex
 	cfg     config.BudgetConfig
 	tracer  trace.Tracer
 	metrics *observability.Provider
 }
 
+// NewBudgetEvaluator builds a budget evaluator.
+// Deprecated: Use NewBudgetEvaluatorWithRepository for new code.
 func NewBudgetEvaluator(cfg config.BudgetConfig, queries *db.Queries, metrics *observability.Provider) *BudgetEvaluator {
-	return &BudgetEvaluator{queries: queries, cfg: cfg, tracer: otel.Tracer("open-model-gateway/budget-evaluator"), metrics: metrics}
+	return NewBudgetEvaluatorWithRepository(cfg, NewQueriesRepository(queries, nil), metrics)
+}
+
+// NewBudgetEvaluatorWithRepository builds a budget evaluator with a Repository interface.
+func NewBudgetEvaluatorWithRepository(cfg config.BudgetConfig, repo Repository, metrics *observability.Provider) *BudgetEvaluator {
+	return &BudgetEvaluator{repo: repo, cfg: cfg, tracer: otel.Tracer("open-model-gateway/budget-evaluator"), metrics: metrics}
 }
 
 func (b *BudgetEvaluator) Config() config.BudgetConfig {
@@ -70,7 +77,7 @@ func (b *BudgetEvaluator) SumUsage(ctx context.Context, tenantID uuid.UUID, now 
 	defer span.End()
 	start, end := periodBounds(now, schedule)
 	queryStart := time.Now()
-	row, err := b.queries.SumUsageForTenant(ctx, db.SumUsageForTenantParams{
+	row, err := b.repo.SumUsageForTenant(ctx, db.SumUsageForTenantParams{
 		TenantID: toPgUUID(tenantID),
 		Ts:       pgtype.Timestamptz{Time: start, Valid: true},
 		Ts_2:     pgtype.Timestamptz{Time: end, Valid: true},

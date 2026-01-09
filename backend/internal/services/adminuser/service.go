@@ -25,7 +25,7 @@ var (
 
 // Service manages admin-facing user operations.
 type Service struct {
-	queries     *db.Queries
+	repo        Repository
 	accounts    *accounts.PersonalService
 	adminAuth   *auth.AdminAuthService
 	emailSender email.Sender
@@ -35,12 +35,18 @@ type Service struct {
 }
 
 // NewService wires dependencies for the admin user service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, sender email.Sender, from string, baseURL string, logger *slog.Logger) *Service {
+	return NewServiceWithRepository(NewQueriesRepository(queries), accounts, adminAuth, sender, from, baseURL, logger)
+}
+
+// NewServiceWithRepository wires dependencies for the admin user service with a Repository interface.
+func NewServiceWithRepository(repo Repository, accounts *accounts.PersonalService, adminAuth *auth.AdminAuthService, sender email.Sender, from string, baseURL string, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Service{
-		queries:     queries,
+		repo:        repo,
 		accounts:    accounts,
 		adminAuth:   adminAuth,
 		emailSender: sender,
@@ -73,10 +79,10 @@ type CreateParams struct {
 
 // List returns paginated users.
 func (s *Service) List(ctx context.Context, limit, offset int32) ([]User, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	rows, err := s.queries.ListUsers(ctx, db.ListUsersParams{
+	rows, err := s.repo.ListUsers(ctx, db.ListUsersParams{
 		Limit:  limit,
 		Offset: offset,
 	})
@@ -96,7 +102,7 @@ func (s *Service) List(ctx context.Context, limit, offset int32) ([]User, error)
 
 // Upsert ensures a user exists (creating if necessary) and optionally sets a password.
 func (s *Service) Upsert(ctx context.Context, params CreateParams) (User, bool, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return User{}, false, ErrServiceUnavailable
 	}
 	email := strings.TrimSpace(params.Email)
@@ -108,12 +114,12 @@ func (s *Service) Upsert(ctx context.Context, params CreateParams) (User, bool, 
 		name = email
 	}
 
-	userRow, err := s.queries.GetUserByEmail(ctx, email)
+	userRow, err := s.repo.GetUserByEmail(ctx, email)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return User{}, false, err
 		}
-		userRow, err = s.queries.CreateUser(ctx, db.CreateUserParams{
+		userRow, err = s.repo.CreateUser(ctx, db.CreateUserParams{
 			Email: email,
 			Name:  name,
 		})

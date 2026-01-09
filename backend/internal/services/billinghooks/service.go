@@ -23,7 +23,7 @@ import (
 )
 
 type Service struct {
-	queries    *db.Queries
+	repo       Repository
 	client     *http.Client
 	maxRetries int
 	logger     *slog.Logger
@@ -102,7 +102,14 @@ type UpdateParams struct {
 	Enabled bool
 }
 
+// NewService builds a billing hooks service.
+// Deprecated: Use NewServiceWithRepository for new code.
 func NewService(queries *db.Queries, cfg config.WebhookConfig, logger *slog.Logger) *Service {
+	return NewServiceWithRepository(NewQueriesRepository(queries), cfg, logger)
+}
+
+// NewServiceWithRepository builds a billing hooks service with a Repository interface.
+func NewServiceWithRepository(repo Repository, cfg config.WebhookConfig, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -113,7 +120,7 @@ func NewService(queries *db.Queries, cfg config.WebhookConfig, logger *slog.Logg
 		cfg.MaxRetries = 1
 	}
 	return &Service{
-		queries:    queries,
+		repo:       repo,
 		client:     &http.Client{Timeout: cfg.Timeout},
 		maxRetries: cfg.MaxRetries,
 		logger:     logger,
@@ -121,13 +128,13 @@ func NewService(queries *db.Queries, cfg config.WebhookConfig, logger *slog.Logg
 }
 
 func (s *Service) Create(ctx context.Context, params CreateParams) (Webhook, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Webhook{}, errors.New("billing webhooks unavailable")
 	}
 	if params.TenantID == uuid.Nil || strings.TrimSpace(params.URL) == "" {
 		return Webhook{}, errors.New("tenant_id and url required")
 	}
-	row, err := s.queries.CreateBillingWebhook(ctx, db.CreateBillingWebhookParams{
+	row, err := s.repo.CreateBillingWebhook(ctx, db.CreateBillingWebhookParams{
 		TenantID: toPgUUID(params.TenantID),
 		Name:     toPgText(params.Name),
 		Url:      strings.TrimSpace(params.URL),
@@ -141,13 +148,13 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Webhook, err
 }
 
 func (s *Service) Update(ctx context.Context, id uuid.UUID, params UpdateParams) (Webhook, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Webhook{}, errors.New("billing webhooks unavailable")
 	}
 	if id == uuid.Nil {
 		return Webhook{}, errors.New("invalid webhook id")
 	}
-	row, err := s.queries.UpdateBillingWebhook(ctx, db.UpdateBillingWebhookParams{
+	row, err := s.repo.UpdateBillingWebhook(ctx, db.UpdateBillingWebhookParams{
 		ID:      toPgUUID(id),
 		Name:    toPgText(params.Name),
 		Url:     strings.TrimSpace(params.URL),
@@ -161,20 +168,20 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, params UpdateParams)
 }
 
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return errors.New("billing webhooks unavailable")
 	}
 	if id == uuid.Nil {
 		return errors.New("invalid webhook id")
 	}
-	return s.queries.DeleteBillingWebhook(ctx, toPgUUID(id))
+	return s.repo.DeleteBillingWebhook(ctx, toPgUUID(id))
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (Webhook, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Webhook{}, errors.New("billing webhooks unavailable")
 	}
-	row, err := s.queries.GetBillingWebhook(ctx, toPgUUID(id))
+	row, err := s.repo.GetBillingWebhook(ctx, toPgUUID(id))
 	if err != nil {
 		return Webhook{}, err
 	}
@@ -182,10 +189,10 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Webhook, error) {
 }
 
 func (s *Service) ListAdmin(ctx context.Context) ([]Webhook, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, errors.New("billing webhooks unavailable")
 	}
-	rows, err := s.queries.ListBillingWebhooksAdmin(ctx)
+	rows, err := s.repo.ListBillingWebhooksAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -193,10 +200,10 @@ func (s *Service) ListAdmin(ctx context.Context) ([]Webhook, error) {
 }
 
 func (s *Service) ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]Webhook, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, errors.New("billing webhooks unavailable")
 	}
-	rows, err := s.queries.ListBillingWebhooksByTenant(ctx, toPgUUID(tenantID))
+	rows, err := s.repo.ListBillingWebhooksByTenant(ctx, toPgUUID(tenantID))
 	if err != nil {
 		return nil, err
 	}
@@ -204,13 +211,13 @@ func (s *Service) ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]Webho
 }
 
 func (s *Service) ListEvents(ctx context.Context, webhookID uuid.UUID, limit, offset int32) ([]Event, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, errors.New("billing webhooks unavailable")
 	}
 	if limit <= 0 {
 		limit = 25
 	}
-	rows, err := s.queries.ListBillingWebhookEvents(ctx, db.ListBillingWebhookEventsParams{
+	rows, err := s.repo.ListBillingWebhookEvents(ctx, db.ListBillingWebhookEventsParams{
 		WebhookID: toPgUUID(webhookID),
 		Limit:     limit,
 		Offset:    offset,
@@ -222,7 +229,7 @@ func (s *Service) ListEvents(ctx context.Context, webhookID uuid.UUID, limit, of
 }
 
 func (s *Service) DispatchSummary(ctx context.Context, tenantID uuid.UUID, start, end time.Time) ([]Event, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return nil, errors.New("billing webhooks unavailable")
 	}
 	webhooks, err := s.ListByTenant(ctx, tenantID)
@@ -256,14 +263,14 @@ func (s *Service) DispatchSummary(ctx context.Context, tenantID uuid.UUID, start
 }
 
 func (s *Service) RetryEvent(ctx context.Context, eventID uuid.UUID) (Event, error) {
-	if s == nil || s.queries == nil {
+	if s == nil || s.repo == nil {
 		return Event{}, errors.New("billing webhooks unavailable")
 	}
-	row, err := s.queries.GetBillingWebhookEvent(ctx, toPgUUID(eventID))
+	row, err := s.repo.GetBillingWebhookEvent(ctx, toPgUUID(eventID))
 	if err != nil {
 		return Event{}, err
 	}
-	webhookRow, err := s.queries.GetBillingWebhook(ctx, row.WebhookID)
+	webhookRow, err := s.repo.GetBillingWebhook(ctx, row.WebhookID)
 	if err != nil {
 		return Event{}, err
 	}
@@ -299,7 +306,7 @@ func (s *Service) deliver(ctx context.Context, webhook Webhook, payload []byte, 
 	if err != nil {
 		result.Error = err.Error()
 	}
-	row, insertErr := s.queries.InsertBillingWebhookEvent(ctx, db.InsertBillingWebhookEventParams{
+	row, insertErr := s.repo.InsertBillingWebhookEvent(ctx, db.InsertBillingWebhookEventParams{
 		WebhookID:   toPgUUID(webhook.ID),
 		TenantID:    toPgUUID(webhook.TenantID),
 		PeriodStart: toPgTime(start),
@@ -363,7 +370,7 @@ func (s *Service) post(ctx context.Context, webhook Webhook, payload []byte) (in
 }
 
 func (s *Service) buildSummary(ctx context.Context, tenantID uuid.UUID, start, end time.Time) (SummaryPayload, error) {
-	totals, err := s.queries.SumUsageForTenant(ctx, db.SumUsageForTenantParams{
+	totals, err := s.repo.SumUsageForTenant(ctx, db.SumUsageForTenantParams{
 		TenantID: toPgUUID(tenantID),
 		Ts:       toPgTime(start),
 		Ts_2:     toPgTime(end),
@@ -371,7 +378,7 @@ func (s *Service) buildSummary(ctx context.Context, tenantID uuid.UUID, start, e
 	if err != nil {
 		return SummaryPayload{}, err
 	}
-	topModels, err := s.queries.AggregateUsageByModelForTenant(ctx, db.AggregateUsageByModelForTenantParams{
+	topModels, err := s.repo.AggregateUsageByModelForTenant(ctx, db.AggregateUsageByModelForTenantParams{
 		TenantID: toPgUUID(tenantID),
 		Ts:       toPgTime(start),
 		Ts_2:     toPgTime(end),

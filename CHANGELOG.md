@@ -20,6 +20,13 @@ All notable changes to this project will be documented in this file. The format 
 - **Admin Dashboard enhancements**: configurable period selector (7d/30d/90d/custom date range), tenant filter dropdown to view usage for specific tenants, and tabbed usage breakdown section (By Model/Tenant/User) with donut charts and ranked item lists.
 - **User Dashboard enhancements**: period selector (7d/30d/90d), interactive usage breakdown bar chart with metric toggle (Requests/Tokens/Spend).
 - **PeriodSelector component**: reusable date range selector with preset periods and custom date range support.
+- **Admin Users page refactor** into modular feature folder structure (`/features/users/`) with extracted components and hooks.
+- **Bulk operations** for admin users: multi-select checkboxes, floating action bar with Activate/Suspend/Delete actions, and bulk delete confirmation dialog.
+- **User Editor Dialog** with 3 tabs (Basic Info, Access, Limits) for create/edit operations and status management.
+- **User Details Dialog** with enhanced view including copyable User ID/Tenant ID fields, status badges, budget overview, and tenant memberships table.
+- **Clone User action** in the admin users table dropdown to quickly create users with pre-filled settings.
+- **Summary stats cards** on Admin Users page showing Total Users, Active, and Suspended counts.
+- **useCopyToClipboard hook** for copy-to-clipboard functionality with visual feedback.
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.
@@ -35,6 +42,8 @@ All notable changes to this project will be documented in this file. The format 
 - Tenant Create/Edit dialogs now have consistent fixed height (85vh) across all tabs.
 - Admin Dashboard now shows 2-column chart layout with Request Volume and Usage Breakdown sections.
 - User Dashboard "Recent usage" text list replaced with interactive bar chart visualization.
+- Admin Users table now includes checkbox column for bulk selection and color-coded status badges.
+- Admin Users page refactored from monolithic 459-line file to modular components with feature folder structure.
 
 ### Fixed
 - ProviderHealthPage tests now properly mock localStorage for test environment compatibility.

@@ -1,71 +1,55 @@
-import { useCallback, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Mail, MoreHorizontal, RefreshCcw, UserPlus } from "lucide-react";
+import { useState, useCallback } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { RefreshCcw, UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/layouts";
-
-import { type PersonalTenantRecord, type TenantStatus } from "@/api/tenants";
-import {
-  createUser,
-  getUserTenants,
-  sendUserInvite,
-  type UserTenantMembership,
-} from "@/api/users";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { createUser, sendUserInvite } from "@/api/users";
+import { updateTenantStatus, type TenantStatus } from "@/api/tenants";
+
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { BudgetMeter } from "@/ui/kit/BudgetMeter";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { DataTable, type DataTableColumn } from "@/ui/kit/DataTable";
-import {
+  UserDirectoryCard,
+  UserEditorDialog,
+  UserDetailsDialog,
+  BulkUserActionBar,
   usePersonalTenantsQuery,
   usePersonalTenantFilters,
-} from "@/features/users/hooks/usePersonalTenants";
-import { useToast } from "@/hooks/use-toast";
+  useUserDialogs,
+  type PersonalTenantRecord,
+} from "@/features/users";
 
 export function UsersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const personalTenantsQuery = usePersonalTenantsQuery();
-  const records: PersonalTenantRecord[] = personalTenantsQuery.data?.personal_tenants ?? [];
+  const records = personalTenantsQuery.data?.personal_tenants ?? [];
   const { searchTerm, setSearchTerm, statusFilter, setStatusFilter, filteredRecords } =
     usePersonalTenantFilters(records);
-  const [selectedUser, setSelectedUser] = useState<PersonalTenantRecord | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [newUserName, setNewUserName] = useState("");
-  const [newUserEmail, setNewUserEmail] = useState("");
-  const [newUserPassword, setNewUserPassword] = useState("");
-  const [newUserInvite, setNewUserInvite] = useState(true);
-  const [inviteTarget, setInviteTarget] = useState<string | null>(null);
 
-  const userTenantsQuery = useQuery<UserTenantMembership[]>({
-    queryKey: ["user-tenants", selectedUser?.user_id],
-    queryFn: () => getUserTenants(selectedUser!.user_id),
-    enabled: Boolean(selectedUser?.user_id),
-  });
+  const {
+    createDialog,
+    editDialog,
+    detailsDialog,
+    deleteDialog,
+    handleClone,
+  } = useUserDialogs();
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [invitePending, setInvitePending] = useState<string | null>(null);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  // Mutations
   const createMutation = useMutation({
     mutationFn: createUser,
     onSuccess: (data, variables) => {
@@ -77,11 +61,7 @@ export function UsersPage() {
             ? "User created but the invite email could not be sent."
             : "Invite email not sent.",
       });
-      setCreateOpen(false);
-      setNewUserEmail("");
-      setNewUserName("");
-      setNewUserPassword("");
-      setNewUserInvite(true);
+      createDialog.reset();
       void personalTenantsQuery.refetch();
       void queryClient.invalidateQueries({ queryKey: ["users", "directory"] });
     },
@@ -98,8 +78,8 @@ export function UsersPage() {
     mutationFn: (userId: string) => sendUserInvite(userId),
     onSuccess: (_, userId) => {
       toast({ title: "Invite email sent" });
-      if (inviteTarget === userId) {
-        setInviteTarget(null);
+      if (invitePending === userId) {
+        setInvitePending(null);
       }
     },
     onError: (_, userId) => {
@@ -108,138 +88,141 @@ export function UsersPage() {
         title: "Failed to send invite",
         description: "Check SMTP configuration and try again.",
       });
-      if (inviteTarget === userId) {
-        setInviteTarget(null);
+      if (invitePending === userId) {
+        setInvitePending(null);
       }
     },
   });
 
-  const handleCreateUser = () => {
-    if (!newUserEmail.trim() || !newUserName.trim()) {
+  const statusMutation = useMutation({
+    mutationFn: ({ tenantId, status }: { tenantId: string; status: TenantStatus }) =>
+      updateTenantStatus({ tenantId, status }),
+    onSuccess: () => {
+      void personalTenantsQuery.refetch();
+    },
+  });
+
+  // Handlers
+  const handleCreateUser = useCallback(() => {
+    const form = createDialog.form;
+    if (!form.email.trim() || !form.name.trim()) {
       toast({ variant: "destructive", title: "Email and name are required" });
       return;
     }
     createMutation.mutate({
-      email: newUserEmail.trim(),
-      name: newUserName.trim(),
-      password: newUserPassword.trim() || undefined,
-      send_invite: newUserInvite,
+      email: form.email.trim(),
+      name: form.name.trim(),
+      password: form.password.trim() || undefined,
+      send_invite: form.sendInvite,
     });
-  };
+  }, [createDialog.form, createMutation, toast]);
+
+  const handleEditUser = useCallback(() => {
+    const record = editDialog.record;
+    const form = editDialog.form;
+    if (!record) return;
+
+    if (form.status !== record.status) {
+      statusMutation.mutate(
+        { tenantId: record.tenant_id, status: form.status },
+        {
+          onSuccess: () => {
+            toast({ title: "User status updated" });
+            editDialog.close();
+          },
+          onError: () => {
+            toast({
+              variant: "destructive",
+              title: "Failed to update status",
+            });
+          },
+        },
+      );
+    } else {
+      editDialog.close();
+    }
+  }, [editDialog, statusMutation, toast]);
 
   const handleSendInvite = useCallback(
     (userId: string) => {
-      setInviteTarget(userId);
+      setInvitePending(userId);
       sendInviteMutation.mutate(userId);
     },
     [sendInviteMutation],
   );
 
-  const personalTenantColumns = useMemo(() => {
-    return [
-      {
-        header: "User",
-        cell: (record: PersonalTenantRecord) => (
-          <div className="flex flex-col">
-            <span className="font-medium">{record.user_name}</span>
-            <span className="text-xs text-muted-foreground">{record.user_email}</span>
-          </div>
-        ),
-      },
-      {
-        header: "Status",
-        cell: (record: PersonalTenantRecord) => (
-          <span className="capitalize">{record.status}</span>
-        ),
-      },
-      {
-        header: "Budget",
-        cell: (record: PersonalTenantRecord) => (
-          <BudgetMeter
-            used={record.budget_used_usd ?? 0}
-            limit={record.budget_limit_usd ?? 0}
-            warningThreshold={record.warning_threshold ?? 0.8}
-          />
-        ),
-        cellClassName: "min-w-[220px]",
-      },
-      {
-        header: "Tenants",
-        cell: (record: PersonalTenantRecord) => (
-          <Badge variant="secondary">{record.membership_count ?? 1} tenants</Badge>
-        ),
-      },
-      {
-        header: "Created",
-        cell: (record: PersonalTenantRecord) => (
-          <span className="text-sm text-muted-foreground">
-            {new Date(record.created_at).toLocaleDateString()}
-          </span>
-        ),
-      },
-      {
-        header: "Tenant ID",
-        cell: (record: PersonalTenantRecord) => (
-          <span className="font-mono text-xs">{record.tenant_id}</span>
-        ),
-      },
-      {
-        header: "Actions",
-        headerClassName: "text-right",
-        cellClassName: "text-right",
-        cell: (record: PersonalTenantRecord) => (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Open user actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem onSelect={() => setSelectedUser(record)}>
-                  <Eye className="mr-2 h-4 w-4" /> View details
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={
-                    (inviteTarget !== null && inviteTarget !== record.user_id) ||
-                    sendInviteMutation.isPending
-                  }
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    handleSendInvite(record.user_id);
-                  }}
-                >
-                  <Mail className="mr-2 h-4 w-4" /> Send invite email
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ),
-      },
-    ];
-  }, [handleSendInvite, inviteTarget, sendInviteMutation.isPending]);
+  const handleBulkActivate = useCallback(async () => {
+    setBulkActionLoading(true);
+    const selectedRecords = records.filter((r) => selectedIds.has(r.tenant_id));
+    try {
+      for (const record of selectedRecords) {
+        if (record.status !== "active") {
+          await updateTenantStatus({ tenantId: record.tenant_id, status: "active" });
+        }
+      }
+      toast({ title: `${selectedRecords.length} user(s) activated` });
+      setSelectedIds(new Set());
+      void personalTenantsQuery.refetch();
+    } catch {
+      toast({ variant: "destructive", title: "Failed to activate users" });
+    } finally {
+      setBulkActionLoading(false);
+    }
+  }, [records, selectedIds, toast, personalTenantsQuery]);
 
-  const membershipColumns: DataTableColumn<UserTenantMembership>[] = useMemo(
-    () => [
-      {
-        header: "Tenant",
-        cell: (membership) => membership.tenant_name,
-      },
-      {
-        header: "Role",
-        cell: (membership) => <span className="capitalize">{membership.role}</span>,
-      },
-      {
-        header: "Status",
-        cell: (membership) => <span className="capitalize">{membership.status}</span>,
-      },
-      {
-        header: "Joined",
-        cell: (membership) =>
-          new Date(membership.joined_at).toLocaleDateString(),
-      },
-    ],
-    [],
+  const handleBulkSuspend = useCallback(async () => {
+    setBulkActionLoading(true);
+    const selectedRecords = records.filter((r) => selectedIds.has(r.tenant_id));
+    try {
+      for (const record of selectedRecords) {
+        if (record.status !== "suspended") {
+          await updateTenantStatus({ tenantId: record.tenant_id, status: "suspended" });
+        }
+      }
+      toast({ title: `${selectedRecords.length} user(s) suspended` });
+      setSelectedIds(new Set());
+      void personalTenantsQuery.refetch();
+    } catch {
+      toast({ variant: "destructive", title: "Failed to suspend users" });
+    } finally {
+      setBulkActionLoading(false);
+    }
+  }, [records, selectedIds, toast, personalTenantsQuery]);
+
+  const handleBulkDelete = useCallback(() => {
+    const selectedRecords = records.filter((r) => selectedIds.has(r.tenant_id));
+    deleteDialog.openWith(selectedRecords);
+  }, [records, selectedIds, deleteDialog]);
+
+  const handleConfirmDelete = useCallback(() => {
+    // Note: Delete API not implemented - show message
+    toast({
+      variant: "destructive",
+      title: "Delete not available",
+      description: "User deletion is not yet supported via the API.",
+    });
+    deleteDialog.close();
+    setSelectedIds(new Set());
+  }, [toast, deleteDialog]);
+
+  const handleViewDetails = useCallback(
+    (record: PersonalTenantRecord) => {
+      detailsDialog.openWith(record);
+    },
+    [detailsDialog],
   );
+
+  const handleEditFromDetails = useCallback(
+    (record: PersonalTenantRecord) => {
+      detailsDialog.close();
+      editDialog.openWith(record);
+    },
+    [detailsDialog, editDialog],
+  );
+
+  // Stats
+  const activeCount = records.filter((r) => r.status === "active").length;
+  const suspendedCount = records.filter((r) => r.status === "suspended").length;
 
   return (
     <div className="space-y-6">
@@ -257,7 +240,7 @@ export function UsersPage() {
             >
               <RefreshCcw className="h-4 w-4" />
             </Button>
-            <Button onClick={() => setCreateOpen(true)}>
+            <Button onClick={() => createDialog.setOpen(true)}>
               <UserPlus className="h-4 w-4" />
               New User
             </Button>
@@ -265,194 +248,128 @@ export function UsersPage() {
         }
       />
 
-      <Card>
-        <CardHeader className="gap-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <CardTitle>Personal tenants</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {records.length} users with seeded personal tenants
-              </p>
-            </div>
-            <div className="flex w-full flex-col gap-2 md:max-w-xl md:flex-row">
-              <Input
-                placeholder="Search by name or email"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="w-full"
-              />
-              <Select
-                value={statusFilter}
-                onValueChange={(value) =>
-                  setStatusFilter(value as "all" | TenantStatus)
-                }
-              >
-                <SelectTrigger className="w-full md:w-[200px]">
-                  <SelectValue placeholder="Filter status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <DataTable
-            data={filteredRecords}
-            columns={personalTenantColumns}
-            getKey={(record) => record.tenant_id}
-            isLoading={personalTenantsQuery.isLoading}
-            emptyState="No users match the current filters."
-          />
-        </CardContent>
-      </Card>
+      {/* Summary stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{records.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Suspended</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-amber-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{suspendedCount}</div>
+          </CardContent>
+        </Card>
+      </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New user</DialogTitle>
-            <DialogDescription>
-              Create an account and optionally send an invite email.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="new-user-email">Email</Label>
-              <Input
-                id="new-user-email"
-                placeholder="user@example.com"
-                value={newUserEmail}
-                onChange={(event) => setNewUserEmail(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-user-name">Name</Label>
-              <Input
-                id="new-user-name"
-                placeholder="Full name"
-                value={newUserName}
-                onChange={(event) => setNewUserName(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-user-password">
-                Password <span className="text-xs text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
-                id="new-user-password"
-                type="password"
-                placeholder="Set initial password"
-                value={newUserPassword}
-                onChange={(event) => setNewUserPassword(event.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave blank to rely on SSO or send invite instructions without a password.
-              </p>
-            </div>
-            <div className="flex items-center justify-between rounded-md border px-3 py-2">
-              <div>
-                <Label className="text-sm">Send invite email</Label>
-                <p className="text-xs text-muted-foreground">
-                  Email the user with admin/user portal links after creation.
-                </p>
-              </div>
-              <Switch
-                checked={newUserInvite}
-                onCheckedChange={(checked) => setNewUserInvite(checked)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createMutation.isPending}>
+      {/* User directory */}
+      <UserDirectoryCard
+        records={records}
+        filteredRecords={filteredRecords}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        isLoading={personalTenantsQuery.isLoading}
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
+        onView={handleViewDetails}
+        onEdit={(record) => editDialog.openWith(record)}
+        onClone={handleClone}
+        onDelete={(record) => deleteDialog.openWith([record])}
+        onSendInvite={handleSendInvite}
+        invitePending={invitePending}
+      />
+
+      {/* Bulk action bar */}
+      <BulkUserActionBar
+        selectedCount={selectedIds.size}
+        onActivate={handleBulkActivate}
+        onSuspend={handleBulkSuspend}
+        onDelete={handleBulkDelete}
+        onClear={() => setSelectedIds(new Set())}
+        isLoading={bulkActionLoading}
+      />
+
+      {/* Create dialog */}
+      <UserEditorDialog
+        open={createDialog.open}
+        onOpenChange={createDialog.setOpen}
+        form={createDialog.form}
+        onChange={createDialog.setForm}
+        onSubmit={handleCreateUser}
+        loading={createMutation.isPending}
+        mode="create"
+      />
+
+      {/* Edit dialog */}
+      <UserEditorDialog
+        open={editDialog.open}
+        onOpenChange={(open) => {
+          if (!open) editDialog.close();
+          else editDialog.setOpen(open);
+        }}
+        form={editDialog.form}
+        onChange={editDialog.setForm}
+        onSubmit={handleEditUser}
+        loading={statusMutation.isPending}
+        mode="edit"
+        record={editDialog.record}
+      />
+
+      {/* Details dialog */}
+      <UserDetailsDialog
+        open={detailsDialog.open}
+        onOpenChange={(open) => {
+          if (!open) detailsDialog.close();
+          else detailsDialog.setOpen(open);
+        }}
+        record={detailsDialog.record}
+        onEdit={handleEditFromDetails}
+      />
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={deleteDialog.setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete user{deleteDialog.records.length > 1 ? "s" : ""}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteDialog.records.length === 1
+                ? `This will permanently delete ${deleteDialog.records[0]?.user_name || deleteDialog.records[0]?.user_email} and all associated data.`
+                : `This will permanently delete ${deleteDialog.records.length} users and all associated data.`}
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => deleteDialog.close()}>
               Cancel
-            </Button>
-            <Button onClick={handleCreateUser} disabled={createMutation.isPending}>
-              {createMutation.isPending ? "Creating…" : "Create user"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(selectedUser)} onOpenChange={(open) => !open && setSelectedUser(null)}>
-        <DialogContent className="max-w-3xl">
-          {selectedUser ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>{selectedUser.user_name || selectedUser.user_email}</DialogTitle>
-                <DialogDescription>{selectedUser.user_email}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6 py-2">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <StatCard
-                    label="Status"
-                    value={selectedUser.status}
-                  />
-                  <StatCard
-                    label="Personal tenant created"
-                    value={new Date(selectedUser.created_at).toLocaleDateString()}
-                  />
-                  <StatCard
-                    label="Tenants"
-                    value={(selectedUser.membership_count ?? 1).toString()}
-                  />
-                </div>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Budget overview
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <BudgetMeter
-                      used={selectedUser.budget_used_usd ?? 0}
-                      limit={selectedUser.budget_limit_usd ?? 0}
-                      warningThreshold={selectedUser.warning_threshold ?? 0.8}
-                    />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Tenant memberships</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <DataTable
-                      data={userTenantsQuery.data ?? []}
-                      columns={membershipColumns}
-                      getKey={(membership) => `${membership.tenant_id}-${membership.role}`}
-                      isLoading={userTenantsQuery.isLoading}
-                      emptyState="No additional tenant memberships found."
-                      dense
-                    />
-                  </CardContent>
-                </Card>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setSelectedUser(null)}>
-                  Close
-                </Button>
-              </DialogFooter>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-2xl font-semibold text-foreground">{value}</p>
-      </CardContent>
-    </Card>
   );
 }

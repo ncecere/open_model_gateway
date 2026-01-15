@@ -47,6 +47,7 @@ All notable changes to this project will be documented in this file. The format 
 - **Batch ID column** added to User Batches table for easier batch reference.
 - **Download actions** added to Admin Batches table (output/errors) via ActionsMenu dropdown.
 - **BatchDetailsDialog enhancements**: wider dialog (720px), copy-to-clipboard for Batch ID, and Download buttons (Output/Errors) in footer.
+- **Settings page Default Models tab enhancements**: summary stats card showing total model count, search/filter capability for the models table, and EmptyState components for empty and no-results states.
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.
@@ -68,6 +69,9 @@ All notable changes to this project will be documented in this file. The format 
 - Admin API Keys table now includes checkbox column for bulk selection.
 - Admin Tokens tab (`Settings > Admin tokens`) refactored to be self-contained with own data fetching, removing 17 props from SettingsPage.
 - User API Keys KeyTable now includes checkbox column for bulk selection (when user has manage permissions).
+- Settings page TabsList now uses horizontal flex wrap with improved active state styling (`bg-primary`/`text-primary-foreground`).
+- Settings form tabs (Budgets, Alerts, Rate Limits, Files, Batches) now use CardFooter for consistent action button placement.
+- Settings Overview tab removed as redundant (information already covered by page header).
 
 ### Fixed
 - ProviderHealthPage tests now properly mock localStorage for test environment compatibility.

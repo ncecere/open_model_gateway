@@ -36,7 +36,6 @@ import { BatchSettingsTab } from "@/pages/settings/BatchSettingsTab";
 import { AlertSettingsTab } from "@/pages/settings/AlertSettingsTab";
 import { DefaultModelsTab } from "@/pages/settings/DefaultModelsTab";
 import { AdminKeysTab } from "@/pages/settings/AdminKeysTab";
-import { OverviewSettingsTab } from "@/pages/settings/OverviewSettingsTab";
 import { useSettingsForm } from "@/pages/settings/useSettingsForm";
 
 const REFRESH_OPTIONS = [
@@ -419,15 +418,14 @@ export function SettingsPage() {
         onValueChange={setActiveTab}
         className="space-y-6"
       >
-        <TabsList className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-          <TabsTrigger value="budgets">Budgets</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
-          <TabsTrigger value="rate-limits">Rate limits</TabsTrigger>
-          <TabsTrigger value="files">Files</TabsTrigger>
-          <TabsTrigger value="batches">Batches</TabsTrigger>
-          <TabsTrigger value="models">Default models</TabsTrigger>
-          <TabsTrigger value="admin-keys">Admin tokens</TabsTrigger>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
+          <TabsTrigger value="budgets" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Budgets</TabsTrigger>
+          <TabsTrigger value="alerts" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Alerts</TabsTrigger>
+          <TabsTrigger value="rate-limits" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Rate Limits</TabsTrigger>
+          <TabsTrigger value="files" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Files</TabsTrigger>
+          <TabsTrigger value="batches" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Batches</TabsTrigger>
+          <TabsTrigger value="models" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Default Models</TabsTrigger>
+          <TabsTrigger value="admin-keys" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Admin Tokens</TabsTrigger>
         </TabsList>
 
         <FormProvider {...form}>
@@ -492,7 +490,6 @@ export function SettingsPage() {
             removePending={removeModelMutation.isPending}
           />
           <AdminKeysTab />
-          <OverviewSettingsTab />
         </FormProvider>
       </Tabs>
     </div>

@@ -1,6 +1,6 @@
 import { Controller, useFormContext } from "react-hook-form";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -133,17 +133,17 @@ export function BudgetSettingsTab({
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2">
-                <Button variant="outline" onClick={onReset} disabled={!hasDefaults}>
-                  Reset
-                </Button>
-                <Button onClick={onSave} disabled={saving || loading}>
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
             </>
           )}
         </CardContent>
+        <CardFooter className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onReset} disabled={!hasDefaults || loading}>
+            Reset
+          </Button>
+          <Button onClick={onSave} disabled={saving || loading}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </CardFooter>
       </Card>
     </TabsContent>
   );

@@ -29,4 +29,5 @@ func Register(app *fiber.App, container *app.Container) {
 	registerAdminRateLimitRoutes(protected, container)
 	registerAdminProviderRoutes(protected, container)
 	registerAdminProviderHealthRoutes(protected, container)
+	registerAdminSystemMetricsRoutes(protected, container)
 }

@@ -54,6 +54,10 @@ func (h *defaultModelHandler) create(c *fiber.Ctx) error {
 	if err := h.syncPersonalDefaults(c); err != nil {
 		return err
 	}
+
+	// Record audit event
+	_ = recordAudit(c, h.container, "default_model.add", "model", strings.ToLower(alias), nil)
+
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"alias": strings.ToLower(alias)})
 }
 
@@ -68,6 +72,10 @@ func (h *defaultModelHandler) delete(c *fiber.Ctx) error {
 	if err := h.syncPersonalDefaults(c); err != nil {
 		return err
 	}
+
+	// Record audit event
+	_ = recordAudit(c, h.container, "default_model.remove", "model", strings.ToLower(alias), nil)
+
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

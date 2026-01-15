@@ -1,7 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, Gauge, RefreshCcw, ShieldCheck, Siren } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { AlertTriangle, Gauge, ShieldCheck, Siren } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/layouts";
+import { LiveIndicator } from "@/components/LiveIndicator";
+import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 
 import { useProviderAlerts, useProviderIncidents, useProviderSLIs } from "@/api/hooks/useTelemetry";
 import {
@@ -79,19 +81,48 @@ export function ProviderHealthPage() {
   const [selectedIncident, setSelectedIncident] = useState<ProviderIncident | null>(null);
   const [clearingSeed, setClearingSeed] = useState(false);
 
-  const slisQuery = useProviderSLIs({
-    provider: providerFilter || undefined,
-    alias: aliasFilter || undefined,
+  // Live updates state
+  const liveState = useLiveUpdates({
+    defaultInterval: 15000,
+    defaultEnabled: true,
+    storageKey: "provider-health-live",
   });
-  const incidentsQuery = useProviderIncidents({
-    provider: providerFilter || undefined,
-    alias: aliasFilter || undefined,
-    status: incidentStatus === "all" ? undefined : incidentStatus,
-  });
-  const alertsQuery = useProviderAlerts({
-    provider: providerFilter || undefined,
-    alias: aliasFilter || undefined,
-  });
+
+  const slisQuery = useProviderSLIs(
+    {
+      provider: providerFilter || undefined,
+      alias: aliasFilter || undefined,
+    },
+    {
+      refetchInterval: liveState.isLive ? liveState.interval : false,
+    }
+  );
+  const incidentsQuery = useProviderIncidents(
+    {
+      provider: providerFilter || undefined,
+      alias: aliasFilter || undefined,
+      status: incidentStatus === "all" ? undefined : incidentStatus,
+    },
+    {
+      refetchInterval: liveState.isLive ? liveState.interval : false,
+    }
+  );
+  const alertsQuery = useProviderAlerts(
+    {
+      provider: providerFilter || undefined,
+      alias: aliasFilter || undefined,
+    },
+    {
+      refetchInterval: liveState.isLive ? liveState.interval : false,
+    }
+  );
+
+  // Track last update time
+  useEffect(() => {
+    if (!slisQuery.isFetching && !incidentsQuery.isFetching && !alertsQuery.isFetching) {
+      liveState.markUpdated();
+    }
+  }, [slisQuery.dataUpdatedAt, incidentsQuery.dataUpdatedAt, alertsQuery.dataUpdatedAt]);
 
   const providerOptions = useMemo(() => {
     const set = new Set<string>();
@@ -156,22 +187,19 @@ export function ProviderHealthPage() {
         description="Live SLIs, degraded routes, and recent incidents across providers."
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
+            <LiveIndicator
+              state={liveState}
+              isFetching={slisQuery.isFetching || incidentsQuery.isFetching || alertsQuery.isFetching}
+              onRefresh={() => {
                 void slisQuery.refetch();
                 void incidentsQuery.refetch();
                 void alertsQuery.refetch();
               }}
-              loading={slisQuery.isFetching || incidentsQuery.isFetching || alertsQuery.isFetching}
-            >
-              <RefreshCcw className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" onClick={() => void clearSeedData()} disabled={clearingSeed}>
+            />
+            <Button variant="outline" size="sm" onClick={() => void clearSeedData()} disabled={clearingSeed}>
               {clearingSeed ? "Clearing…" : "Clear seed"}
             </Button>
-            <Button variant="secondary" onClick={() => void seedSampleData()}>
+            <Button variant="secondary" size="sm" onClick={() => void seedSampleData()}>
               Seed data
             </Button>
           </div>

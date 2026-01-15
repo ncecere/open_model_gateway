@@ -9,12 +9,14 @@ import {
   LayoutDashboard,
   Menu,
   Moon,
+  Search,
   Sparkles,
   Sun,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/providers/ThemeProvider";
+import { CommandPalette, useCommandPalette } from "@/components/CommandPalette";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -90,6 +92,7 @@ function UserShell({
 }: UserShellProps) {
   const sidebar = useSidebar();
   const { resolvedTheme, setThemePreference } = useTheme();
+  const { trigger: openCommandPalette } = useCommandPalette();
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
@@ -160,6 +163,26 @@ function UserShell({
             </SidebarTrigger>
           </div>
           <div className="flex items-center gap-2">
+            {/* Search / Command Palette trigger */}
+            <button
+              onClick={openCommandPalette}
+              className="hidden items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:flex"
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span className="text-xs">Search...</span>
+              <kbd className="pointer-events-none ml-2 hidden select-none rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground lg:inline-block">
+                ⌘K
+              </kbd>
+            </button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={openCommandPalette}
+              className="rounded-full sm:hidden"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+
             <Button
               variant="ghost"
               size="icon"
@@ -212,6 +235,9 @@ function UserShell({
         open={profileOpen}
         onOpenChange={onProfileOpenChange}
       />
+
+      {/* Command Palette */}
+      <CommandPalette portal="user" />
     </div>
   );
 }

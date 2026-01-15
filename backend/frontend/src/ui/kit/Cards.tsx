@@ -20,6 +20,7 @@ interface MetricCardProps {
   trend?: TrendIndicator;
   status?: "success" | "warning" | "destructive" | "info";
   className?: string;
+  children?: ReactNode;
 }
 
 export function MetricCard({
@@ -31,6 +32,7 @@ export function MetricCard({
   trend,
   status,
   className,
+  children,
 }: MetricCardProps) {
   return (
     <Card
@@ -53,6 +55,7 @@ export function MetricCard({
           <>
             <Skeleton className="h-8 w-24" />
             <Skeleton className="h-4 w-16" />
+            {children && <Skeleton className="h-10 w-full mt-2" />}
           </>
         ) : (
           <>
@@ -61,8 +64,9 @@ export function MetricCard({
               {trend && <TrendBadge trend={trend} />}
             </div>
             {secondary && (
-              <p className="text-sm text-muted-foreground">{secondary}</p>
+              <div className="text-sm text-muted-foreground">{secondary}</div>
             )}
+            {children}
           </>
         )}
       </CardContent>

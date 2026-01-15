@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listPersonalTenants, listTenants } from "@/api/tenants";
 import { cancelBatch, listBatches, type BatchRecord } from "@/api/batches";
 import { useToast } from "@/hooks/use-toast";
+import { useLiveUpdates } from "@/hooks/useLiveUpdates";
+import { LiveIndicator } from "@/components/LiveIndicator";
 import {
   AdminBatchTable,
   BatchDetailsDialog,
@@ -16,6 +18,14 @@ const TENANTS_QUERY_KEY = ["tenants", "list"] as const;
 export function BatchesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Live updates state
+  const liveState = useLiveUpdates({
+    defaultInterval: 15000,
+    defaultEnabled: true,
+    storageKey: "batches-live",
+  });
+
   const tenantsQuery = useQuery({
     queryKey: TENANTS_QUERY_KEY,
     queryFn: () => listTenants({ limit: 200 }),
@@ -83,8 +93,15 @@ export function BatchesPage() {
         limit: BATCH_PAGE_SIZE,
         after: cursorAfter,
       }),
-    refetchInterval: 15_000,
+    refetchInterval: liveState.isLive ? liveState.interval : false,
   });
+
+  // Track last update time
+  useEffect(() => {
+    if (!batchesQuery.isFetching) {
+      liveState.markUpdated();
+    }
+  }, [batchesQuery.dataUpdatedAt]);
 
   const cancelMutation = useMutation({
     mutationFn: (batchId: string) => cancelBatch(batchId),
@@ -155,6 +172,13 @@ export function BatchesPage() {
       <PageHeader
         title="Batches"
         description="Monitor asynchronous workloads submitted by tenant API keys and manage their lifecycle."
+        actions={
+          <LiveIndicator
+            state={liveState}
+            isFetching={batchesQuery.isFetching}
+            onRefresh={() => void batchesQuery.refetch()}
+          />
+        }
       />
 
       <AdminBatchTable

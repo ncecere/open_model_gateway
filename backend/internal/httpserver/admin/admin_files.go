@@ -133,6 +133,10 @@ func (h *fileHandler) delete(c *fiber.Ctx) error {
 	if err := h.container.Files.DeleteByID(c.UserContext(), fileID); err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
+
+	// Record audit event
+	_ = recordAudit(c, h.container, "file.delete", "file", fileID.String(), nil)
+
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

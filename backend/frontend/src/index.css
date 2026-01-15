@@ -329,3 +329,21 @@
     background-position: 200% 0;
   }
 }
+
+/* Command palette input fixes */
+[cmdk-input] {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  caret-color: hsl(var(--foreground));
+}
+
+[cmdk-input]:focus {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+[cmdk-input]::selection {
+  background: hsl(var(--accent) / 0.3);
+}

@@ -88,6 +88,10 @@ func (h *batchHandler) cancel(c *fiber.Ctx) error {
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
+
+	// Record audit event
+	_ = recordAudit(c, h.container, "batch.cancel", "batch", batchID.String(), nil)
+
 	return c.JSON(batchdto.FromBatch(record))
 }
 

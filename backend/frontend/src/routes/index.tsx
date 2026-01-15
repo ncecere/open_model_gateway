@@ -11,6 +11,8 @@ import { UsersPage } from "../pages/UsersPage";
 import { UsagePage } from "../pages/UsagePage";
 import { BatchesPage } from "../pages/BatchesPage";
 import { FilesPage } from "../pages/FilesPage";
+import { AuditLogPage } from "../pages/AuditLogPage";
+import { SystemStatusPage } from "../pages/SystemStatusPage";
 import { EnterpriseLayout } from "../components/layouts";
 import { OIDCRedirectPage } from "../pages/OIDCRedirectPage";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -60,6 +62,8 @@ export function AppRoutes() {
         <Route path="files" element={<FilesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="batches" element={<BatchesPage />} />
+        <Route path="audit-log" element={<AuditLogPage />} />
+        <Route path="system-status" element={<SystemStatusPage />} />
       </Route>
       <Route path="/auth/oidc/callback" element={<OIDCRedirectPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

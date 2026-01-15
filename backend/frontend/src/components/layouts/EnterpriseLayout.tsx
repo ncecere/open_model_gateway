@@ -16,11 +16,15 @@ import {
   Moon,
   LogOut,
   User,
+  Search,
+  ScrollText,
+  Server,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/providers/ThemeProvider";
 import { Button } from "@/components/ui/button";
+import { CommandPalette, useCommandPalette } from "@/components/CommandPalette";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,7 +82,11 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "System",
-    items: [{ path: "/settings", label: "Settings", icon: Settings }],
+    items: [
+      { path: "/system-status", label: "System Status", icon: Server },
+      { path: "/audit-log", label: "Audit Log", icon: ScrollText },
+      { path: "/settings", label: "Settings", icon: Settings },
+    ],
   },
 ];
 
@@ -161,6 +169,9 @@ export function EnterpriseLayout() {
           onClick={closeMobile}
         />
       )}
+
+      {/* Command Palette */}
+      <CommandPalette portal="admin" />
     </SidebarContext.Provider>
   );
 }
@@ -336,6 +347,7 @@ function EnterpriseHeader({
 }) {
   const { toggleMobile } = useSidebar();
   const { resolvedTheme, setThemePreference } = useTheme();
+  const { trigger: openCommandPalette } = useCommandPalette();
 
   const toggleTheme = () => {
     setThemePreference(resolvedTheme === "dark" ? "light" : "dark");
@@ -356,6 +368,25 @@ function EnterpriseHeader({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Search / Command Palette trigger */}
+        <button
+          onClick={openCommandPalette}
+          className="hidden items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:flex"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span className="text-xs">Search...</span>
+          <kbd className="pointer-events-none ml-2 hidden select-none rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground lg:inline-block">
+            ⌘K
+          </kbd>
+        </button>
+        <button
+          onClick={openCommandPalette}
+          className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:hidden"
+          aria-label="Open search"
+        >
+          <Search className="h-4 w-4" />
+        </button>
+
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}

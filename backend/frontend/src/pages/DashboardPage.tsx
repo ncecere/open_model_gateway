@@ -1,29 +1,26 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import {
   Building2,
   Boxes,
   Activity,
   DollarSign,
-  Globe,
-  ExternalLink,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layouts";
 import { listTenants } from "@/api/tenants";
 import { listModelCatalog } from "@/api/model-catalog";
-import type { ModelCatalogEntry } from "@/api/model-catalog";
-import { fetchHealth } from "@/api/health";
-import { useUsageOverview } from "@/api/hooks/useUsage";
+import { useUsageOverview, useUsageBreakdown } from "@/api/hooks/useUsage";
 import { formatTokensShort } from "@/lib/numbers";
-import { MetricCard, StatusDot } from "@/ui/kit/Cards";
-import PostgresIcon from "@/assets/system/postgres.svg";
-import RedisIcon from "@/assets/system/redis.svg";
-import { useTheme } from "@/providers/ThemeProvider";
-import { getProviderIcon } from "@/features/models/provider-icons";
+import { MetricCard } from "@/ui/kit/Cards";
+import { RequestsAreaChart } from "@/components/charts/RequestsAreaChart";
+import { SpendAreaChart } from "@/components/charts/SpendAreaChart";
+import { TokensDonutChart } from "@/components/charts/TokensDonutChart";
+import { Sparkline, extractSparklineData } from "@/components/charts/Sparkline";
+import { cn } from "@/lib/utils";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -40,7 +37,6 @@ const formatSpendAmount = (usd?: number, cents?: number) =>
   );
 
 export function DashboardPage() {
-  const { resolvedTheme } = useTheme();
   const tenantsQuery = useQuery({
     queryKey: ["tenants", "dashboard"],
     queryFn: () => listTenants({ limit: 50 }),
@@ -51,13 +47,12 @@ export function DashboardPage() {
     queryFn: listModelCatalog,
   });
 
-  const healthQuery = useQuery({
-    queryKey: ["health"],
-    queryFn: fetchHealth,
-    staleTime: 30_000,
-  });
-
   const usageQuery = useUsageOverview({ period: "7d" });
+  const modelBreakdownQuery = useUsageBreakdown(
+    { group: "model", period: "7d", limit: 10 },
+    { staleTime: 60_000 }
+  );
+
   const activeTenants =
     tenantsQuery.data?.tenants.filter((t) => t.status === "active").length ?? 0;
   const totalTenants = tenantsQuery.data?.tenants.length ?? 0;
@@ -65,6 +60,43 @@ export function DashboardPage() {
     modelsQuery.data?.filter((model) => model.enabled).length ?? 0;
   const totalModels = modelsQuery.data?.length ?? 0;
   const usageSummary = usageQuery.data;
+
+  // Calculate trends from points data
+  const { requestsTrend, spendTrend } = useMemo(() => {
+    const points = usageSummary?.points ?? [];
+    if (points.length < 2) {
+      return { requestsTrend: null, spendTrend: null };
+    }
+    const midpoint = Math.floor(points.length / 2);
+    const firstHalf = points.slice(0, midpoint);
+    const secondHalf = points.slice(midpoint);
+
+    const firstRequests = firstHalf.reduce((sum, p) => sum + p.requests, 0);
+    const secondRequests = secondHalf.reduce((sum, p) => sum + p.requests, 0);
+    const requestsTrend = firstRequests > 0
+      ? ((secondRequests - firstRequests) / firstRequests) * 100
+      : null;
+
+    const getSpend = (p: typeof points[0]) => p.cost_usd ?? (p.cost_cents / 100);
+    const firstSpend = firstHalf.reduce((sum, p) => sum + getSpend(p), 0);
+    const secondSpend = secondHalf.reduce((sum, p) => sum + getSpend(p), 0);
+    const spendTrend = firstSpend > 0
+      ? ((secondSpend - firstSpend) / firstSpend) * 100
+      : null;
+
+    return { requestsTrend, spendTrend };
+  }, [usageSummary?.points]);
+
+  // Token breakdown data for donut chart
+  const tokenBreakdownData = useMemo(() => {
+    return (modelBreakdownQuery.data?.items ?? []).map((item) => ({
+      id: item.id,
+      label: item.label,
+      tokens: item.tokens,
+      requests: item.requests,
+      cost_usd: item.cost_usd ?? (item.cost_cents / 100),
+    }));
+  }, [modelBreakdownQuery.data?.items]);
 
   return (
     <div className="space-y-6">
@@ -95,11 +127,27 @@ export function DashboardPage() {
         <MetricCard
           title="Weekly Requests"
           value={(usageSummary?.total_requests ?? 0).toLocaleString()}
-          secondary={`${((usageSummary?.total_requests ?? 0) / 7).toFixed(0)} avg/day`}
+          secondary={
+            <div className="flex items-center gap-2">
+              <span>{((usageSummary?.total_requests ?? 0) / 7).toFixed(0)} avg/day</span>
+              {requestsTrend !== null && (
+                <TrendBadge value={requestsTrend} />
+              )}
+            </div>
+          }
           loading={usageQuery.isLoading}
           icon={Activity}
           className="stagger-3"
-        />
+        >
+          {usageSummary?.points && usageSummary.points.length > 1 && (
+            <Sparkline
+              data={extractSparklineData(usageSummary.points, "requests")}
+              color="hsl(var(--chart-1))"
+              height={40}
+              className="mt-2"
+            />
+          )}
+        </MetricCard>
         <MetricCard
           title="Weekly Spend"
           value={
@@ -110,276 +158,103 @@ export function DashboardPage() {
                 )
               : "$0.00"
           }
-          secondary={`${formatTokensShort(usageSummary?.total_tokens ?? 0)} tokens`}
+          secondary={
+            <div className="flex items-center gap-2">
+              <span>{formatTokensShort(usageSummary?.total_tokens ?? 0)} tokens</span>
+              {spendTrend !== null && (
+                <TrendBadge value={spendTrend} />
+              )}
+            </div>
+          }
           loading={usageQuery.isLoading}
           icon={DollarSign}
           className="stagger-4"
-        />
+        >
+          {usageSummary?.points && usageSummary.points.length > 1 && (
+            <Sparkline
+              data={extractSparklineData(usageSummary.points, "spend")}
+              color="hsl(var(--chart-3))"
+              height={40}
+              className="mt-2"
+            />
+          )}
+        </MetricCard>
       </section>
 
-      {/* Health Cards */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Card className="animate-fade-in-up stagger-5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle className="text-base font-semibold">Gateway Health</CardTitle>
-            <StatusDot
-              status={healthQuery.data?.status === "ok" ? "online" : "warning"}
-              pulse
-            />
+      {/* Charts Section */}
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2 animate-fade-in-up stagger-5">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">Request Volume</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Daily requests over the past 7 days
+            </p>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {healthQuery.isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-              </div>
-            ) : (
-              <>
-                {/* Global Status */}
-                <div className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background">
-                      <Globe className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Global Status</p>
-                      <p className="text-xs text-muted-foreground">
-                        All systems operational
-                      </p>
-                    </div>
-                  </div>
-                  <Badge
-                    variant={
-                      healthQuery.data?.status === "ok"
-                        ? "success-soft"
-                        : "warning-soft"
-                    }
-                  >
-                    {formatStatusLabel(healthQuery.data?.status)}
-                  </Badge>
-                </div>
-
-                {/* Infrastructure Services */}
-                <div className="space-y-2">
-                  <HealthStatusRow
-                    label="Postgres"
-                    icon={<img src={PostgresIcon} alt="" className="h-6 w-6" />}
-                    check={healthQuery.data?.checks?.postgres}
-                  />
-                  <HealthStatusRow
-                    label="Redis"
-                    icon={<img src={RedisIcon} alt="" className="h-6 w-6" />}
-                    check={healthQuery.data?.checks?.redis}
-                  />
-                </div>
-
-                <p className="text-xs text-muted-foreground">
-                  Last checked:{" "}
-                  {new Date(healthQuery.dataUpdatedAt).toLocaleTimeString()}
-                </p>
-              </>
-            )}
+          <CardContent>
+            <Tabs defaultValue="requests" className="space-y-4">
+              <TabsList>
+                <TabsTrigger value="requests">Requests</TabsTrigger>
+                <TabsTrigger value="spend">Spend</TabsTrigger>
+              </TabsList>
+              <TabsContent value="requests">
+                <RequestsAreaChart
+                  data={usageSummary?.points ?? []}
+                  loading={usageQuery.isLoading}
+                  height={240}
+                />
+              </TabsContent>
+              <TabsContent value="spend">
+                <SpendAreaChart
+                  data={usageSummary?.points ?? []}
+                  loading={usageQuery.isLoading}
+                  height={240}
+                />
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 
-        <ModelHealthCard
-          models={modelsQuery.data ?? []}
-          loading={modelsQuery.isLoading}
-          theme={resolvedTheme}
-        />
+        <Card className="animate-fade-in-up stagger-6">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">Token Usage by Model</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Distribution across models
+            </p>
+          </CardHeader>
+          <CardContent>
+            <TokensDonutChart
+              data={tokenBreakdownData}
+              loading={modelBreakdownQuery.isLoading}
+              height={280}
+            />
+          </CardContent>
+        </Card>
       </section>
     </div>
   );
 }
 
-function ModelHealthCard({
-  models,
-  loading,
-  theme,
-}: {
-  models: ModelCatalogEntry[];
-  loading?: boolean;
-  theme: "light" | "dark";
-}) {
-  const providerStats = useMemo(() => {
-    const stats = new Map<string, { total: number; enabled: number }>();
-    models.forEach((model) => {
-      const entry = stats.get(model.provider) ?? { total: 0, enabled: 0 };
-      entry.total += 1;
-      if (model.enabled) {
-        entry.enabled += 1;
-      }
-      stats.set(model.provider, entry);
-    });
-    return Array.from(stats.entries()).map(([provider, values]) => ({
-      provider,
-      label: formatProviderLabel(provider),
-      ...values,
-    }));
-  }, [models]);
+function TrendBadge({ value }: { value: number }) {
+  const isPositive = value > 0;
+  const isNeutral = Math.abs(value) < 1;
 
-  const totalEnabled = providerStats.reduce((sum, p) => sum + p.enabled, 0);
-  const totalModels = providerStats.reduce((sum, p) => sum + p.total, 0);
-
-  return (
-    <Card className="animate-fade-in-up stagger-6">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div>
-          <CardTitle className="text-base font-semibold">Provider Health</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {totalEnabled}/{totalModels} models enabled
-          </p>
-        </div>
-        <Link
-          to="/provider-health"
-          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ExternalLink className="h-4 w-4" />
-        </Link>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {loading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : providerStats.length === 0 ? (
-          <div className="rounded-lg bg-muted/50 p-4 text-center">
-            <p className="text-sm text-muted-foreground">
-              No models configured yet.
-            </p>
-            <Link
-              to="/models"
-              className="mt-2 inline-block text-sm text-primary hover:underline"
-            >
-              Add your first model
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {providerStats.map((group) => {
-              const icon = getProviderIcon(group.provider, theme);
-              const tone =
-                group.enabled === group.total
-                  ? "success"
-                  : group.enabled === 0
-                    ? "danger"
-                    : "warning";
-              const badgeVariant =
-                tone === "success"
-                  ? "success-soft"
-                  : tone === "warning"
-                    ? "warning-soft"
-                    : "destructive-soft";
-
-              return (
-                <div
-                  key={group.provider}
-                  className="flex items-center justify-between rounded-lg bg-muted/30 p-3 transition-colors hover:bg-muted/50"
-                >
-                  <div className="flex items-center gap-3">
-                    {icon ? (
-                      <div className="flex h-8 w-8 items-center justify-center rounded bg-background">
-                        <img src={icon} alt="" className="h-5 w-5" />
-                      </div>
-                    ) : (
-                      <div className="flex h-8 w-8 items-center justify-center rounded bg-muted">
-                        <Boxes className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-sm font-medium">{group.label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {group.enabled}/{group.total} enabled
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant={badgeVariant}>
-                    {group.enabled === group.total
-                      ? "Healthy"
-                      : group.enabled === 0
-                        ? "Offline"
-                        : "Partial"}
-                  </Badge>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function formatProviderLabel(provider: string) {
-  switch (provider) {
-    case "azure":
-      return "Azure OpenAI";
-    case "openai":
-      return "OpenAI";
-    case "openrouter":
-      return "OpenRouter";
-    case "groq":
-      return "Groq";
-    case "openai_compatible":
-    case "openai-compatible":
-      return "OpenAI-compatible";
-    case "bedrock":
-      return "Amazon Bedrock";
-    case "vertex":
-      return "Google Vertex";
-    case "anthropic":
-      return "Anthropic";
-    default:
-      return provider.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  if (isNeutral) {
+    return null;
   }
-}
-
-function HealthStatusRow({
-  label,
-  check,
-  icon,
-}: {
-  label: string;
-  check?: { status?: string; latency_ms?: number; error?: string };
-  icon?: React.ReactNode;
-}) {
-  const status = check?.status ?? "unknown";
-  const badgeVariant =
-    status === "ok"
-      ? "success-soft"
-      : status === "error"
-        ? "destructive-soft"
-        : "muted";
 
   return (
-    <div className="flex items-center justify-between rounded-lg bg-muted/30 p-3 transition-colors hover:bg-muted/50">
-      <div className="flex items-center gap-3">
-        {icon && (
-          <div className="flex h-8 w-8 items-center justify-center rounded bg-background">
-            {icon}
-          </div>
-        )}
-        <div>
-          <p className="text-sm font-medium">{label}</p>
-          <p className="text-xs text-muted-foreground">
-            {check?.error
-              ? check.error
-              : check?.latency_ms != null
-                ? `${check.latency_ms}ms latency`
-                : "No samples"}
-          </p>
-        </div>
-      </div>
-      <Badge variant={badgeVariant}>{formatStatusLabel(status)}</Badge>
-    </div>
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 text-xs font-medium",
+        isPositive ? "text-success" : "text-destructive"
+      )}
+    >
+      {isPositive ? (
+        <TrendingUp className="h-3 w-3" />
+      ) : (
+        <TrendingDown className="h-3 w-3" />
+      )}
+      {Math.abs(value).toFixed(0)}%
+    </span>
   );
-}
-
-function formatStatusLabel(status?: string | null) {
-  if (!status) return "Unknown";
-  if (status === "ok") return "Healthy";
-  return status.charAt(0).toUpperCase() + status.slice(1);
 }

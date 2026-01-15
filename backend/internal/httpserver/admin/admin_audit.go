@@ -17,12 +17,30 @@ func recordAudit(c *fiber.Ctx, container *app.Container, action, resourceType, r
 	if container.AdminAudit == nil {
 		return fmt.Errorf("audit service unavailable")
 	}
-	meta := metadata
+
+	// Build metadata map with actor email
+	var metaMap fiber.Map
 	if metadata == nil {
-		meta = fiber.Map{}
+		metaMap = fiber.Map{}
+	} else if m, ok := metadata.(fiber.Map); ok {
+		metaMap = m
+	} else if m, ok := metadata.(map[string]any); ok {
+		metaMap = fiber.Map{}
+		for k, v := range m {
+			metaMap[k] = v
+		}
+	} else {
+		// If metadata is something else, wrap it
+		metaMap = fiber.Map{"data": metadata}
 	}
-	if _, err := json.Marshal(meta); err != nil {
+
+	// Add actor email if available
+	if user, ok := adminUserFromContext(c.UserContext()); ok && user.Email != "" {
+		metaMap["actor_email"] = user.Email
+	}
+
+	if _, err := json.Marshal(metaMap); err != nil {
 		return fmt.Errorf("marshal audit metadata: %w", err)
 	}
-	return container.AdminAudit.Record(c.Context(), userID, action, resourceType, resourceID, metadata)
+	return container.AdminAudit.Record(c.Context(), userID, action, resourceType, resourceID, metaMap)
 }

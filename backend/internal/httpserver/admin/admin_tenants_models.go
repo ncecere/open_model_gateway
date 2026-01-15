@@ -49,9 +49,13 @@ func (h *tenantHandler) upsertTenantModels(c *fiber.Ctx) error {
 		return writeTenantServiceError(c, err)
 	}
 
-	if err := recordAudit(c, h.container, "tenant.models.set", "tenant", tenantUUID.String(), fiber.Map{
-		"models": finalList,
-	}); err != nil {
+	// Get tenant name for audit log
+	auditMeta := fiber.Map{"models": finalList}
+	if tenant, terr := h.container.Data.Queries.GetTenantByID(c.Context(), toPgUUID(tenantUUID)); terr == nil {
+		auditMeta["name"] = tenant.Name
+	}
+
+	if err := recordAudit(c, h.container, "tenant.models.set", "tenant", tenantUUID.String(), auditMeta); err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 
@@ -74,7 +78,13 @@ func (h *tenantHandler) deleteTenantModels(c *fiber.Ctx) error {
 		return writeTenantServiceError(c, err)
 	}
 
-	if err := recordAudit(c, h.container, "tenant.models.clear", "tenant", tenantUUID.String(), fiber.Map{}); err != nil {
+	// Get tenant name for audit log
+	auditMeta := fiber.Map{}
+	if tenant, terr := h.container.Data.Queries.GetTenantByID(c.Context(), toPgUUID(tenantUUID)); terr == nil {
+		auditMeta["name"] = tenant.Name
+	}
+
+	if err := recordAudit(c, h.container, "tenant.models.clear", "tenant", tenantUUID.String(), auditMeta); err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
 	}
 

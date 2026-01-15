@@ -30,6 +30,14 @@ All notable changes to this project will be documented in this file. The format 
 - **Admin API Keys page enhancements**: summary stats cards (Total/Active/Revoked), bulk selection checkboxes, floating bulk action bar with bulk revoke capability.
 - **Admin Tokens tab refactor** (`Settings > Admin tokens`) into modular feature folder structure (`/features/admin-keys/`) with search by name/prefix, scope filter (Admin/System), status filter (Active/Expired/Revoked), bulk selection, enhanced details dialog, and summary stats cards.
 - **User API Keys page enhancements**: summary stats cards showing key counts across all tenants, bulk selection checkboxes in Personal and Tenant tabs, floating bulk action bar, and search filtering in key tables.
+- **Usage Pages enhancements**: enhanced summary cards with sparkline visualizations and trend indicators, quick date range presets (Today/7d/30d/90d/YTD/Custom), and improved data presentation.
+- **TrendIndicator component** (`/ui/kit/TrendIndicator.tsx`): reusable trend indicator with color-coded up/down/flat states and configurable "up is good" logic.
+- **EnhancedSummaryCard component** (`/features/usage/components/EnhancedSummaryCard.tsx`): summary cards with integrated sparklines and trend indicators.
+- **DateRangePresets component** (`/features/usage/components/DateRangePresets.tsx`): quick date range selector with Today/7d/30d/90d/YTD/Custom presets.
+- **New chart components**: `UsageDistributionChart` (donut chart for spend/tokens/requests), `StackedUsageChart` (stacked area chart for multi-entity comparison), `UsageHeatmap` (calendar-style activity heatmap).
+- **MetricDifferenceCard component** (`/features/usage/components/MetricDifferenceCard.tsx`): side-by-side metric comparison with difference highlighting.
+- **User usage feature module** (`/apps/user/features/usage/`): `BudgetTrackerWidget` (budget meter with warning zones, days remaining estimate, reset countdown), `SpendingInsights` (personalized spending pattern insights), `UserUsageExport` (CSV/JSON export dialog).
+- **Admin usage feature module** (`/features/admin-usage/`): `UtilizationDashboard` (API key/tenant/user utilization metrics, provider distribution), `useUsageDrillDown` hook (drill-down navigation with breadcrumb support).
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.

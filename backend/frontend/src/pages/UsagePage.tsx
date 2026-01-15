@@ -44,13 +44,14 @@ import {
   UsageComparisonChart,
   type UsageComparisonMetric,
 } from "@/components/charts/UsageComparisonChart";
-import { SummaryCard } from "@/ui/kit/Cards";
 import { ChartCard } from "@/ui/kit/ChartCard";
+import { extractSparklineData } from "@/components/charts/Sparkline";
 import {
+  DateRangePresets,
+  EnhancedSummaryCard,
   QueryAlert,
   UsageDailySkeleton,
   UsageDailyTable,
-  UsageFilters,
   formatTokensShort,
   formatUsageUSD,
   parseSpendValue,
@@ -419,22 +420,16 @@ export function UsagePage() {
         }
       />
 
-      <div className="flex flex-col gap-2 md:flex-row md:items-center">
-        <UsageFilters
-          startInput={startInput}
-          endInput={endInput}
-          onStartChange={setStartInput}
-          onEndChange={setEndInput}
-          rangeError={rangeError}
-          rangeDisplay={rangeDisplay}
-          timezone={timezone}
-          idPrefix="usage"
-        />
-      </div>
-
-      {rangeError ? (
-        <p className="text-sm text-destructive">Adjust the date range above to continue.</p>
-      ) : null}
+      <DateRangePresets
+        startInput={startInput}
+        endInput={endInput}
+        onStartChange={setStartInput}
+        onEndChange={setEndInput}
+        rangeError={rangeError}
+        rangeDisplay={rangeDisplay}
+        timezone={timezone}
+        idPrefix="usage"
+      />
 
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList className="w-fit">
@@ -446,13 +441,20 @@ export function UsagePage() {
 
         <TabsContent value="overview" className="space-y-6">
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard
+            <EnhancedSummaryCard
               title="Total requests"
               value={usageQuery.data ? totalRequests.toLocaleString() : "—"}
               description={rangeDisplay ?? "Across the selected window."}
               loading={usageQuery.isLoading}
+              sparklineData={
+                usageQuery.data?.points
+                  ? extractSparklineData(usageQuery.data.points, "requests")
+                  : undefined
+              }
+              sparklineColor="hsl(var(--chart-1))"
+              upIsGood={true}
             />
-            <SummaryCard
+            <EnhancedSummaryCard
               title="Total spend"
               value={
                 usageQuery.data
@@ -461,14 +463,28 @@ export function UsagePage() {
               }
               description="Usage-based fees"
               loading={usageQuery.isLoading}
+              sparklineData={
+                usageQuery.data?.points
+                  ? extractSparklineData(usageQuery.data.points, "spend")
+                  : undefined
+              }
+              sparklineColor="hsl(var(--chart-3))"
+              upIsGood={false}
             />
-            <SummaryCard
+            <EnhancedSummaryCard
               title="Tokens processed"
               value={usageQuery.data ? formatTokensShort(totalTokens) : "—"}
               description="Prompt + completion"
               loading={usageQuery.isLoading}
+              sparklineData={
+                usageQuery.data?.points
+                  ? extractSparklineData(usageQuery.data.points, "tokens")
+                  : undefined
+              }
+              sparklineColor="hsl(var(--chart-2))"
+              upIsGood={true}
             />
-            <SummaryCard
+            <EnhancedSummaryCard
               title="Tenants covered"
               value={tenants.length}
               description="Across the selected window"

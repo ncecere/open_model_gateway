@@ -20,13 +20,13 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { SummaryCard } from "@/ui/kit/Cards";
 import { PageHeader } from "@/components/layouts";
 import {
+  DateRangePresets,
+  EnhancedSummaryCard,
   QueryAlert,
   UsageDailySkeleton,
   UsageDailyTable,
-  UsageFilters,
   formatTokensShort,
   formatUsageUSD,
   useUsageRange,
@@ -171,25 +171,18 @@ export function UserUsagePage() {
       <PageHeader
         title="Usage"
         description="Track your API activity across personal and shared tenants."
-        actions={
-          <UsageFilters
-            startInput={startInput}
-            endInput={endInput}
-            onStartChange={setStartInput}
-            onEndChange={setEndInput}
-            rangeError={rangeError}
-            rangeDisplay={rangeDisplay}
-            timezone={timezone}
-            idPrefix="user-usage"
-          />
-        }
       />
 
-      {rangeError ? (
-        <p className="text-sm text-destructive">
-          Adjust the date range above to continue.
-        </p>
-      ) : null}
+      <DateRangePresets
+        startInput={startInput}
+        endInput={endInput}
+        onStartChange={setStartInput}
+        onEndChange={setEndInput}
+        rangeError={rangeError}
+        rangeDisplay={rangeDisplay}
+        timezone={timezone}
+        idPrefix="user-usage"
+      />
 
       {hasGlobalError ? (
         <div className="space-y-2">
@@ -215,13 +208,16 @@ export function UserUsagePage() {
 
         <TabsContent value="overview" className="space-y-6">
           <section className="grid gap-4 md:grid-cols-3">
-            <SummaryCard
+            <EnhancedSummaryCard
               title="Total requests"
               value={totals ? totals.requests.toLocaleString() : "—"}
               description="Across the selected window."
               loading={usageQuery.isLoading}
+              sparklineData={dailyRows?.map((p) => ({ value: p.requests })) ?? []}
+              sparklineColor="hsl(var(--chart-1))"
+              upIsGood={true}
             />
-            <SummaryCard
+            <EnhancedSummaryCard
               title="Total spend"
               value={
                 totals
@@ -233,12 +229,20 @@ export function UserUsagePage() {
               }
               description="Usage-based fees"
               loading={usageQuery.isLoading}
+              sparklineData={dailyRows?.map((p) => ({
+                value: p.cost_usd ?? (p.cost_cents ? p.cost_cents / 100 : 0),
+              })) ?? []}
+              sparklineColor="hsl(var(--chart-3))"
+              upIsGood={false}
             />
-            <SummaryCard
+            <EnhancedSummaryCard
               title="Tokens processed"
               value={totals ? formatTokensShort(totals.tokens) : "—"}
               description="Prompt + completion"
               loading={usageQuery.isLoading}
+              sparklineData={dailyRows?.map((p) => ({ value: p.tokens })) ?? []}
+              sparklineColor="hsl(var(--chart-2))"
+              upIsGood={true}
             />
           </section>
 

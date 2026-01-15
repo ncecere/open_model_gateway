@@ -144,6 +144,7 @@ export function UserFilesPage() {
         onPurposeChange={setPurposeFilter}
         purposeOptions={purposeOptions}
         files={filteredFiles}
+        total={files.length}
         isLoading={isInitialLoading}
         isFetchingMore={isFetchingMore}
         hasMore={hasMore}
@@ -157,6 +158,7 @@ export function UserFilesPage() {
         tenantLabel={tenantLabelForFile}
         open={Boolean(selectedFile)}
         onOpenChange={(open) => !open && setSelectedFile(null)}
+        onDownload={handleDownload}
       />
     </div>
   );

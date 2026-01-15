@@ -7,11 +7,13 @@ import {
   FolderKanban,
   Key,
   LayoutDashboard,
+  LogOut,
   Menu,
   Moon,
   Search,
   Sparkles,
   Sun,
+  User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -96,18 +98,20 @@ function UserShell({
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <Sidebar className="h-full border-r border-sidebar-border bg-sidebar">
-        <SidebarHeader className="justify-between border-b border-sidebar-border px-4 py-4">
+      <Sidebar className="h-full">
+        <SidebarHeader className="justify-between">
           <Link
             to="/"
-            className="flex items-center gap-2 text-lg font-semibold tracking-tight"
+            className="flex items-center gap-2.5"
           >
             <img
               src={LogoMark}
               alt="Open Model Gateway"
-              className="h-6 w-6"
+              className="h-7 w-7 shrink-0"
             />
-            <span className="text-sidebar-foreground">User Portal</span>
+            <span className="truncate text-sm font-semibold tracking-tight">
+              Open Model Gateway
+            </span>
           </Link>
           <Button
             variant="ghost"
@@ -119,7 +123,7 @@ function UserShell({
             <span className="sr-only">Close sidebar</span>
           </Button>
         </SidebarHeader>
-        <SidebarContent className="px-2 py-4">
+        <SidebarContent>
           <SidebarMenu>
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -138,28 +142,31 @@ function UserShell({
                     }
                     onClick={sidebar.close}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {item.label}
+                    <Icon className="h-[18px] w-[18px] shrink-0 transition-colors group-hover:text-foreground" />
+                    <span>{item.label}</span>
                   </NavLink>
                 </SidebarMenuItem>
               );
             })}
           </SidebarMenu>
         </SidebarContent>
-        <SidebarFooter className="space-y-2 border-t border-sidebar-border px-4 py-4">
+        <SidebarFooter className="space-y-3">
           {user?.is_super_admin ? (
-            <Button asChild variant="outline" size="sm" className="w-full text-xs">
-              <a href="/admin/ui">Open Admin Portal</a>
+            <Button asChild variant="outline" size="sm" className="w-full">
+              <a href="/admin/ui">Admin Portal</a>
             </Button>
           ) : null}
-          <p className="text-xs text-sidebar-foreground/50">&copy; {new Date().getFullYear()} Open Model Gateway</p>
+          <p className="text-center text-[11px] text-muted-foreground">
+            &copy; {new Date().getFullYear()} Open Model Gateway
+          </p>
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className="flex h-full flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b bg-card/50 backdrop-blur-sm px-4 md:px-6">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger className="md:hidden">
-              <Menu className="size-5" />
+        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b bg-card px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <SidebarTrigger className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden">
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Open sidebar</span>
             </SidebarTrigger>
           </div>
           <div className="flex items-center gap-2">
@@ -174,40 +181,48 @@ function UserShell({
                 ⌘K
               </kbd>
             </button>
-            <Button
-              variant="ghost"
-              size="icon"
+            <button
               onClick={openCommandPalette}
-              className="rounded-full sm:hidden"
+              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:hidden"
+              aria-label="Open search"
             >
               <Search className="h-4 w-4" />
-            </Button>
+            </button>
 
-            <Button
-              variant="ghost"
-              size="icon"
+            <button
               onClick={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
-              className="rounded-full"
+              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="Toggle theme"
             >
               {resolvedTheme === "dark" ? (
                 <Sun className="h-4 w-4" />
               ) : (
                 <Moon className="h-4 w-4" />
               )}
-            </Button>
+            </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant="outline"
-                  className="flex items-center gap-2 truncate max-w-[220px]"
+                  variant="ghost"
+                  className="flex h-9 items-center gap-2 px-2"
                 >
-                  <span className="truncate text-sm font-medium">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <span className="hidden max-w-[150px] truncate text-sm font-medium sm:block">
                     {user?.email ?? "user@example.com"}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Signed in</DropdownMenuLabel>
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">Account</p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user?.email ?? "user@example.com"}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={(event) => {
@@ -215,18 +230,23 @@ function UserShell({
                     onProfileOpenChange(true);
                   }}
                 >
+                  <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => logout()}>
-                  Logout
+                <DropdownMenuItem
+                  onSelect={() => logout()}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto bg-background-subtle px-4 py-6 md:px-8">
-          <div className="mx-auto w-full max-w-6xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <main className="flex-1 overflow-y-auto bg-background-subtle px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-7xl">
             <Outlet />
           </div>
         </main>

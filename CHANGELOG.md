@@ -38,6 +38,11 @@ All notable changes to this project will be documented in this file. The format 
 - **MetricDifferenceCard component** (`/features/usage/components/MetricDifferenceCard.tsx`): side-by-side metric comparison with difference highlighting.
 - **User usage feature module** (`/apps/user/features/usage/`): `BudgetTrackerWidget` (budget meter with warning zones, days remaining estimate, reset countdown), `SpendingInsights` (personalized spending pattern insights), `UserUsageExport` (CSV/JSON export dialog).
 - **Admin usage feature module** (`/features/admin-usage/`): `UtilizationDashboard` (API key/tenant/user utilization metrics, provider distribution), `useUsageDrillDown` hook (drill-down navigation with breadcrumb support).
+- **Files pages unification**: consistent layout structure across Admin and User portals with FilterBar outside Card, result counts in CardHeader, and unified column order (Filename, Purpose, Size, Status, Created, Expires, Actions).
+- **FileTypeIcon component** (`/features/files/components/FileTypeIcon.tsx`): file type icons based on extension/content-type for JSON, CSV, images, archives, code files, and more.
+- **Files details dialogs enhancements**: wider dialog (720px), file type icon in title, copy-to-clipboard for file ID, and Download button in footer.
+- **ActionsMenu in User Files**: replaced individual icon buttons with ActionsMenu dropdown for consistent action discovery.
+- **Expires column** added to Admin Files table to show file expiration dates.
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.
@@ -45,6 +50,7 @@ All notable changes to this project will be documented in this file. The format 
 - Tenant name included in audit metadata for tenant model operations.
 
 ### Changed
+- **User portal sidebar** aligned with Admin portal styling: matching active state (`bg-primary/10` with accent border), icon sizing, title font, header height, footer styling, and user dropdown design.
 - Dashboard page simplified by removing Gateway Health and Provider Health sections (now covered by dedicated System Status page).
 - Admin models table now includes a checkbox column for bulk selection.
 - User models table reorganized with combined Performance column and improved Type badges (audio models show STT/TTS sub-badges).

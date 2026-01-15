@@ -1,5 +1,6 @@
 export * from "./components/FileDetailsDialog";
 export * from "./components/AdminFilesTable";
+export * from "./components/FileTypeIcon";
 export * from "./utils";
 
 export * from "./components/UserFilesTable";

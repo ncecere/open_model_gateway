@@ -21,6 +21,7 @@ import type { AdminFileRecord } from "@/api/files";
 import { dateFormatter, formatBytes } from "../utils";
 import { Download, Eye, Trash2 } from "lucide-react";
 import { FileStatusBadge } from "./FileStatusBadge";
+import { FileTypeIcon } from "./FileTypeIcon";
 
 const PURPOSE_OPTIONS = [
   { value: "all", label: "All purposes" },
@@ -150,7 +151,7 @@ export function AdminFilesTable({
           ) : !rows.length ? (
             <EmptyState
               message="No files found"
-              description="Uploads will appear here in reverse chronological order."
+              description="Files uploaded by tenants will appear here. Try adjusting your filters."
             />
           ) : (
             <Table>
@@ -162,13 +163,21 @@ export function AdminFilesTable({
                   <TableHead>Tenant</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
+                  <TableHead>Expires</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map(({ file, isPersonal }) => (
                   <TableRow key={file.id}>
-                    <TableCell className="font-medium">{file.filename}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <FileTypeIcon filename={file.filename} contentType={file.content_type} />
+                        <span className="font-medium" title={file.filename}>
+                          {file.filename}
+                        </span>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className="capitalize">
                         {file.purpose || "unknown"}
@@ -193,6 +202,11 @@ export function AdminFilesTable({
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {dateFormatter.format(new Date(file.created_at))}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {file.expires_at
+                        ? dateFormatter.format(new Date(file.expires_at))
+                        : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       <ActionsMenu

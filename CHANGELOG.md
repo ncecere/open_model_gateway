@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+#### Frontend
+- **System Status page** with real-time gateway metrics including uptime, memory usage, goroutines, request counts, and active connections; provider status grid with latency data; and recent error log display.
+- **Audit Log page** with paginated audit events, human-readable action descriptions (e.g., "tenant.models.set" → "Set tenant models"), smart target display showing names from metadata, actor email display, and detailed event modal.
+- **Admin Model Editor Dialog** refactored into 4 logical tabs (Basic Info, Provider Config, Pricing, Advanced) for easier navigation of the ~40 form fields.
+- **Model Editor validation** with real-time error checking and error count badges on each tab.
+- **Clone Model action** in the admin models table dropdown to quickly duplicate model configurations.
+- **Bulk operations** for admin models: multi-select checkboxes, floating action bar with Enable/Disable/Delete actions, and bulk delete confirmation dialog.
+- **User Models page enhancements**: search bar, provider filter dropdown, model type filter dropdown, improved pricing display with tier details and batch pricing indicators, combined performance column, and result count display.
+
+#### Backend
+- Audit logging added to default models add/remove, file deletion, and batch cancellation operations.
+- Audit metadata now automatically includes `actor_email` for all admin audit events.
+- Tenant name included in audit metadata for tenant model operations.
+
+### Changed
+- Dashboard page simplified by removing Gateway Health and Provider Health sections (now covered by dedicated System Status page).
+- Admin models table now includes a checkbox column for bulk selection.
+- User models table reorganized with combined Performance column and improved Type badges (audio models show STT/TTS sub-badges).
+
 ## [v0.1.27] - 2026-01-14
 ### Added
 - Structured logging configuration with slog-backed middleware and container wiring.

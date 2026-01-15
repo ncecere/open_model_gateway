@@ -5,16 +5,28 @@ import type { TenantRecord, TenantStatus } from "@/api/tenants";
 import { listModelCatalog } from "@/api/model-catalog";
 import { getBudgetDefaults } from "@/api/budgets";
 import { getRateLimitDefaults } from "@/api/rate-limits";
+import { updateTenantStatus } from "@/api/tenants";
 import { useToast } from "@/hooks/use-toast";
 import type { AdminUser } from "@/api/users";
 import { listUsers } from "@/api/users";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   TenantDirectoryCard,
   TenantSummaryHeader,
   TenantCreateDialog,
   TenantEditDialog,
   TenantMembershipDialog,
+  BulkTenantActionBar,
   useTenantDirectoryQuery,
   useTenantDirectoryFilters,
   useTenantCreateDialog,
@@ -78,6 +90,11 @@ export function TenantsPage() {
   const [editTab, setEditTab] = useState("overview");
   const [editSaving, setEditSaving] = useState(false);
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+
   const {
     membershipsQuery,
     editModelsLoading,
@@ -140,6 +157,89 @@ export function TenantsPage() {
     editDialog.setOpen(true);
   };
 
+  // Clone tenant handler - opens create dialog pre-filled with source tenant data
+  const handleCloneTenant = (tenant: TenantRecord) => {
+    createDialog.setName("");
+    createDialog.setStatus(tenant.status);
+    createDialog.setBudgetUsd(tenant.budget_limit_usd?.toString() ?? "");
+    createDialog.setWarningThreshold(
+      tenant.warning_threshold != null
+        ? (tenant.warning_threshold * 100).toString()
+        : "80"
+    );
+    // Note: Rate limits and model access would need to be loaded from the tenant
+    // For simplicity, we start fresh with these
+    createDialog.setOpen(true);
+  };
+
+  // Bulk operations
+  const handleBulkActivate = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const tenantsToUpdate = tenants.filter((t) => selectedIds.has(t.id) && t.status !== "active");
+      for (const tenant of tenantsToUpdate) {
+        await updateTenantStatus({ tenantId: tenant.id, status: "active" });
+      }
+      toast({ title: `${tenantsToUpdate.length} tenant(s) activated` });
+      tenantsQuery.refetch();
+      setSelectedIds(new Set());
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Failed to activate tenants",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkSuspend = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const tenantsToUpdate = tenants.filter((t) => selectedIds.has(t.id) && t.status !== "suspended");
+      for (const tenant of tenantsToUpdate) {
+        await updateTenantStatus({ tenantId: tenant.id, status: "suspended" });
+      }
+      toast({ title: `${tenantsToUpdate.length} tenant(s) suspended` });
+      tenantsQuery.refetch();
+      setSelectedIds(new Set());
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Failed to suspend tenants",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const tenantsToDelete = tenants.filter((t) => selectedIds.has(t.id));
+      for (const tenant of tenantsToDelete) {
+        await updateTenantStatus({ tenantId: tenant.id, status: "suspended" });
+      }
+      toast({ title: `${tenantsToDelete.length} tenant(s) deleted (suspended)` });
+      tenantsQuery.refetch();
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Failed to delete tenants",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <TenantSummaryHeader
@@ -166,6 +266,15 @@ export function TenantsPage() {
         onSubmit={handleCreateTenant}
       />
 
+      <BulkTenantActionBar
+        selectedCount={selectedIds.size}
+        onActivate={handleBulkActivate}
+        onSuspend={handleBulkSuspend}
+        onDelete={() => setBulkDeleteOpen(true)}
+        onClear={() => setSelectedIds(new Set())}
+        isLoading={bulkLoading}
+      />
+
       <TenantDirectoryCard
         activeCount={activeCount}
         totalCount={tenants.length}
@@ -180,8 +289,11 @@ export function TenantsPage() {
         onStatusChange={(tenantId, status) => handleTenantStatusChange(tenantId, status, tenants)}
         isStatusUpdating={mutations.updateStatusMutation.isPending}
         onEditTenant={openEditTenantDialog}
+        onCloneTenant={handleCloneTenant}
         onDeleteTenant={(tenant) => handleDeleteTenant(tenant.id, tenant.status)}
         budgetDefaults={budgetDefaults}
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
       />
 
       <TenantMembershipDialog
@@ -219,6 +331,33 @@ export function TenantsPage() {
         activeTab={editTab}
         onTabChange={setEditTab}
       />
+
+      <AlertDialog
+        open={bulkDeleteOpen}
+        onOpenChange={(open) => !open && setBulkDeleteOpen(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} tenants?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will suspend {selectedIds.size} tenant{selectedIds.size === 1 ? "" : "s"} and revoke access to their resources.
+              This action can be undone by reactivating the tenants.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkLoading}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={bulkLoading}
+              onClick={handleBulkDelete}
+            >
+              {bulkLoading ? "Deleting..." : `Delete ${selectedIds.size} tenants`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

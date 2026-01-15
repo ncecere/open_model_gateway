@@ -231,7 +231,7 @@ export function ModelEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-2xl flex flex-col">
+      <DialogContent className="flex h-[85vh] flex-col overflow-hidden sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {mode === "create" ? "Add model" : `Edit ${form.alias}`}
@@ -244,7 +244,7 @@ export function ModelEditorDialog({
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as TabValue)}
-          className="flex-1 overflow-hidden flex flex-col"
+          className="flex h-full min-h-0 flex-col space-y-4"
         >
           <TabsList className="grid w-full grid-cols-4">
             {renderTabTrigger("basic", "Basic")}
@@ -253,29 +253,27 @@ export function ModelEditorDialog({
             {renderTabTrigger("advanced", "Advanced")}
           </TabsList>
 
-          <div className="flex-1 overflow-y-auto py-4">
-            <TabsContent value="basic" className="mt-0">
-              <BasicInfoTab
-                form={form}
-                onChange={onChange}
-                mode={mode}
-                onProviderChange={handleProviderChange}
-                onModelTypeChange={handleModelTypeChange}
-              />
-            </TabsContent>
+          <TabsContent value="basic" className="flex-1 min-h-0 mt-0 space-y-4 overflow-y-auto pr-1">
+            <BasicInfoTab
+              form={form}
+              onChange={onChange}
+              mode={mode}
+              onProviderChange={handleProviderChange}
+              onModelTypeChange={handleModelTypeChange}
+            />
+          </TabsContent>
 
-            <TabsContent value="provider" className="mt-0">
-              <ProviderConfigTab form={form} onChange={onChange} />
-            </TabsContent>
+          <TabsContent value="provider" className="flex-1 min-h-0 mt-0 space-y-4 overflow-y-auto pr-1">
+            <ProviderConfigTab form={form} onChange={onChange} />
+          </TabsContent>
 
-            <TabsContent value="pricing" className="mt-0">
-              <PricingTab form={form} onChange={onChange} />
-            </TabsContent>
+          <TabsContent value="pricing" className="flex-1 min-h-0 mt-0 space-y-4 overflow-y-auto pr-1">
+            <PricingTab form={form} onChange={onChange} />
+          </TabsContent>
 
-            <TabsContent value="advanced" className="mt-0">
-              <AdvancedTab form={form} onChange={onChange} />
-            </TabsContent>
-          </div>
+          <TabsContent value="advanced" className="flex-1 min-h-0 mt-0 space-y-4 overflow-y-auto pr-1">
+            <AdvancedTab form={form} onChange={onChange} />
+          </TabsContent>
         </Tabs>
 
         <DialogFooter className="border-t pt-4">

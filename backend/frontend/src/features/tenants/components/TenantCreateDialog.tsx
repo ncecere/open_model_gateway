@@ -1,8 +1,10 @@
+import { useState } from "react";
 import type { BudgetDefaults } from "@/api/budgets";
 import type { ModelCatalogEntry } from "@/api/model-catalog";
 import type { TenantStatus } from "@/api/tenants";
 import type { RateLimitDefaults } from "@/api/rate-limits";
 import { FormDialog } from "@/components/dialogs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -42,6 +44,8 @@ export function TenantCreateDialog({
   isSubmitting,
   onSubmit,
 }: TenantCreateDialogProps) {
+  const [activeTab, setActiveTab] = useState("overview");
+
   const handleToggle = (alias: string, checked: boolean) => {
     dialog.setSelectedModels((prev) => {
       if (checked) {
@@ -65,17 +69,33 @@ export function TenantCreateDialog({
   return (
     <FormDialog
       open={dialog.open}
-      onOpenChange={dialog.setOpen}
+      onOpenChange={(open) => {
+        dialog.setOpen(open);
+        if (open) setActiveTab("overview");
+      }}
       title="Create tenant"
       description="Provide the tenant name, lifecycle status, and optional budget overrides."
-      maxWidth="sm:max-w-3xl"
-      contentClassName="max-h-[90vh] overflow-y-auto"
+      maxWidth="max-w-3xl"
+      contentClassName="flex h-[85vh] flex-col overflow-hidden"
+      bodyClassName="flex-1 min-h-0 overflow-hidden"
+      useForm={false}
       isSubmitting={isSubmitting}
       submitText="Create"
       submittingText="Creating..."
       onSubmit={onSubmit}
     >
-      <div className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="flex h-full min-h-0 flex-col space-y-4"
+      >
+        <TabsList className="w-fit">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="alerts">Budget & Alerts</TabsTrigger>
+          <TabsTrigger value="models">Models</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
           <div className="space-y-2">
             <Label htmlFor="tenant-name">Name</Label>
             <Input
@@ -155,51 +175,69 @@ export function TenantCreateDialog({
               </div>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="alerts" className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-1">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="tenant-budget">
+                Budget override (leave blank to inherit)
+              </Label>
+              <Input
+                id="tenant-budget"
+                value={dialog.budgetUsd}
+                onChange={(event) => dialog.setBudgetUsd(event.target.value)}
+                placeholder={
+                  budgetDefaults
+                    ? `Default ${currencyFormatter.format(budgetDefaults.default_usd)}`
+                    : "e.g. 200"
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tenant-threshold">Warning threshold (0-1)</Label>
+              <Input
+                id="tenant-threshold"
+                value={dialog.warningThreshold}
+                onChange={(event) => dialog.setWarningThreshold(event.target.value)}
+                placeholder="0.75"
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Refresh schedule</Label>
+              <Select
+                value={dialog.refreshSchedule}
+                onValueChange={dialog.setRefreshSchedule}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Use default schedule" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={INHERIT_SCHEDULE}>Use project default</SelectItem>
+                  <SelectItem value="calendar_month">Calendar month</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="rolling_7d">Rolling 7 days</SelectItem>
+                  <SelectItem value="rolling_30d">Rolling 30 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tenant-alert-cooldown">Alert cooldown (seconds)</Label>
+              <Input
+                id="tenant-alert-cooldown"
+                value={dialog.alertCooldown}
+                onChange={(event) => dialog.setAlertCooldown(event.target.value)}
+                placeholder={
+                  budgetDefaults?.alert?.cooldown_seconds != null
+                    ? `${budgetDefaults.alert.cooldown_seconds} (default)`
+                    : "3600"
+                }
+              />
+            </div>
+          </div>
           <Separator />
-          <div className="space-y-2">
-            <Label htmlFor="tenant-budget">Budget override (optional)</Label>
-            <Input
-              id="tenant-budget"
-              value={dialog.budgetUsd}
-              onChange={(event) => dialog.setBudgetUsd(event.target.value)}
-              placeholder={
-                budgetDefaults
-                  ? `Default ${currencyFormatter.format(budgetDefaults.default_usd)}`
-                  : "e.g. 200"
-              }
-            />
-            <p className="text-xs text-muted-foreground">
-              Leave blank to inherit project defaults. Provide a value to create a tenant-specific budget,
-              warning threshold, and alert routing.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tenant-threshold">Warning threshold (0-1)</Label>
-            <Input
-              id="tenant-threshold"
-              value={dialog.warningThreshold}
-              onChange={(event) => dialog.setWarningThreshold(event.target.value)}
-              placeholder="0.75"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Refresh schedule</Label>
-            <Select
-              value={dialog.refreshSchedule}
-              onValueChange={dialog.setRefreshSchedule}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Use default schedule" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={INHERIT_SCHEDULE}>Use project default</SelectItem>
-                <SelectItem value="calendar_month">Calendar month</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="rolling_7d">Rolling 7 days</SelectItem>
-                <SelectItem value="rolling_30d">Rolling 30 days</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <div className="space-y-2">
             <Label htmlFor="tenant-alert-emails">Alert emails (comma-separated)</Label>
             <Textarea
@@ -218,20 +256,9 @@ export function TenantCreateDialog({
               placeholder="https://hooks.slack.com/..."
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="tenant-alert-cooldown">Alert cooldown (seconds)</Label>
-            <Input
-              id="tenant-alert-cooldown"
-              value={dialog.alertCooldown}
-              onChange={(event) => dialog.setAlertCooldown(event.target.value)}
-              placeholder={
-                budgetDefaults?.alert?.cooldown_seconds != null
-                  ? `${budgetDefaults.alert.cooldown_seconds} (default)`
-                  : "3600"
-              }
-            />
-          </div>
-          <Separator />
+        </TabsContent>
+
+        <TabsContent value="models" className="flex-1 min-h-0 overflow-y-hidden pr-1">
           <ModelAccessSelector
             title="Model access"
             description="Select which catalog entries this tenant can call."
@@ -242,8 +269,11 @@ export function TenantCreateDialog({
             onClear={handleClear}
             isLoading={isModelCatalogLoading}
             disabled={isSubmitting}
+            containerClassName="flex h-full min-h-0 flex-col"
+            listClassName="flex-1 min-h-0 max-h-none"
           />
-        </div>
+        </TabsContent>
+      </Tabs>
     </FormDialog>
   );
 }

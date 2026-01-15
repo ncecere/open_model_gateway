@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,6 +23,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -36,7 +38,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { BudgetMeter } from "@/ui/kit/BudgetMeter";
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -58,8 +60,11 @@ interface TenantDirectoryCardProps {
   onStatusChange: (tenantId: string, status: TenantStatus) => Promise<void>;
   isStatusUpdating: boolean;
   onEditTenant: (tenant: TenantRecord) => void;
+  onCloneTenant: (tenant: TenantRecord) => void;
   onDeleteTenant: (tenant: TenantRecord) => void;
   budgetDefaults?: BudgetDefaults;
+  selectedIds?: Set<string>;
+  onSelectionChange?: (ids: Set<string>) => void;
 }
 
 export function TenantDirectoryCard({
@@ -76,9 +81,40 @@ export function TenantDirectoryCard({
   onStatusChange,
   isStatusUpdating,
   onEditTenant,
+  onCloneTenant,
   onDeleteTenant,
   budgetDefaults,
+  selectedIds = new Set(),
+  onSelectionChange,
 }: TenantDirectoryCardProps) {
+  const showSelection = Boolean(onSelectionChange);
+  const allSelected = displayTenants.length > 0 && displayTenants.every((t) => selectedIds.has(t.id));
+  const someSelected = displayTenants.some((t) => selectedIds.has(t.id));
+
+  const toggleAll = () => {
+    if (!onSelectionChange) return;
+    if (allSelected) {
+      const next = new Set(selectedIds);
+      displayTenants.forEach((t) => next.delete(t.id));
+      onSelectionChange(next);
+    } else {
+      const next = new Set(selectedIds);
+      displayTenants.forEach((t) => next.add(t.id));
+      onSelectionChange(next);
+    }
+  };
+
+  const toggleOne = (id: string) => {
+    if (!onSelectionChange) return;
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    onSelectionChange(next);
+  };
+
   return (
     <Card id="tenant-directory">
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -144,6 +180,16 @@ export function TenantDirectoryCard({
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase text-muted-foreground">
+                  {showSelection && (
+                    <th className="pb-3 w-12">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={toggleAll}
+                        aria-label="Select all"
+                        className={someSelected && !allSelected ? "opacity-50" : ""}
+                      />
+                    </th>
+                  )}
                   <th className="pb-3 font-medium">Name</th>
                   <th className="pb-3 font-medium">Status</th>
                   <th className="pb-3 font-medium min-w-[220px]">Budget</th>
@@ -152,8 +198,19 @@ export function TenantDirectoryCard({
                 </tr>
               </thead>
               <tbody>
-                {displayTenants.map((tenant) => (
-                  <tr key={tenant.id} className="border-t text-sm">
+                {displayTenants.map((tenant) => {
+                  const isSelected = selectedIds.has(tenant.id);
+                  return (
+                  <tr key={tenant.id} className={`border-t text-sm ${isSelected ? "bg-muted/50" : ""}`}>
+                    {showSelection && (
+                      <td className="py-3">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleOne(tenant.id)}
+                          aria-label={`Select ${tenant.name}`}
+                        />
+                      </td>
+                    )}
                     <td className="py-3 font-medium">{tenant.name}</td>
                     <td className="py-3">
                       <Select
@@ -203,6 +260,10 @@ export function TenantDirectoryCard({
                           <DropdownMenuItem onSelect={() => onEditTenant(tenant)}>
                             <Pencil className="mr-2 h-4 w-4" /> Edit tenant
                           </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => onCloneTenant(tenant)}>
+                            <Copy className="mr-2 h-4 w-4" /> Clone tenant
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <DropdownMenuItem
@@ -231,7 +292,8 @@ export function TenantDirectoryCard({
                       </DropdownMenu>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

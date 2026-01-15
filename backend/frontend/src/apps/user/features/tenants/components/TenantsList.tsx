@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TableSkeleton } from "@/components/tables";
+import { cn } from "@/lib/utils";
 
 export type TenantMembership = {
   tenant_id: string;
@@ -26,9 +27,19 @@ export type TenantsListProps = {
   tenants: TenantMembership[];
   isLoading: boolean;
   onManage: (tenantId: string) => void;
+  hasAnyTenants?: boolean;
+  filtersActive?: boolean;
+  onClearFilters?: () => void;
 };
 
-export function TenantsList({ tenants, isLoading, onManage }: TenantsListProps) {
+export function TenantsList({
+  tenants,
+  isLoading,
+  onManage,
+  hasAnyTenants = true,
+  filtersActive = false,
+  onClearFilters,
+}: TenantsListProps) {
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -42,7 +53,22 @@ export function TenantsList({ tenants, isLoading, onManage }: TenantsListProps) 
       <CardContent>
         {isLoading ? (
           <TableSkeleton rows={3} />
-        ) : tenants.length ? (
+        ) : !hasAnyTenants ? (
+          <p className="text-sm text-muted-foreground">
+            You are not part of any shared tenants.
+          </p>
+        ) : tenants.length === 0 && filtersActive ? (
+          <div className="text-center py-6">
+            <p className="text-sm text-muted-foreground mb-2">
+              No tenants match your current filters.
+            </p>
+            {onClearFilters && (
+              <Button variant="outline" size="sm" onClick={onClearFilters}>
+                Clear filters
+              </Button>
+            )}
+          </div>
+        ) : tenants.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -59,9 +85,7 @@ export function TenantsList({ tenants, isLoading, onManage }: TenantsListProps) 
                   <tr key={tenant.tenant_id} className="border-t text-sm">
                     <td className="py-3 font-medium">{tenant.name}</td>
                     <td className="py-3">
-                      <Badge variant={tenant.status === "active" ? "secondary" : "outline"}>
-                        {tenant.status}
-                      </Badge>
+                      <StatusBadge status={tenant.status} />
                     </td>
                     <td className="py-3 pr-4 min-w-[220px]">
                       <BudgetMeter
@@ -70,7 +94,9 @@ export function TenantsList({ tenants, isLoading, onManage }: TenantsListProps) 
                         warningThreshold={tenant.warning_threshold ?? 0.8}
                       />
                     </td>
-                    <td className="py-3 min-w-[120px] pl-4 capitalize">{tenant.role}</td>
+                    <td className="py-3 min-w-[120px] pl-4">
+                      <RoleBadge role={tenant.role} />
+                    </td>
                     <td className="py-3 text-right">
                       <TenantRowActions
                         role={tenant.role}
@@ -83,13 +109,38 @@ export function TenantsList({ tenants, isLoading, onManage }: TenantsListProps) 
               </tbody>
             </table>
           </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            You are not part of any shared tenants.
-          </p>
-        )}
+        ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const isActive = status === "active";
+  return (
+    <Badge
+      className={cn(
+        isActive
+          ? "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
+          : "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
+      )}
+    >
+      {status}
+    </Badge>
+  );
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const roleClasses: Record<string, string> = {
+    owner: "bg-primary/10 text-primary hover:bg-primary/20",
+    admin: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+    user: "border border-border bg-transparent hover:bg-muted",
+    viewer: "bg-muted text-muted-foreground hover:bg-muted/80",
+  };
+  return (
+    <Badge className={cn(roleClasses[role] ?? roleClasses.user, "capitalize")}>
+      {role}
+    </Badge>
   );
 }
 

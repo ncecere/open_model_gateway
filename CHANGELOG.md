@@ -13,6 +13,10 @@ All notable changes to this project will be documented in this file. The format 
 - **Clone Model action** in the admin models table dropdown to quickly duplicate model configurations.
 - **Bulk operations** for admin models: multi-select checkboxes, floating action bar with Enable/Disable/Delete actions, and bulk delete confirmation dialog.
 - **User Models page enhancements**: search bar, provider filter dropdown, model type filter dropdown, improved pricing display with tier details and batch pricing indicators, combined performance column, and result count display.
+- **Admin Tenant Create Dialog** refactored into 3 tabs (Overview, Budget & Alerts, Models) for easier navigation.
+- **Clone Tenant action** in the admin tenants table dropdown to quickly duplicate tenant configurations.
+- **Bulk operations** for admin tenants: multi-select checkboxes, floating action bar with Activate/Suspend/Delete actions, and bulk delete confirmation dialog.
+- **User Tenants page enhancements**: search bar, status filter dropdown, role filter dropdown, color-coded status badges (green/amber), color-coded role badges (owner/admin/user/viewer), and result count display.
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.
@@ -23,6 +27,9 @@ All notable changes to this project will be documented in this file. The format 
 - Dashboard page simplified by removing Gateway Health and Provider Health sections (now covered by dedicated System Status page).
 - Admin models table now includes a checkbox column for bulk selection.
 - User models table reorganized with combined Performance column and improved Type badges (audio models show STT/TTS sub-badges).
+- Admin tenants table now includes a checkbox column for bulk selection.
+- Model Editor dialog now has consistent fixed height (85vh) across all tabs.
+- Tenant Create/Edit dialogs now have consistent fixed height (85vh) across all tabs.
 
 ## [v0.1.27] - 2026-01-14
 ### Added

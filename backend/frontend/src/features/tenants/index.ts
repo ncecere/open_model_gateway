@@ -1,4 +1,5 @@
 export * from "./components/TenantDirectoryCard";
+export * from "./components/BulkTenantActionBar";
 export * from "./components/ModelAccessSelector";
 export * from "./components/MembershipSuggestions";
 export * from "./components/TenantSummaryHeader";

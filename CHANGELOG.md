@@ -17,6 +17,9 @@ All notable changes to this project will be documented in this file. The format 
 - **Clone Tenant action** in the admin tenants table dropdown to quickly duplicate tenant configurations.
 - **Bulk operations** for admin tenants: multi-select checkboxes, floating action bar with Activate/Suspend/Delete actions, and bulk delete confirmation dialog.
 - **User Tenants page enhancements**: search bar, status filter dropdown, role filter dropdown, color-coded status badges (green/amber), color-coded role badges (owner/admin/user/viewer), and result count display.
+- **Admin Dashboard enhancements**: configurable period selector (7d/30d/90d/custom date range), tenant filter dropdown to view usage for specific tenants, and tabbed usage breakdown section (By Model/Tenant/User) with donut charts and ranked item lists.
+- **User Dashboard enhancements**: period selector (7d/30d/90d), interactive usage breakdown bar chart with metric toggle (Requests/Tokens/Spend).
+- **PeriodSelector component**: reusable date range selector with preset periods and custom date range support.
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.
@@ -30,6 +33,11 @@ All notable changes to this project will be documented in this file. The format 
 - Admin tenants table now includes a checkbox column for bulk selection.
 - Model Editor dialog now has consistent fixed height (85vh) across all tabs.
 - Tenant Create/Edit dialogs now have consistent fixed height (85vh) across all tabs.
+- Admin Dashboard now shows 2-column chart layout with Request Volume and Usage Breakdown sections.
+- User Dashboard "Recent usage" text list replaced with interactive bar chart visualization.
+
+### Fixed
+- ProviderHealthPage tests now properly mock localStorage for test environment compatibility.
 
 ## [v0.1.27] - 2026-01-14
 ### Added

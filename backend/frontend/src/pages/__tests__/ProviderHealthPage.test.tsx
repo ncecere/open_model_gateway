@@ -1,9 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 
 import { ProviderHealthPage } from "../ProviderHealthPage";
+
+// Mock localStorage
+const localStorageMock = {
+  getItem: vi.fn(() => null),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+  length: 0,
+  key: vi.fn(),
+};
+Object.defineProperty(window, "localStorage", { value: localStorageMock });
+
 const mockedSLIHook = vi.fn();
 const mockedIncidentHook = vi.fn();
 const mockedAlertHook = vi.fn();
@@ -43,6 +55,11 @@ function renderPage() {
 }
 
 describe("ProviderHealthPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorageMock.getItem.mockReturnValue(null);
+  });
+
   it("renders empty states when no telemetry is available", () => {
     mockedSLIHook.mockReturnValue({ data: [], isLoading: false });
     mockedIncidentHook.mockReturnValue({ data: [], isLoading: false });

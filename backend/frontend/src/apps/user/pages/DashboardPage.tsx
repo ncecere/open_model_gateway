@@ -13,7 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PeriodSelector, usePeriodSelector } from "@/components/ui/period-selector";
 import { PageHeader } from "@/components/layouts";
+import { UsageBreakdownCard } from "../features/dashboard";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -24,8 +26,12 @@ const currencyFormatter = new Intl.NumberFormat(undefined, {
 
 export function UserDashboardPage() {
   const [scopeSelection, setScopeSelection] = useState("personal");
+  const periodSelector = usePeriodSelector("7d");
+  const currentPeriod = periodSelector.value.period === "custom" ? "7d" : periodSelector.value.period;
+  const periodLabel = periodSelector.getLabel();
+
   const { data, isLoading } = useUserDashboardQuery(
-    "7d",
+    currentPeriod,
     scopeSelection === "personal" ? undefined : scopeSelection,
   );
 
@@ -79,22 +85,29 @@ export function UserDashboardPage() {
         title="Dashboard"
         description="View metrics for your personal account or tenant keys you issued."
         actions={
-          <Select
-            value={scopeSelection}
-            onValueChange={(value) => setScopeSelection(value)}
-            disabled={!scopes.length}
-          >
-            <SelectTrigger className="w-full md:w-72">
-              <SelectValue placeholder="Select scope" />
-            </SelectTrigger>
-            <SelectContent>
-              {scopes.map((scope) => (
-                <SelectItem key={scope.id} value={scope.id}>
-                  {scope.kind === "personal" ? "Personal" : scope.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <PeriodSelector
+              value={periodSelector.value}
+              onChange={periodSelector.onChange}
+              showCustom={false}
+            />
+            <Select
+              value={scopeSelection}
+              onValueChange={(value) => setScopeSelection(value)}
+              disabled={!scopes.length}
+            >
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Select scope" />
+              </SelectTrigger>
+              <SelectContent>
+                {scopes.map((scope) => (
+                  <SelectItem key={scope.id} value={scope.id}>
+                    {scope.kind === "personal" ? "Personal" : scope.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         }
       />
 
@@ -102,13 +115,7 @@ export function UserDashboardPage() {
         <MetricCard
           title="Requests"
           value={selectedTotals?.requests.toLocaleString() ?? 0}
-          secondary={
-            data
-              ? `${Math.round(
-                  (selectedTotals?.requests ?? 0) / 7,
-                ).toLocaleString()} avg / day`
-              : undefined
-          }
+          secondary={data ? periodLabel : undefined}
           loading={isLoading}
           icon={Activity}
         />
@@ -126,7 +133,7 @@ export function UserDashboardPage() {
               ? currencyFormatter.format(spendValue ?? 0)
               : "—"
           }
-          secondary={data ? `Window: ${data.period}` : undefined}
+          secondary={data ? periodLabel : undefined}
           loading={isLoading}
           icon={CircleDollarSign}
         />
@@ -140,50 +147,11 @@ export function UserDashboardPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Recent usage — {selectedScope?.name ?? "Personal"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-36 w-full" />
-            ) : series.length ? (
-              <div className="space-y-3 text-sm">
-                {series.slice(-7).map((point) => (
-                  <div
-                    key={point.date}
-                    className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2"
-                  >
-                    <div>
-                      <p className="font-medium">
-                        {new Date(point.date).toLocaleDateString()}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatTokensShort(point.tokens)} tokens
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold">
-                        {point.requests.toLocaleString()} reqs
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {currencyFormatter.format(
-                          point.cost_usd ?? point.cost_cents / 100,
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No usage recorded yet.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        <UsageBreakdownCard
+          series={series}
+          scopeName={selectedScope?.name ?? "Personal"}
+          loading={isLoading}
+        />
         <Card>
           <CardHeader>
             <CardTitle>Recent API keys</CardTitle>

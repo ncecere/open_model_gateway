@@ -68,8 +68,8 @@ describe("ProviderHealthPage", () => {
     renderPage();
 
     expect(screen.getByText("Provider Health")).toBeInTheDocument();
-    expect(screen.getByText("No telemetry yet for this filter.")).toBeInTheDocument();
-    expect(screen.getByText("No active alerts.")).toBeInTheDocument();
+    expect(screen.getByText("No telemetry data")).toBeInTheDocument();
+    expect(screen.getByText("No active alerts")).toBeInTheDocument();
   });
 
   it("shows SLI and incident rows when data is returned", () => {
@@ -135,6 +135,6 @@ describe("ProviderHealthPage", () => {
     expect(screen.getAllByText("openai").length).toBeGreaterThan(0);
     expect(screen.getAllByText("gpt-5").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/error rate/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText("No telemetry yet for this filter.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No telemetry data")).not.toBeInTheDocument();
   });
 });

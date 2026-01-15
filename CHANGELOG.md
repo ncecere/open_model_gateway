@@ -48,6 +48,8 @@ All notable changes to this project will be documented in this file. The format 
 - **Download actions** added to Admin Batches table (output/errors) via ActionsMenu dropdown.
 - **BatchDetailsDialog enhancements**: wider dialog (720px), copy-to-clipboard for Batch ID, and Download buttons (Output/Errors) in footer.
 - **Settings page Default Models tab enhancements**: summary stats card showing total model count, search/filter capability for the models table, and EmptyState components for empty and no-results states.
+- **Provider Health page enhancements**: filter card with CardHeader, result count badges in table headers, EmptyState components for empty tables, and incident type badges with improved formatting.
+- **Provider Health developer tools dropdown**: moved Seed/Clear seed buttons into a "Tools" dropdown menu to reduce confusion about their demo/testing purpose.
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.
@@ -72,6 +74,8 @@ All notable changes to this project will be documented in this file. The format 
 - Settings page TabsList now uses horizontal flex wrap with improved active state styling (`bg-primary`/`text-primary-foreground`).
 - Settings form tabs (Budgets, Alerts, Rate Limits, Files, Batches) now use CardFooter for consistent action button placement.
 - Settings Overview tab removed as redundant (information already covered by page header).
+- Provider Health page incident type columns now use Badge components instead of inline uppercase styling.
+- Provider Health page incident details dialog widened from `max-w-2xl` to `max-w-3xl` for consistency.
 
 ### Fixed
 - ProviderHealthPage tests now properly mock localStorage for test environment compatibility.

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, Gauge, ShieldCheck, Siren } from "lucide-react";
+import { AlertTriangle, Gauge, ShieldCheck, Siren, Wrench } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/layouts";
 import { LiveIndicator } from "@/components/LiveIndicator";
@@ -23,7 +23,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-// Charts temporarily removed per request; keep imports minimal.
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -41,6 +48,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { EmptyState } from "@/components/tables";
 import { useDirectoryData } from "@/providers/DirectoryProvider";
 
 function formatPercent(value: number) {
@@ -69,6 +77,13 @@ function StatusBadge({ label, tone }: { label: string; tone: "ok" | "warn" | "mu
   const variant =
     tone === "ok" ? "default" : tone === "warn" ? "destructive" : "secondary";
   return <Badge variant={variant}>{label}</Badge>;
+}
+
+function formatIncidentType(type: string) {
+  return type
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export function ProviderHealthPage() {
@@ -196,18 +211,49 @@ export function ProviderHealthPage() {
                 void alertsQuery.refetch();
               }}
             />
-            <Button variant="outline" size="sm" onClick={() => void clearSeedData()} disabled={clearingSeed}>
-              {clearingSeed ? "Clearing…" : "Clear seed"}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => void seedSampleData()}>
-              Seed data
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Wrench className="mr-2 h-4 w-4" />
+                  Tools
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Developer Tools</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => void seedSampleData()}>
+                  <div className="flex flex-col">
+                    <span>Seed sample data</span>
+                    <span className="text-xs text-muted-foreground">
+                      Inject demo telemetry for testing
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => void clearSeedData()}
+                  disabled={clearingSeed}
+                >
+                  <div className="flex flex-col">
+                    <span>{clearingSeed ? "Clearing…" : "Clear seed data"}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Remove demo data from the system
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       />
 
       <Card>
-        <CardContent className="flex flex-wrap gap-3 pt-6">
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Filter SLIs and incidents by provider, model, route, or status.
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
           <Select
             value={providerFilter ?? "all"}
             onValueChange={(val) => setProviderFilter(val === "all" ? undefined : val)}
@@ -285,8 +331,11 @@ export function ProviderHealthPage() {
       {/* Charts removed per request; reinstating requires SLI data with meaningful points. */}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Current SLIs</CardTitle>
+          {!slisQuery.isLoading && (
+            <Badge variant="secondary">{filteredSLIs.length} routes</Badge>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {slisQuery.isLoading ? (
@@ -294,6 +343,11 @@ export function ProviderHealthPage() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
+          ) : filteredSLIs.length === 0 ? (
+            <EmptyState
+              message="No telemetry data"
+              description="SLI metrics will appear here once API requests flow through the gateway."
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -341,13 +395,6 @@ export function ProviderHealthPage() {
                     </TableRow>
                   );
                 })}
-                {filteredSLIs.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
-                      No telemetry yet for this filter.
-                    </TableCell>
-                  </TableRow>
-                ) : null}
               </TableBody>
             </Table>
           )}
@@ -356,14 +403,22 @@ export function ProviderHealthPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Active Alerts</CardTitle>
+            {!alertsQuery.isLoading && (
+              <Badge variant="secondary">{alertsQuery.data?.length ?? 0} alerts</Badge>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             {alertsQuery.isLoading ? (
               <div className="p-4">
                 <Skeleton className="h-10 w-full" />
               </div>
+            ) : (alertsQuery.data?.length ?? 0) === 0 ? (
+              <EmptyState
+                message="No active alerts"
+                description="All systems are operating normally."
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -379,8 +434,8 @@ export function ProviderHealthPage() {
                     <TableRow key={inc.id}>
                       <TableCell className="font-medium">{inc.provider}</TableCell>
                       <TableCell>{inc.alias}</TableCell>
-                      <TableCell className="uppercase text-xs font-semibold">
-                        {inc.type.replaceAll("_", " ")}
+                      <TableCell>
+                        <Badge variant="outline">{formatIncidentType(inc.type)}</Badge>
                       </TableCell>
                       <TableCell>
                         {new Date(inc.opened_at).toLocaleString(undefined, {
@@ -389,13 +444,6 @@ export function ProviderHealthPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(alertsQuery.data?.length ?? 0) === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                        No active alerts.
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
                 </TableBody>
               </Table>
             )}
@@ -403,14 +451,22 @@ export function ProviderHealthPage() {
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent Incidents</CardTitle>
+            {!incidentsQuery.isLoading && (
+              <Badge variant="secondary">{incidentsQuery.data?.length ?? 0} incidents</Badge>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             {incidentsQuery.isLoading ? (
               <div className="p-4">
                 <Skeleton className="h-10 w-full" />
               </div>
+            ) : (incidentsQuery.data?.length ?? 0) === 0 ? (
+              <EmptyState
+                message="No incidents"
+                description="No incidents have been recorded for the current filter."
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -431,8 +487,8 @@ export function ProviderHealthPage() {
                     >
                       <TableCell className="font-medium">{inc.provider}</TableCell>
                       <TableCell>{inc.alias}</TableCell>
-                      <TableCell className="uppercase text-xs font-semibold">
-                        {inc.type.replaceAll("_", " ")}
+                      <TableCell>
+                        <Badge variant="outline">{formatIncidentType(inc.type)}</Badge>
                       </TableCell>
                       <TableCell>
                         <StatusBadge
@@ -443,13 +499,6 @@ export function ProviderHealthPage() {
                       <TableCell>{inc.request_count.toLocaleString()}</TableCell>
                     </TableRow>
                   ))}
-                  {(incidentsQuery.data?.length ?? 0) === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
-                        No incidents yet for this filter.
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
                 </TableBody>
               </Table>
             )}
@@ -457,7 +506,7 @@ export function ProviderHealthPage() {
         </Card>
       </div>
       <Dialog open={Boolean(selectedIncident)} onOpenChange={() => setSelectedIncident(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Incident details</DialogTitle>
             <DialogDescription>
@@ -474,7 +523,7 @@ export function ProviderHealthPage() {
                 </Badge>
               </div>
               <div className="grid gap-2 md:grid-cols-2">
-                <DetailRow label="Type" value={selectedIncident.type.replaceAll("_", " ")} />
+                <DetailRow label="Type" value={formatIncidentType(selectedIncident.type)} />
                 <DetailRow
                   label="Opened"
                   value={new Date(selectedIncident.opened_at).toLocaleString()}

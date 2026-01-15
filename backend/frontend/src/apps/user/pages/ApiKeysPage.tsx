@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useMemo, useState, useCallback } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { Key } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDefaultSelection } from "@/hooks/useDefaultSelection";
+import { useToast } from "@/hooks/use-toast";
 import { PageHeader } from "@/components/layouts";
 import { computeNextResetDate, formatScheduleLabel } from "@/features/api-keys";
 import { shortDateFormatter as dateFormatter } from "@/lib/formatters";
@@ -23,17 +25,31 @@ import {
   useAllTenantAPIKeysQueries,
 } from "../hooks/useUserData";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   KeyTable,
   IssuedSecretCard,
   CreateApiKeyDialog,
   RevokedKeysTable,
+  BulkUserKeyActionBar,
   useApiKeyMutations,
   type IssuedSecret,
   type BudgetMeta,
   type RevokedRow,
 } from "../features/api-keys";
+import { revokeUserAPIKey } from "@/api/user/api-keys";
 
 export function UserApiKeysPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"personal" | "tenant" | "revoked">("personal");
   const { data: personalKeys, isLoading: personalLoading } = useUserAPIKeysQuery();
   const { data: tenants } = useUserTenantsQuery();
@@ -106,6 +122,12 @@ export function UserApiKeysPage() {
   const [tenantCreateOpen, setTenantCreateOpen] = useState(false);
   const [issuedSecret, setIssuedSecret] = useState<IssuedSecret | null>(null);
 
+  // Bulk selection state
+  const [personalSelectedIds, setPersonalSelectedIds] = useState<Set<string>>(new Set());
+  const [tenantSelectedIds, setTenantSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRevokeLoading, setBulkRevokeLoading] = useState(false);
+  const [pendingBulkRevoke, setPendingBulkRevoke] = useState<"personal" | "tenant" | null>(null);
+
   // Mutations
   const {
     handleCopy,
@@ -153,6 +175,17 @@ export function UserApiKeysPage() {
     personalLoading ||
     allTenantKeyQueries.some((q) => q.isLoading || q.isFetching);
 
+  // Stats calculation - all keys across personal and tenant
+  const allActiveKeys = useMemo(() => {
+    const tenantActiveCount = allTenantKeyQueries.reduce((sum, q) => {
+      if (!q.data) return sum;
+      return sum + q.data.api_keys.filter((k) => !k.revoked).length;
+    }, 0);
+    return activeKeys.length + tenantActiveCount;
+  }, [activeKeys.length, allTenantKeyQueries]);
+
+  const totalKeys = allActiveKeys + revokedRows.length;
+
   // Budget helpers
   const resolveBudgetMeta = (key: UserAPIKey): BudgetMeta => {
     const tenantBudget = tenantBudgetMap.get(key.tenant_id);
@@ -179,12 +212,65 @@ export function UserApiKeysPage() {
   const formatRole = (role?: string) =>
     role ? role.charAt(0).toUpperCase() + role.slice(1) : "—";
 
+  // Bulk revoke handlers
+  const handleBulkPersonalRevoke = useCallback(async () => {
+    setBulkRevokeLoading(true);
+    const keysToRevoke = activeKeys.filter((k) => personalSelectedIds.has(k.id));
+    try {
+      for (const key of keysToRevoke) {
+        await revokeUserAPIKey(key.id);
+      }
+      toast({ title: `${keysToRevoke.length} key(s) revoked` });
+      setPersonalSelectedIds(new Set());
+      setPendingBulkRevoke(null);
+      void queryClient.invalidateQueries({ queryKey: ["user-api-keys"] });
+    } catch {
+      toast({ variant: "destructive", title: "Failed to revoke keys" });
+    } finally {
+      setBulkRevokeLoading(false);
+    }
+  }, [activeKeys, personalSelectedIds, toast, queryClient]);
+
+  const currentSelectedIds = activeTab === "personal" ? personalSelectedIds : tenantSelectedIds;
+  const currentSetSelectedIds = activeTab === "personal" ? setPersonalSelectedIds : setTenantSelectedIds;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="API Keys"
         description="Personal keys are always available. Tenant keys respect the role of each membership."
       />
+
+      {/* Summary Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Keys</CardTitle>
+            <Key className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalKeys}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{allActiveKeys}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Revoked</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{revokedRows.length}</div>
+          </CardContent>
+        </Card>
+      </div>
 
       {issuedSecret ? (
         <IssuedSecretCard issued={issuedSecret} onCopy={handleCopy} />
@@ -231,6 +317,8 @@ export function UserApiKeysPage() {
               allowRevoke
               allowRotate
               getBudgetMeta={resolveBudgetMeta}
+              selectedIds={personalSelectedIds}
+              onSelectionChange={setPersonalSelectedIds}
               formatResetValue={formatResetValue}
             />
           </section>
@@ -297,6 +385,8 @@ export function UserApiKeysPage() {
                   onRotate={handleTenantRotate}
                   getBudgetMeta={resolveBudgetMeta}
                   formatResetValue={formatResetValue}
+                  selectedIds={canManageTenant ? tenantSelectedIds : undefined}
+                  onSelectionChange={canManageTenant ? setTenantSelectedIds : undefined}
                 />
               </section>
             </>
@@ -307,6 +397,43 @@ export function UserApiKeysPage() {
           <RevokedKeysTable keys={revokedRows} loading={revokedLoading} />
         </TabsContent>
       </Tabs>
+
+      {/* Bulk Action Bar */}
+      <BulkUserKeyActionBar
+        selectedCount={currentSelectedIds.size}
+        onRevoke={() => setPendingBulkRevoke(activeTab === "personal" ? "personal" : "tenant")}
+        onClear={() => currentSetSelectedIds(new Set())}
+        isLoading={bulkRevokeLoading}
+        disabled={activeTab === "tenant" && !canManageTenant}
+      />
+
+      {/* Bulk Revoke Confirmation Dialog */}
+      <AlertDialog
+        open={pendingBulkRevoke !== null}
+        onOpenChange={(open) => !open && setPendingBulkRevoke(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Revoke {currentSelectedIds.size} keys?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. All selected keys will stop working
+              immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bulkRevokeLoading}
+              onClick={handleBulkPersonalRevoke}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Revoke all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,17 +1,8 @@
-import { Copy } from "lucide-react";
-
-import type { AdminKeyRecord, AdminKeyScope } from "@/api/admin-keys";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { useState, useCallback } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Key } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { TabsContent } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,241 +13,272 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { TabsContent } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
+import {
+  listAdminKeys,
+  createAdminKey,
+  revokeAdminKey,
+} from "@/api/admin-keys";
+import {
+  AdminKeyDirectoryCard,
+  AdminKeyCreateDialog,
+  AdminKeyDetailsDialog,
+  AdminKeyIssuedDialog,
+  BulkAdminKeyActionBar,
+  useAdminKeyFilters,
+  useAdminKeyDialogs,
+  isKeyActive,
+} from "@/features/admin-keys";
 
-type AdminKeysTabProps = {
-  adminKeys: AdminKeyRecord[];
-  loading: boolean;
-  createOpen: boolean;
-  setCreateOpen: (open: boolean) => void;
-  issuedToken: string | null;
-  setIssuedToken: (token: string | null) => void;
-  pendingRevoke: AdminKeyRecord | null;
-  setPendingRevoke: (record: AdminKeyRecord | null) => void;
-  adminKeyName: string;
-  setAdminKeyName: (value: string) => void;
-  adminKeyScope: AdminKeyScope;
-  setAdminKeyScope: (value: AdminKeyScope) => void;
-  adminKeyExpiresDays: string;
-  setAdminKeyExpiresDays: (value: string) => void;
-  createPending: boolean;
-  revokePending: boolean;
-  onCreate: () => void;
-  onRevoke: (id: string) => void;
-  onCopy: (value: string) => void;
-  formatDate: (value?: string | null) => string;
-  getStatus: (key: AdminKeyRecord) => string;
-};
+export function AdminKeysTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-export function AdminKeysTab({
-  adminKeys,
-  loading,
-  createOpen,
-  setCreateOpen,
-  issuedToken,
-  setIssuedToken,
-  pendingRevoke,
-  setPendingRevoke,
-  adminKeyName,
-  setAdminKeyName,
-  adminKeyScope,
-  setAdminKeyScope,
-  adminKeyExpiresDays,
-  setAdminKeyExpiresDays,
-  createPending,
-  revokePending,
-  onCreate,
-  onRevoke,
-  onCopy,
-  formatDate,
-  getStatus,
-}: AdminKeysTabProps) {
+  // Data fetching
+  const adminKeysQuery = useQuery({
+    queryKey: ["admin-keys"],
+    queryFn: listAdminKeys,
+  });
+  const adminKeys = adminKeysQuery.data ?? [];
+
+  // Filters and selection
+  const {
+    searchTerm,
+    setSearchTerm,
+    scopeFilter,
+    setScopeFilter,
+    statusFilter,
+    setStatusFilter,
+    filteredKeys,
+    stats,
+  } = useAdminKeyFilters(adminKeys);
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRevokeLoading, setBulkRevokeLoading] = useState(false);
+
+  // Dialogs
+  const { createDialog, detailsDialog, issuedDialog, revokeDialog } =
+    useAdminKeyDialogs();
+
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: createAdminKey,
+    onSuccess: (data) => {
+      toast({ title: "Admin token created" });
+      issuedDialog.setToken(data.token);
+      createDialog.reset();
+      void queryClient.invalidateQueries({ queryKey: ["admin-keys"] });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Failed to create token",
+        description: "Check your permissions and try again.",
+      });
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: revokeAdminKey,
+    onSuccess: () => {
+      toast({ title: "Token revoked" });
+      revokeDialog.close();
+      setSelectedIds(new Set());
+      void queryClient.invalidateQueries({ queryKey: ["admin-keys"] });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Failed to revoke token",
+      });
+    },
+  });
+
+  // Handlers
+  const handleCreate = useCallback(() => {
+    const form = createDialog.form;
+    if (!form.name.trim()) {
+      toast({ variant: "destructive", title: "Name is required" });
+      return;
+    }
+    const expiresDays = Number(form.expiresDays);
+    if (expiresDays <= 0) {
+      toast({ variant: "destructive", title: "Expiry must be at least 1 day" });
+      return;
+    }
+    createMutation.mutate({
+      name: form.name.trim(),
+      scope: form.scope,
+      expires_in_seconds: expiresDays * 24 * 60 * 60,
+    });
+  }, [createDialog.form, createMutation, toast]);
+
+  const handleRevoke = useCallback(
+    (record: { id: string }) => {
+      revokeMutation.mutate(record.id);
+    },
+    [revokeMutation],
+  );
+
+  const handleBulkRevoke = useCallback(async () => {
+    setBulkRevokeLoading(true);
+    const keysToRevoke = adminKeys.filter(
+      (k) => selectedIds.has(k.id) && isKeyActive(k),
+    );
+    try {
+      for (const key of keysToRevoke) {
+        await revokeAdminKey(key.id);
+      }
+      toast({ title: `${keysToRevoke.length} token(s) revoked` });
+      setSelectedIds(new Set());
+      revokeDialog.close();
+      void queryClient.invalidateQueries({ queryKey: ["admin-keys"] });
+    } catch {
+      toast({ variant: "destructive", title: "Failed to revoke tokens" });
+    } finally {
+      setBulkRevokeLoading(false);
+    }
+  }, [adminKeys, selectedIds, toast, queryClient, revokeDialog]);
+
+  const handleRevokeFromDetails = useCallback(
+    (record: { id: string }) => {
+      detailsDialog.close();
+      revokeDialog.openWith([adminKeys.find((k) => k.id === record.id)!]);
+    },
+    [detailsDialog, revokeDialog, adminKeys],
+  );
+
+  const handleConfirmRevoke = useCallback(() => {
+    if (revokeDialog.records.length === 1) {
+      handleRevoke(revokeDialog.records[0]);
+    } else {
+      handleBulkRevoke();
+    }
+  }, [revokeDialog.records, handleRevoke, handleBulkRevoke]);
+
   return (
-    <TabsContent value="admin-keys" forceMount>
-      <Card>
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <CardTitle>Admin access tokens</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Create time-bound admin tokens for automation and operational scripts.
-              Tokens are shown once; store them securely.
-            </p>
-          </div>
-          <Button onClick={() => setCreateOpen(true)}>Create token</Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {loading ? (
-            <Skeleton className="h-32 w-full" />
-          ) : adminKeys.length ? (
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Scope</TableHead>
-                    <TableHead>Prefix</TableHead>
-                    <TableHead>Owner</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Last used</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-24 text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {adminKeys.map((key) => {
-                    const status = getStatus(key);
-                    return (
-                      <TableRow key={key.id}>
-                        <TableCell className="font-medium">{key.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{key.scope}</Badge>
-                        </TableCell>
-                        <TableCell className="font-mono">{`sk-${key.prefix}`}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {key.owner_name || key.owner_email || "System"}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(key.expires_at)}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(key.last_used_at)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={status === "active" ? "secondary" : "destructive"}
-                          >
-                            {status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={status !== "active"}
-                            onClick={() => setPendingRevoke(key)}
-                          >
-                            Revoke
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No admin tokens created yet.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+    <TabsContent value="admin-keys" className="space-y-6" forceMount>
+      {/* Summary Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Tokens</CardTitle>
+            <Key className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.total}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.active}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Expired</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-amber-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.expired}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Revoked</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.revoked}</div>
+          </CardContent>
+        </Card>
+      </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create admin token</DialogTitle>
-            <DialogDescription>
-              Tokens expire automatically. Choose a scope and expiry window.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="admin-key-name">Name</Label>
-              <Input
-                id="admin-key-name"
-                value={adminKeyName}
-                onChange={(event) => setAdminKeyName(event.target.value)}
-                placeholder="Billing automation"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Scope</Label>
-              <Select
-                value={adminKeyScope}
-                onValueChange={(value) => setAdminKeyScope(value as AdminKeyScope)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select scope" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">Admin (current user)</SelectItem>
-                  <SelectItem value="system">System</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="admin-key-expiry">Expires in (days)</Label>
-              <Input
-                id="admin-key-expiry"
-                type="number"
-                min="1"
-                value={adminKeyExpiresDays}
-                onChange={(event) => setAdminKeyExpiresDays(event.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={onCreate} disabled={createPending}>
-              {createPending ? "Creating…" : "Create token"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Directory Card */}
+      <AdminKeyDirectoryCard
+        keys={adminKeys}
+        filteredKeys={filteredKeys}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        scopeFilter={scopeFilter}
+        setScopeFilter={setScopeFilter}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        isLoading={adminKeysQuery.isLoading}
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
+        onViewDetails={detailsDialog.openWith}
+        onRevoke={(record) => revokeDialog.openWith([record])}
+        onCreate={() => createDialog.setOpen(true)}
+      />
 
-      {issuedToken ? (
-        <Dialog open onOpenChange={(open) => !open && setIssuedToken(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Admin token issued</DialogTitle>
-              <DialogDescription>
-                Copy the token now—this is the only time it will be shown.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2 py-2">
-              <Label>Token</Label>
-              <div className="flex items-center gap-2">
-                <Input value={issuedToken} readOnly className="font-mono" />
-                <Button variant="outline" size="icon" onClick={() => onCopy(issuedToken)}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={() => setIssuedToken(null)}>Done</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      ) : null}
+      {/* Bulk Action Bar */}
+      <BulkAdminKeyActionBar
+        selectedCount={selectedIds.size}
+        onRevoke={() => {
+          const records = adminKeys.filter(
+            (k) => selectedIds.has(k.id) && isKeyActive(k),
+          );
+          revokeDialog.openWith(records);
+        }}
+        onClear={() => setSelectedIds(new Set())}
+        isLoading={bulkRevokeLoading}
+      />
 
-      <AlertDialog
-        open={Boolean(pendingRevoke)}
-        onOpenChange={(open) => !open && setPendingRevoke(null)}
-      >
+      {/* Create Dialog */}
+      <AdminKeyCreateDialog
+        open={createDialog.open}
+        onOpenChange={createDialog.setOpen}
+        form={createDialog.form}
+        onChange={createDialog.setForm}
+        onSubmit={handleCreate}
+        loading={createMutation.isPending}
+      />
+
+      {/* Issued Token Dialog */}
+      <AdminKeyIssuedDialog
+        open={issuedDialog.open}
+        token={issuedDialog.token}
+        onClose={issuedDialog.close}
+      />
+
+      {/* Details Dialog */}
+      <AdminKeyDetailsDialog
+        open={detailsDialog.open}
+        onOpenChange={(open) => {
+          if (!open) detailsDialog.close();
+          else detailsDialog.setOpen(open);
+        }}
+        record={detailsDialog.record}
+        onRevoke={handleRevokeFromDetails}
+      />
+
+      {/* Revoke Confirmation Dialog */}
+      <AlertDialog open={revokeDialog.open} onOpenChange={(open) => !open && revokeDialog.close()}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke admin token?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Revoke {revokeDialog.records.length > 1 ? "tokens" : "token"}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This token will stop working immediately. You cannot undo this action.
+              {revokeDialog.records.length === 1
+                ? `"${revokeDialog.records[0]?.name}" will stop working immediately.`
+                : `${revokeDialog.records.length} tokens will stop working immediately.`}{" "}
+              This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => revokeDialog.close()}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
-                if (pendingRevoke) {
-                  onRevoke(pendingRevoke.id);
-                }
-              }}
-              disabled={revokePending}
+              onClick={handleConfirmRevoke}
+              disabled={revokeMutation.isPending || bulkRevokeLoading}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Revoke
             </AlertDialogAction>

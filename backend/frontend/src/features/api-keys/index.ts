@@ -3,6 +3,7 @@ export * from "./components/AdminKeyTable";
 export * from "./components/IssuedKeyDialog";
 export * from "./components/AdminKeyCreateDialog";
 export * from "./components/AdminKeyDetailsDialog";
+export * from "./components/BulkKeyActionBar";
 export * from "./hooks/useAdminKeyMutations";
 export * from "./hooks/useKeysPageData";
 export * from "./utils";

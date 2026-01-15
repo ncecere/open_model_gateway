@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { RefreshCcw, Search } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Key, RefreshCcw, Search } from "lucide-react";
 import { PageHeader } from "@/components/layouts";
 
 import type { ApiKeyRecord, CreateApiKeyResponse } from "@/api/tenants";
+import { revokeTenantApiKey } from "@/api/tenants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -29,6 +30,7 @@ import {
   AdminKeyCreateDialog,
   AdminKeyDetailsDialog,
   IssuedKeyDialog,
+  BulkKeyActionBar,
   useAdminKeyMutations,
   useKeysPageData,
   useKeysFilter,
@@ -69,6 +71,9 @@ export function KeysPage() {
   const [issuedKey, setIssuedKey] = useState<CreateApiKeyResponse | null>(null);
   const [selectedKey, setSelectedKey] = useState<ApiKeyRecord | null>(null);
   const [pendingRevokeKey, setPendingRevokeKey] = useState<ApiKeyRecord | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRevokeLoading, setBulkRevokeLoading] = useState(false);
+  const [pendingBulkRevoke, setPendingBulkRevoke] = useState(false);
 
   const handleCopy = async (value: string, label: string) => {
     try {
@@ -89,6 +94,26 @@ export function KeysPage() {
     setIssuedKey(result);
     return result;
   };
+
+  const handleBulkRevoke = useCallback(async () => {
+    setBulkRevokeLoading(true);
+    const keysToRevoke = keys.filter(
+      (k) => selectedIds.has(k.id) && !k.revoked
+    );
+    try {
+      for (const key of keysToRevoke) {
+        await revokeTenantApiKey(key.tenant_id, key.id);
+      }
+      toast({ title: `${keysToRevoke.length} key(s) revoked` });
+      setSelectedIds(new Set());
+      setPendingBulkRevoke(false);
+      void keysQuery.refetch();
+    } catch {
+      toast({ variant: "destructive", title: "Failed to revoke keys" });
+    } finally {
+      setBulkRevokeLoading(false);
+    }
+  }, [keys, selectedIds, toast, keysQuery]);
 
   return (
     <div className="space-y-6">
@@ -122,12 +147,44 @@ export function KeysPage() {
         }
       />
 
+      {/* Summary Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Keys</CardTitle>
+            <Key className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{keys.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeKeys.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Revoked</CardTitle>
+            <div className="h-2 w-2 rounded-full bg-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{revokedKeys.length}</div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start">
           <div className="flex-1">
             <CardTitle>Key registry</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {activeKeys.length} active · {revokedKeys.length} revoked
+              {filteredKeys.length} of {keys.length} keys
+              {filteredKeys.length !== keys.length && " matching filters"}
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-1 sm:items-center">
@@ -182,10 +239,47 @@ export function KeysPage() {
             revokeDisabled={revokeKeyMutation.isPending}
             formatBudgetValue={formatBudgetValue}
             formatWarningThresholdValue={formatWarningThresholdValue}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
           />
         </CardContent>
       </Card>
 
+      {/* Bulk Action Bar */}
+      <BulkKeyActionBar
+        selectedCount={selectedIds.size}
+        onRevoke={() => setPendingBulkRevoke(true)}
+        onClear={() => setSelectedIds(new Set())}
+        isLoading={bulkRevokeLoading}
+      />
+
+      {/* Bulk Revoke Confirmation Dialog */}
+      <AlertDialog
+        open={pendingBulkRevoke}
+        onOpenChange={(open) => !open && setPendingBulkRevoke(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke {selectedIds.size} keys?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. All selected keys will stop working
+              immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bulkRevokeLoading}
+              onClick={handleBulkRevoke}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Revoke all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Single Revoke Confirmation Dialog */}
       <AlertDialog
         open={Boolean(pendingRevokeKey)}
         onOpenChange={(open) => !open && setPendingRevokeKey(null)}

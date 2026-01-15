@@ -27,6 +27,9 @@ All notable changes to this project will be documented in this file. The format 
 - **Clone User action** in the admin users table dropdown to quickly create users with pre-filled settings.
 - **Summary stats cards** on Admin Users page showing Total Users, Active, and Suspended counts.
 - **useCopyToClipboard hook** for copy-to-clipboard functionality with visual feedback.
+- **Admin API Keys page enhancements**: summary stats cards (Total/Active/Revoked), bulk selection checkboxes, floating bulk action bar with bulk revoke capability.
+- **Admin Tokens tab refactor** (`Settings > Admin tokens`) into modular feature folder structure (`/features/admin-keys/`) with search by name/prefix, scope filter (Admin/System), status filter (Active/Expired/Revoked), bulk selection, enhanced details dialog, and summary stats cards.
+- **User API Keys page enhancements**: summary stats cards showing key counts across all tenants, bulk selection checkboxes in Personal and Tenant tabs, floating bulk action bar, and search filtering in key tables.
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.
@@ -44,6 +47,9 @@ All notable changes to this project will be documented in this file. The format 
 - User Dashboard "Recent usage" text list replaced with interactive bar chart visualization.
 - Admin Users table now includes checkbox column for bulk selection and color-coded status badges.
 - Admin Users page refactored from monolithic 459-line file to modular components with feature folder structure.
+- Admin API Keys table now includes checkbox column for bulk selection.
+- Admin Tokens tab (`Settings > Admin tokens`) refactored to be self-contained with own data fetching, removing 17 props from SettingsPage.
+- User API Keys KeyTable now includes checkbox column for bulk selection (when user has manage permissions).
 
 ### Fixed
 - ProviderHealthPage tests now properly mock localStorage for test environment compatibility.

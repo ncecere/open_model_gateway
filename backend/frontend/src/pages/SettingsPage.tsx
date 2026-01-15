@@ -26,13 +26,6 @@ import {
   updateFileSettings,
   sendTestAlertEmail,
 } from "@/api/runtime-settings";
-import {
-  createAdminKey,
-  listAdminKeys,
-  revokeAdminKey,
-  type AdminKeyRecord,
-  type AdminKeyScope,
-} from "@/api/admin-keys";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layouts";
@@ -110,21 +103,9 @@ export function SettingsPage() {
     queryKey: ["alert-settings"],
     queryFn: getAlertSettings,
   });
-  const adminKeysQuery = useQuery({
-    queryKey: ["admin-keys"],
-    queryFn: listAdminKeys,
-  });
-
   const [newDefaultModel, setNewDefaultModel] = useState("");
   const [activeTab, setActiveTab] = useState("budgets");
   const [testEmail, setTestEmail] = useState("");
-  const [createAdminKeyOpen, setCreateAdminKeyOpen] = useState(false);
-  const [issuedAdminToken, setIssuedAdminToken] = useState<string | null>(null);
-  const [adminKeyName, setAdminKeyName] = useState("");
-  const [adminKeyScope, setAdminKeyScope] = useState<AdminKeyScope>("admin");
-  const [adminKeyExpiresDays, setAdminKeyExpiresDays] = useState("30");
-  const [pendingAdminRevoke, setPendingAdminRevoke] =
-    useState<AdminKeyRecord | null>(null);
 
   const rateLimitDefaults = rateLimitQuery.data;
   const fileSettings = fileSettingsQuery.data;
@@ -231,42 +212,6 @@ export function SettingsPage() {
         variant: "destructive",
         title: "Failed to send test email",
         description: error instanceof Error ? error.message : undefined,
-      });
-    },
-  });
-
-  const createAdminKeyMutation = useMutation({
-    mutationFn: createAdminKey,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["admin-keys"] });
-      setIssuedAdminToken(data.token);
-      setCreateAdminKeyOpen(false);
-      setAdminKeyName("");
-      setAdminKeyScope("admin");
-      setAdminKeyExpiresDays("30");
-      toast({ title: "Admin key issued" });
-    },
-    onError: (error: unknown) => {
-      toast({
-        variant: "destructive",
-        title: "Failed to create admin key",
-        description: error instanceof Error ? error.message : undefined,
-      });
-    },
-  });
-
-  const revokeAdminKeyMutation = useMutation({
-    mutationFn: (id: string) => revokeAdminKey(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-keys"] });
-      setPendingAdminRevoke(null);
-      toast({ title: "Admin key revoked" });
-    },
-    onError: () => {
-      toast({
-        variant: "destructive",
-        title: "Failed to revoke admin key",
-        description: "Try again in a moment.",
       });
     },
   });
@@ -462,64 +407,6 @@ export function SettingsPage() {
     removeModelMutation.mutate(alias.trim());
   };
 
-  const adminKeys = adminKeysQuery.data ?? [];
-  const adminKeysLoading = adminKeysQuery.isLoading;
-
-  const handleCreateAdminKey = () => {
-    const name = adminKeyName.trim();
-    const days = Number.parseInt(adminKeyExpiresDays, 10);
-    if (!name) {
-      toast({ variant: "destructive", title: "Name is required" });
-      return;
-    }
-    if (!Number.isFinite(days) || days <= 0) {
-      toast({ variant: "destructive", title: "Expiry must be positive" });
-      return;
-    }
-    createAdminKeyMutation.mutate({
-      name,
-      scope: adminKeyScope,
-      expires_in_seconds: days * 24 * 60 * 60,
-    });
-  };
-
-  const handleCopy = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      toast({ title: "Copied to clipboard" });
-    } catch {
-      toast({
-        variant: "destructive",
-        title: "Copy failed",
-        description: "Copy the value manually.",
-      });
-    }
-  };
-
-  const formatAdminKeyDate = (value?: string | null) => {
-    if (!value) {
-      return "—";
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return "—";
-    }
-    return date.toLocaleString();
-  };
-
-  const getAdminKeyStatus = (key: AdminKeyRecord) => {
-    if (key.revoked_at) {
-      return "revoked";
-    }
-    if (key.expires_at) {
-      const expiresAt = new Date(key.expires_at);
-      if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() < Date.now()) {
-        return "expired";
-      }
-    }
-    return "active";
-  };
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -604,29 +491,7 @@ export function SettingsPage() {
             addPending={addModelMutation.isPending}
             removePending={removeModelMutation.isPending}
           />
-          <AdminKeysTab
-            adminKeys={adminKeys}
-            loading={adminKeysLoading}
-            createOpen={createAdminKeyOpen}
-            setCreateOpen={setCreateAdminKeyOpen}
-            issuedToken={issuedAdminToken}
-            setIssuedToken={setIssuedAdminToken}
-            pendingRevoke={pendingAdminRevoke}
-            setPendingRevoke={setPendingAdminRevoke}
-            adminKeyName={adminKeyName}
-            setAdminKeyName={setAdminKeyName}
-            adminKeyScope={adminKeyScope}
-            setAdminKeyScope={setAdminKeyScope}
-            adminKeyExpiresDays={adminKeyExpiresDays}
-            setAdminKeyExpiresDays={setAdminKeyExpiresDays}
-            createPending={createAdminKeyMutation.isPending}
-            revokePending={revokeAdminKeyMutation.isPending}
-            onCreate={handleCreateAdminKey}
-            onRevoke={(id) => revokeAdminKeyMutation.mutate(id)}
-            onCopy={handleCopy}
-            formatDate={formatAdminKeyDate}
-            getStatus={getAdminKeyStatus}
-          />
+          <AdminKeysTab />
           <OverviewSettingsTab />
         </FormProvider>
       </Tabs>

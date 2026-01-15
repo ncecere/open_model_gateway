@@ -1,4 +1,6 @@
+import { useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -22,6 +24,8 @@ type AdminKeyTableProps = {
   revokeDisabled?: boolean;
   formatBudgetValue: (key: ApiKeyRecord) => string;
   formatWarningThresholdValue: (key: ApiKeyRecord) => string;
+  selectedIds?: Set<string>;
+  onSelectionChange?: (ids: Set<string>) => void;
 };
 
 export function AdminKeyTable({
@@ -33,7 +37,44 @@ export function AdminKeyTable({
   revokeDisabled,
   formatBudgetValue,
   formatWarningThresholdValue,
+  selectedIds,
+  onSelectionChange,
 }: AdminKeyTableProps) {
+  const activeFilteredKeys = filteredKeys.filter((k) => !k.revoked);
+  const allSelected =
+    activeFilteredKeys.length > 0 &&
+    activeFilteredKeys.every((k) => selectedIds?.has(k.id));
+  const someSelected = filteredKeys.some((k) => selectedIds?.has(k.id));
+
+  const toggleAll = useCallback(() => {
+    if (!onSelectionChange || !selectedIds) return;
+    if (allSelected) {
+      const next = new Set(selectedIds);
+      activeFilteredKeys.forEach((k) => next.delete(k.id));
+      onSelectionChange(next);
+    } else {
+      const next = new Set(selectedIds);
+      activeFilteredKeys.forEach((k) => next.add(k.id));
+      onSelectionChange(next);
+    }
+  }, [allSelected, activeFilteredKeys, onSelectionChange, selectedIds]);
+
+  const toggleOne = useCallback(
+    (id: string) => {
+      if (!onSelectionChange || !selectedIds) return;
+      const next = new Set(selectedIds);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      onSelectionChange(next);
+    },
+    [onSelectionChange, selectedIds]
+  );
+
+  const showCheckboxes = Boolean(selectedIds && onSelectionChange);
+
   if (isLoading) {
     return <TableSkeleton rows={3} />;
   }
@@ -52,6 +93,16 @@ export function AdminKeyTable({
     <Table>
       <TableHeader>
         <TableRow>
+          {showCheckboxes && (
+            <TableHead className="w-12">
+              <Checkbox
+                checked={allSelected}
+                onCheckedChange={toggleAll}
+                aria-label="Select all active keys"
+                className={someSelected && !allSelected ? "opacity-50" : ""}
+              />
+            </TableHead>
+          )}
           <TableHead>Name</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Issuer</TableHead>
@@ -63,8 +114,22 @@ export function AdminKeyTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {filteredKeys.map((key) => (
-          <TableRow key={key.id}>
+        {filteredKeys.map((key) => {
+          const isSelected = selectedIds?.has(key.id) ?? false;
+          const canSelect = !key.revoked;
+
+          return (
+          <TableRow key={key.id} className={isSelected ? "bg-muted/50" : undefined}>
+            {showCheckboxes && (
+              <TableCell>
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => toggleOne(key.id)}
+                  disabled={!canSelect}
+                  aria-label={`Select ${key.name}`}
+                />
+              </TableCell>
+            )}
             <TableCell className="font-medium">{key.name}</TableCell>
             <TableCell>
               <Badge variant={key.revoked ? "destructive" : "secondary"}>
@@ -120,7 +185,8 @@ export function AdminKeyTable({
               />
             </TableCell>
           </TableRow>
-        ))}
+          );
+        })}
       </TableBody>
     </Table>
   );

@@ -1,6 +1,9 @@
+import { useState, useMemo, useCallback } from "react";
 import { RefreshCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   AlertDialog,
@@ -34,6 +37,8 @@ export type KeyTableProps = {
   onRotate?: (key: UserAPIKey) => void;
   getBudgetMeta: (key: UserAPIKey) => BudgetMeta;
   formatResetValue: (key: UserAPIKey) => string;
+  selectedIds?: Set<string>;
+  onSelectionChange?: (ids: Set<string>) => void;
 };
 
 export function KeyTable({
@@ -47,15 +52,85 @@ export function KeyTable({
   onRotate,
   getBudgetMeta,
   formatResetValue,
+  selectedIds,
+  onSelectionChange,
 }: KeyTableProps) {
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const filteredKeys = useMemo(() => {
+    if (!searchTerm.trim()) return keys;
+    const term = searchTerm.toLowerCase();
+    return keys.filter(
+      (key) =>
+        key.name.toLowerCase().includes(term) ||
+        key.prefix.toLowerCase().includes(term)
+    );
+  }, [keys, searchTerm]);
+
   const hasKeys = keys.length > 0;
+  const hasFilteredKeys = filteredKeys.length > 0;
   const showActions = variant === "active" && (allowRevoke || allowRotate);
   const showBudgetColumns = variant === "active";
+  const showCheckboxes = Boolean(selectedIds && onSelectionChange) && variant === "active";
+
+  const allSelected =
+    filteredKeys.length > 0 &&
+    filteredKeys.every((k) => selectedIds?.has(k.id));
+  const someSelected = filteredKeys.some((k) => selectedIds?.has(k.id));
+
+  const toggleAll = useCallback(() => {
+    if (!onSelectionChange || !selectedIds) return;
+    if (allSelected) {
+      const next = new Set(selectedIds);
+      filteredKeys.forEach((k) => next.delete(k.id));
+      onSelectionChange(next);
+    } else {
+      const next = new Set(selectedIds);
+      filteredKeys.forEach((k) => next.add(k.id));
+      onSelectionChange(next);
+    }
+  }, [allSelected, filteredKeys, onSelectionChange, selectedIds]);
+
+  const toggleOne = useCallback(
+    (id: string) => {
+      if (!onSelectionChange || !selectedIds) return;
+      const next = new Set(selectedIds);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      onSelectionChange(next);
+    },
+    [onSelectionChange, selectedIds]
+  );
+
+  const formatLastUsed = (dateStr?: string | null) => {
+    if (!dateStr) return "Never";
+    return new Date(dateStr).toLocaleDateString();
+  };
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
+      <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <CardTitle>{title}</CardTitle>
+          {hasKeys && (
+            <p className="text-sm text-muted-foreground">
+              {filteredKeys.length === keys.length
+                ? `${keys.length} key${keys.length !== 1 ? "s" : ""}`
+                : `${filteredKeys.length} of ${keys.length} keys`}
+            </p>
+          )}
+        </div>
+        {hasKeys && (
+          <Input
+            placeholder="Search by name or prefix..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full md:max-w-xs"
+          />
+        )}
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -65,9 +140,20 @@ export function KeyTable({
             ))}
           </div>
         ) : hasKeys ? (
+          hasFilteredKeys ? (
           <Table>
             <TableHeader>
               <TableRow>
+                {showCheckboxes && (
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={toggleAll}
+                      aria-label="Select all keys"
+                      className={someSelected && !allSelected ? "opacity-50" : ""}
+                    />
+                  </TableHead>
+                )}
                 <TableHead>Name</TableHead>
                 <TableHead>Prefix</TableHead>
                 {showBudgetColumns ? (
@@ -76,6 +162,7 @@ export function KeyTable({
                     <TableHead>Reset schedule</TableHead>
                   </>
                 ) : null}
+                <TableHead>Last used</TableHead>
                 {variant === "active" && showActions ? (
                   <TableHead className="text-right">Actions</TableHead>
                 ) : null}
@@ -83,12 +170,22 @@ export function KeyTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {keys.map((key) => {
+              {filteredKeys.map((key) => {
                 const budgetMeta = getBudgetMeta(key);
                 const hasBudget =
                   typeof budgetMeta.limit === "number" && budgetMeta.limit > 0;
+                const isSelected = selectedIds?.has(key.id) ?? false;
                 return (
-                  <TableRow key={key.id}>
+                  <TableRow key={key.id} className={isSelected ? "bg-muted/50" : undefined}>
+                    {showCheckboxes && (
+                      <TableCell>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleOne(key.id)}
+                          aria-label={`Select ${key.name}`}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>{key.name}</TableCell>
                     <TableCell>{key.prefix}</TableCell>
                     {showBudgetColumns ? (
@@ -116,6 +213,9 @@ export function KeyTable({
                         </TableCell>
                       </>
                     ) : null}
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatLastUsed(key.last_used_at)}
+                    </TableCell>
                     {variant === "active" && showActions ? (
                       <TableCell className="flex justify-end gap-2">
                         {allowRotate && onRotate ? (
@@ -170,6 +270,11 @@ export function KeyTable({
               })}
             </TableBody>
           </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No keys match the current search.
+            </p>
+          )
         ) : (
           <p className="text-sm text-muted-foreground">No data yet.</p>
         )}

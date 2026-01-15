@@ -1,7 +1,4 @@
-import {
-  type ChangeEvent,
-  useRef,
-} from "react";
+import { useState } from "react";
 
 import {
   type ModelCatalogUpsertRequest,
@@ -10,7 +7,6 @@ import {
   normalizeProviderSlug,
 } from "@/api/model-catalog";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -19,66 +15,54 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import {
-  DEFAULT_PROVIDER_DETAIL,
-  PROVIDER_DETAILS,
-  SUPPORTED_PROVIDERS,
-} from "../providers";
+import { PROVIDER_DETAILS, DEFAULT_PROVIDER_DETAIL } from "../providers";
 import { buildMetadataPayload, buildPricingPayload } from "../form";
 import { normalizeMetadataForProvider } from "../metadata";
-import {
-  MODEL_TYPE_OPTIONS,
-  defaultVertexOverride,
-  type CustomMetadataEntry,
-  type ModelFormState,
-} from "../types";
-import { ModelMetadataEditor } from "./ModelMetadataEditor";
-import { PricingTiersEditor } from "./PricingTiersEditor";
+import { defaultVertexOverride, type ModelFormState } from "../types";
+import { BasicInfoTab } from "./tabs/BasicInfoTab";
+import { ProviderConfigTab } from "./tabs/ProviderConfigTab";
+import { PricingTab } from "./tabs/PricingTab";
+import { AdvancedTab } from "./tabs/AdvancedTab";
 
-const ALL_MODALITIES = ["text", "image", "audio", "video"] as const;
+type TabValue = "basic" | "provider" | "pricing" | "advanced";
 
-const AUDIO_FORMAT_OPTIONS = [
-  { value: "json", label: "JSON" },
-  { value: "text", label: "Text" },
-  { value: "srt", label: "SRT" },
-  { value: "vtt", label: "VTT" },
-  { value: "verbose_json", label: "Verbose JSON" },
-  { value: "diarized_json", label: "Diarized JSON" },
-] as const;
-
-const AUDIO_GRANULARITY_OPTIONS = [
-  { value: "word", label: "Word-level" },
-  { value: "segment", label: "Segment-level" },
-] as const;
-
-function parseCSVList(value?: string) {
-  if (!value) {
-    return [];
-  }
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+interface ValidationErrors {
+  basic: string[];
+  provider: string[];
+  pricing: string[];
+  advanced: string[];
 }
 
-function formatCSVList(values: string[]) {
-  if (values.length === 0) {
-    return "";
+function validateForm(form: ModelFormState): ValidationErrors {
+  const errors: ValidationErrors = {
+    basic: [],
+    provider: [],
+    pricing: [],
+    advanced: [],
+  };
+
+  // Basic tab validation
+  if (!form.alias.trim()) {
+    errors.basic.push("Alias is required");
   }
-  return values.join(",");
+  if (!form.provider.trim()) {
+    errors.basic.push("Provider is required");
+  }
+  if (!form.provider_model.trim()) {
+    errors.basic.push("Provider model is required");
+  }
+
+  return errors;
+}
+
+function getErrorCount(errors: ValidationErrors, tab: TabValue): number {
+  return errors[tab].length;
+}
+
+function hasAnyErrors(errors: ValidationErrors): boolean {
+  return Object.values(errors).some((arr) => arr.length > 0);
 }
 
 export function ModelEditorDialog({
@@ -98,12 +82,14 @@ export function ModelEditorDialog({
   loading: boolean;
   mode: "create" | "edit";
 }) {
+  const [activeTab, setActiveTab] = useState<TabValue>("basic");
+  const errors = validateForm(form);
+
   const providerKey = normalizeProviderSlug(form.provider);
   const providerDetail =
     PROVIDER_DETAILS[providerKey] ?? DEFAULT_PROVIDER_DETAIL;
   const providerConfig = providerDetail.config;
-  const providerKeyInline =
-    providerConfig.showApiKey && !providerConfig.showDeployment;
+
   const baseVertexOverride = {
     ...defaultVertexOverride(),
     ...(form.provider_overrides.vertex ?? {}),
@@ -120,92 +106,41 @@ export function ModelEditorDialog({
         }
       : baseVertexOverride;
 
-  const modelType = form.model_type?.toLowerCase();
-  const isAudioTranscription = modelType === "audio_transcription";
-  const isAudioSpeech = modelType === "audio_speech";
-
-  const setVertexOverride = (next: VertexProviderConfig) => {
+  const handleProviderChange = (provider: string) => {
+    const { metadata, customMetadata } = normalizeMetadataForProvider(
+      form.metadata,
+      form.customMetadata,
+      provider,
+    );
     onChange({
       ...form,
-      provider_overrides: {
-        ...form.provider_overrides,
-        vertex: next,
-      },
+      provider,
+      metadata,
+      customMetadata,
     });
   };
 
-  const handleStringChange = (key: keyof ModelFormState, value: string) => {
-    if (key === "provider") {
-      const { metadata, customMetadata } = normalizeMetadataForProvider(
-        form.metadata,
-        form.customMetadata,
-        value,
-      );
-      onChange({
-        ...form,
-        provider: value,
-        metadata,
-        customMetadata,
-      });
-      return;
+  const handleModelTypeChange = (modelType: string) => {
+    const nextModalities = new Set(form.modalities);
+    if (modelType.toLowerCase().startsWith("audio")) {
+      nextModalities.add("audio");
     }
-    if (key === "model_type") {
-      const nextModalities = new Set(form.modalities);
-      if (value.toLowerCase().startsWith("audio")) {
-        nextModalities.add("audio");
-      }
-      onChange({
-        ...form,
-        model_type: value,
-        modalities: Array.from(nextModalities),
-      });
-      return;
-    }
-    onChange({ ...form, [key]: value });
-  };
-
-  const handleNumericChange = (key: keyof ModelFormState, value: string) => {
-    if (value === "") {
-      onChange({ ...form, [key]: "" });
-      return;
-    }
-    const parsed = Number(value);
-    if (!Number.isNaN(parsed)) {
-      onChange({ ...form, [key]: parsed });
-    }
-  };
-
-  const handleModalitiesChange = (modality: string, checked: boolean) => {
-    const next = new Set(form.modalities);
-    if (checked) {
-      next.add(modality);
-    } else {
-      next.delete(modality);
-    }
-    onChange({ ...form, modalities: Array.from(next) });
-  };
-
-  const requiredMissing =
-    !form.alias.trim() ||
-    !form.provider.trim() ||
-    !form.provider_model.trim();
-
-  const handleMetadataValueChange = (key: string, value: string) => {
-    const next = { ...form.metadata };
-    if (value === "") {
-      delete next[key];
-    } else {
-      next[key] = value;
-    }
-    onChange({ ...form, metadata: next });
-  };
-
-  const handleCustomMetadataChange = (next: CustomMetadataEntry[]) => {
-    onChange({ ...form, customMetadata: next });
+    onChange({
+      ...form,
+      model_type: modelType,
+      modalities: Array.from(nextModalities),
+    });
   };
 
   const handleSubmit = () => {
-    if (requiredMissing) {
+    if (hasAnyErrors(errors)) {
+      // Navigate to first tab with errors
+      for (const tab of ["basic", "provider", "pricing", "advanced"] as TabValue[]) {
+        if (errors[tab].length > 0) {
+          setActiveTab(tab);
+          return;
+        }
+      }
       return;
     }
 
@@ -243,34 +178,34 @@ export function ModelEditorDialog({
         ? (vertexOverride.vertex_location?.trim() ?? "")
         : form.region.trim();
 
-      const payload: ModelCatalogUpsertRequest = {
-        alias: form.alias.trim(),
-        provider: form.provider.trim(),
-        provider_model: form.provider_model.trim(),
-        model_type: form.model_type || "llm",
-        context_window: Number(form.context_window) || 0,
-        max_output_tokens: Number(form.max_output_tokens) || 0,
-        modalities: form.modalities,
-        supports_tools: form.supports_tools,
-        price_input: form.price_input ? Number.parseFloat(form.price_input) : 0,
-        price_output: form.price_output
-          ? Number.parseFloat(form.price_output)
-          : 0,
-        currency: form.currency.trim() || "USD",
-        deployment: resolvedDeployment,
-        endpoint: form.endpoint.trim(),
-        api_key: form.api_key.trim(),
-        api_version: form.api_version.trim(),
-        region: derivedRegion,
-        metadata: buildMetadataPayload(form),
-        weight: Number(form.weight) || 100,
-        enabled: form.enabled,
-        tenant_assignable: form.tenant_assignable,
-        provider_overrides:
-          Object.keys(provider_overrides).length > 0
-            ? provider_overrides
-            : undefined,
-      };
+    const payload: ModelCatalogUpsertRequest = {
+      alias: form.alias.trim(),
+      provider: form.provider.trim(),
+      provider_model: form.provider_model.trim(),
+      model_type: form.model_type || "llm",
+      context_window: Number(form.context_window) || 0,
+      max_output_tokens: Number(form.max_output_tokens) || 0,
+      modalities: form.modalities,
+      supports_tools: form.supports_tools,
+      price_input: form.price_input ? Number.parseFloat(form.price_input) : 0,
+      price_output: form.price_output
+        ? Number.parseFloat(form.price_output)
+        : 0,
+      currency: form.currency.trim() || "USD",
+      deployment: resolvedDeployment,
+      endpoint: form.endpoint.trim(),
+      api_key: form.api_key.trim(),
+      api_version: form.api_version.trim(),
+      region: derivedRegion,
+      metadata: buildMetadataPayload(form),
+      weight: Number(form.weight) || 100,
+      enabled: form.enabled,
+      tenant_assignable: form.tenant_assignable,
+      provider_overrides:
+        Object.keys(provider_overrides).length > 0
+          ? provider_overrides
+          : undefined,
+    };
 
     const pricingPayload = buildPricingPayload(form);
     if (pricingPayload) {
@@ -280,658 +215,81 @@ export function ModelEditorDialog({
     onSubmit(payload);
   };
 
+  const renderTabTrigger = (value: TabValue, label: string) => {
+    const errorCount = getErrorCount(errors, value);
+    return (
+      <TabsTrigger value={value} className="relative">
+        {label}
+        {errorCount > 0 && (
+          <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
+            {errorCount}
+          </span>
+        )}
+      </TabsTrigger>
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-2xl flex flex-col">
         <DialogHeader>
           <DialogTitle>
             {mode === "create" ? "Add model" : `Edit ${form.alias}`}
           </DialogTitle>
           <DialogDescription>
-            Provide deployment metadata, pricing, and routing configuration.
+            Configure model deployment, pricing, and routing settings.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="alias">Alias</Label>
-              <Input
-                id="alias"
-                value={form.alias}
-                onChange={(event) =>
-                  handleStringChange("alias", event.target.value)
-                }
-                placeholder="gpt-4o"
-                disabled={mode === "edit"}
-                required
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as TabValue)}
+          className="flex-1 overflow-hidden flex flex-col"
+        >
+          <TabsList className="grid w-full grid-cols-4">
+            {renderTabTrigger("basic", "Basic")}
+            {renderTabTrigger("provider", "Provider")}
+            {renderTabTrigger("pricing", "Pricing")}
+            {renderTabTrigger("advanced", "Advanced")}
+          </TabsList>
+
+          <div className="flex-1 overflow-y-auto py-4">
+            <TabsContent value="basic" className="mt-0">
+              <BasicInfoTab
+                form={form}
+                onChange={onChange}
+                mode={mode}
+                onProviderChange={handleProviderChange}
+                onModelTypeChange={handleModelTypeChange}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="provider">Provider</Label>
-              <Select
-                value={form.provider}
-                onValueChange={(value) => handleStringChange("provider", value)}
-              >
-                <SelectTrigger id="provider">
-                  <SelectValue placeholder="Select provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SUPPORTED_PROVIDERS.map((provider) => (
-                    <SelectItem key={provider.value} value={provider.value}>
-                      {provider.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="model_type">Model type</Label>
-              <Select
-                value={form.model_type}
-                onValueChange={(value) => handleStringChange("model_type", value)}
-              >
-                <SelectTrigger id="model_type">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODEL_TYPE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            </TabsContent>
+
+            <TabsContent value="provider" className="mt-0">
+              <ProviderConfigTab form={form} onChange={onChange} />
+            </TabsContent>
+
+            <TabsContent value="pricing" className="mt-0">
+              <PricingTab form={form} onChange={onChange} />
+            </TabsContent>
+
+            <TabsContent value="advanced" className="mt-0">
+              <AdvancedTab form={form} onChange={onChange} />
+            </TabsContent>
           </div>
+        </Tabs>
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="provider_model">Provider model</Label>
-              <Input
-                id="provider_model"
-                value={form.provider_model}
-                onChange={(event) =>
-                  handleStringChange("provider_model", event.target.value)
-                }
-                placeholder="gpt-4o"
-                required
-              />
-            </div>
-            {providerConfig.showDeployment ? (
-              <div className="space-y-2">
-                <Label htmlFor="deployment">Deployment</Label>
-                <Input
-                  id="deployment"
-                  value={form.deployment}
-                  onChange={(event) =>
-                    handleStringChange("deployment", event.target.value)
-                  }
-                  placeholder="gpt-4o-deployment"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Optional; defaults to provider model when left blank.
-                </p>
-              </div>
-            ) : providerKeyInline ? (
-              <div className="space-y-2">
-                <Label htmlFor="api_key_inline">Provider key</Label>
-                <Input
-                  id="api_key_inline"
-                  type="password"
-                  value={form.api_key}
-                  onChange={(event) =>
-                    handleStringChange("api_key", event.target.value)
-                  }
-                  placeholder="secret"
-                />
-              </div>
-            ) : (
-              <div className="space-y-2 sm:col-span-1" />
-            )}
-          </div>
-
-          {providerConfig.showEndpoint ||
-          (providerConfig.showApiKey && !providerKeyInline) ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {providerConfig.showEndpoint && (
-                <div className="space-y-2">
-                  <Label htmlFor="endpoint">Endpoint</Label>
-                  <Input
-                    id="endpoint"
-                    value={form.endpoint}
-                    onChange={(event) =>
-                      handleStringChange("endpoint", event.target.value)
-                    }
-                    placeholder="https://your-resource.openai.azure.com"
-                  />
-                </div>
-              )}
-              {providerConfig.showApiKey && !providerKeyInline && (
-                <div className="space-y-2">
-                  <Label htmlFor="api_key">Provider key</Label>
-                  <Input
-                    id="api_key"
-                    type="password"
-                    value={form.api_key}
-                    onChange={(event) =>
-                      handleStringChange("api_key", event.target.value)
-                    }
-                    placeholder="secret"
-                  />
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          {providerConfig.showApiVersion && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="api_version">API version</Label>
-                <Input
-                  id="api_version"
-                  value={form.api_version}
-                  onChange={(event) =>
-                    handleStringChange("api_version", event.target.value)
-                  }
-                  placeholder="2024-07-01-preview"
-                />
-              </div>
-            </div>
-          )}
-
-          {form.provider === "vertex" ? (
-            <VertexConfigFields
-              value={vertexOverride}
-              onChange={setVertexOverride}
-            />
-          ) : null}
-
-          <PricingTiersEditor
-            value={form.pricing_tiers}
-            onChange={(tiers) =>
-              onChange({
-                ...form,
-                pricing_tiers: tiers,
-              })
-            }
-          />
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="context_window">Context window</Label>
-              <Input
-                id="context_window"
-                value={form.context_window}
-                onChange={(event) =>
-                  handleNumericChange("context_window", event.target.value)
-                }
-                placeholder="128000"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="max_output_tokens">Max output tokens</Label>
-              <Input
-                id="max_output_tokens"
-                value={form.max_output_tokens}
-                onChange={(event) =>
-                  handleNumericChange("max_output_tokens", event.target.value)
-                }
-                placeholder="4096"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Modalities</Label>
-            <div className="flex flex-wrap gap-3">
-              {ALL_MODALITIES.map((modality) => (
-                <label
-                  key={modality}
-                  className="flex items-center gap-2 text-sm"
-                >
-                  <Checkbox
-                    checked={form.modalities.includes(modality)}
-                    onCheckedChange={(checked) =>
-                      handleModalitiesChange(modality, Boolean(checked))
-                    }
-                  />
-                  <span className="capitalize">{modality}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {isAudioTranscription && (
-            <AudioTranscriptionSettings
-              metadata={form.metadata}
-              onMetadataChange={handleMetadataValueChange}
-            />
-          )}
-          {isAudioSpeech && (
-            <AudioSpeechSettings
-              metadata={form.metadata}
-              onMetadataChange={handleMetadataValueChange}
-            />
-          )}
-
-          <ModelMetadataEditor
-            providerDetail={providerDetail}
-            metadata={form.metadata}
-            customMetadata={form.customMetadata}
-            onMetadataChange={handleMetadataValueChange}
-            onCustomMetadataChange={handleCustomMetadataChange}
-          />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="weight">Routing weight</Label>
-              <Input
-                id="weight"
-                value={form.weight}
-                onChange={(event) =>
-                  handleNumericChange("weight", event.target.value)
-                }
-                placeholder="100"
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-md border p-4">
-              <div>
-                <Label htmlFor="enabled" className="mb-1 block">
-                  Enabled
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Toggle availability for this alias.
-                </p>
-              </div>
-              <Switch
-                id="enabled"
-                checked={form.enabled}
-                onCheckedChange={(checked) =>
-                  onChange({ ...form, enabled: Boolean(checked) })
-                }
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-md border p-4 sm:col-span-2">
-              <div>
-                <Label htmlFor="tenant-assignable" className="mb-1 block">
-                  Tenant-assignable
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Allow tenant admins to attach this alias.
-                </p>
-              </div>
-              <Switch
-                id="tenant-assignable"
-                checked={form.tenant_assignable}
-                onCheckedChange={(checked) =>
-                  onChange({
-                    ...form,
-                    tenant_assignable: Boolean(checked),
-                  })
-                }
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between rounded-md border p-4">
-            <div>
-              <Label htmlFor="supports_tools" className="mb-1 block">
-                Tool calling support
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Enable if this model supports tool/function calls.
-              </p>
-            </div>
-            <Switch
-              id="supports_tools"
-              checked={form.supports_tools}
-              onCheckedChange={(checked) =>
-                onChange({ ...form, supports_tools: Boolean(checked) })
-              }
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
+        <DialogFooter className="border-t pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={loading || requiredMissing}>
+          <Button
+            onClick={handleSubmit}
+            disabled={loading || hasAnyErrors(errors)}
+          >
             {loading ? "Saving..." : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function AudioTranscriptionSettings({
-  metadata,
-  onMetadataChange,
-}: {
-  metadata: Record<string, string>;
-  onMetadataChange: (key: string, value: string) => void;
-}) {
-  const formats = parseCSVList(metadata["audio_formats"]);
-  const granularities = parseCSVList(metadata["audio_timestamp_granularities"]);
-  const streamingEnabled = metadata["audio_streaming"] === "true";
-
-  const toggleValue = (
-    values: string[],
-    option: string,
-    checked: boolean,
-    key: "audio_formats" | "audio_timestamp_granularities",
-  ) => {
-    const next = new Set(values);
-    if (checked) {
-      next.add(option);
-    } else {
-      next.delete(option);
-    }
-    onMetadataChange(key, formatCSVList(Array.from(next)));
-  };
-
-  return (
-    <div className="space-y-4 rounded-md border p-4">
-      <div>
-        <p className="text-sm font-medium">Audio routing settings</p>
-        <p className="text-xs text-muted-foreground">
-          Configure the response formats and timestamp granularities this model
-          can emit. These values are validated before we invoke the provider so
-          tenants receive upfront errors instead of 502s.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Allowed response formats</Label>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {AUDIO_FORMAT_OPTIONS.map((option) => (
-            <label
-              key={option.value}
-              className="flex items-center gap-2 text-sm font-normal"
-            >
-              <Checkbox
-                checked={formats.includes(option.value)}
-                onCheckedChange={(checked) =>
-                  toggleValue(
-                    formats,
-                    option.value,
-                    Boolean(checked),
-                    "audio_formats",
-                  )
-                }
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Leave fields unchecked to remove support for a given format.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Timestamp granularities</Label>
-        <div className="flex flex-wrap gap-3">
-          {AUDIO_GRANULARITY_OPTIONS.map((option) => (
-            <label
-              key={option.value}
-              className="flex items-center gap-2 text-sm font-normal"
-            >
-              <Checkbox
-                checked={granularities.includes(option.value)}
-                onCheckedChange={(checked) =>
-                  toggleValue(
-                    granularities,
-                    option.value,
-                    Boolean(checked),
-                    "audio_timestamp_granularities",
-                  )
-                }
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Word-level timestamps require verbose JSON responses and increase
-          latency.
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between rounded-md border px-3 py-2">
-        <div>
-          <Label className="mb-1 block">Enable streaming (`stream=true`)</Label>
-          <p className="text-xs text-muted-foreground">
-            Only available for OpenAI adapters today. When disabled, clients
-            receive `400 model does not support streaming transcriptions`.
-          </p>
-        </div>
-        <Switch
-          checked={streamingEnabled}
-          onCheckedChange={(checked) =>
-            onMetadataChange("audio_streaming", checked ? "true" : "")
-          }
-        />
-      </div>
-    </div>
-  );
-}
-
-function AudioSpeechSettings({
-  metadata,
-  onMetadataChange,
-}: {
-  metadata: Record<string, string>;
-  onMetadataChange: (key: string, value: string) => void;
-}) {
-  return (
-    <div className="space-y-4 rounded-md border p-4">
-      <div>
-        <p className="text-sm font-medium">TTS defaults</p>
-        <p className="text-xs text-muted-foreground">
-          Configure the optional fallback voice and format for
-          `/v1/audio/speech`. Leave blank to defer to the provider defaults. The
-          same keys are stored in metadata, so advanced overrides still appear
-          below.
-        </p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="audio_voice">Preferred voice</Label>
-          <Input
-            id="audio_voice"
-            value={metadata["audio_voice"] ?? ""}
-            onChange={(event) =>
-              onMetadataChange("audio_voice", event.target.value)
-            }
-            placeholder="alloy"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="audio_default_voice">Fallback voice</Label>
-          <Input
-            id="audio_default_voice"
-            value={metadata["audio_default_voice"] ?? ""}
-            onChange={(event) =>
-              onMetadataChange("audio_default_voice", event.target.value)
-            }
-            placeholder="verse"
-          />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="audio_format">Audio format</Label>
-        <Input
-          id="audio_format"
-          value={metadata["audio_format"] ?? ""}
-          onChange={(event) =>
-            onMetadataChange("audio_format", event.target.value)
-          }
-          placeholder="mp3"
-        />
-      </div>
-    </div>
-  );
-}
-
-function VertexConfigFields({
-  value,
-  onChange,
-}: {
-  value: VertexProviderConfig;
-  onChange: (next: VertexProviderConfig) => void;
-}) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
-  const mergedValue = {
-    ...defaultVertexOverride(),
-    ...value,
-  };
-
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const text = String(reader.result ?? "");
-        const pretty = JSON.stringify(JSON.parse(text), null, 2);
-        onChange({
-          ...mergedValue,
-          gcp_credentials_json: pretty,
-          gcp_credentials_format: "json",
-        });
-        toast({
-          title: "Credentials loaded",
-          description: file.name,
-        });
-      } catch {
-        toast({
-          variant: "destructive",
-          title: "Invalid JSON file",
-          description: "Upload a valid Google service account credential.",
-        });
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = "";
-  };
-
-  const handleVertexInput = (
-    key: keyof VertexProviderConfig,
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
-    onChange({
-      ...mergedValue,
-      [key]: event.target.value,
-    });
-  };
-
-  return (
-    <div className="space-y-4 rounded-md border p-4">
-      <div className="space-y-1">
-        <p className="text-sm font-medium">Vertex provider settings</p>
-        <p className="text-xs text-muted-foreground">
-          Store the GCP project, location, and service-account credentials
-          needed for Gemini routing. Credentials are saved encrypted on the
-          backend.
-        </p>
-      </div>
-
-      <div className="grid gap-2 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="vertex_project">GCP project ID</Label>
-          <Input
-            id="vertex_project"
-            value={mergedValue.gcp_project_id ?? ""}
-            onChange={(event) => handleVertexInput("gcp_project_id", event)}
-            placeholder="my-project"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="vertex_location">Vertex location</Label>
-          <Input
-            id="vertex_location"
-            value={mergedValue.vertex_location ?? ""}
-            onChange={(event) => handleVertexInput("vertex_location", event)}
-            placeholder="us-east1"
-          />
-          <p className="text-xs text-muted-foreground">
-            This value also becomes the region for the model entry.
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="vertex_publisher">Publisher (optional)</Label>
-        <Input
-          id="vertex_publisher"
-          value={mergedValue.vertex_publisher ?? ""}
-          onChange={(event) => handleVertexInput("vertex_publisher", event)}
-          placeholder="google"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="vertex_credentials" className="mb-0">
-            Service-account JSON
-          </Label>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Upload JSON
-            </Button>
-            {mergedValue.gcp_credentials_json ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  onChange({
-                    ...mergedValue,
-                    gcp_credentials_json: "",
-                  })
-                }
-              >
-                Clear
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        <Textarea
-          id="vertex_credentials"
-          value={mergedValue.gcp_credentials_json ?? ""}
-          onChange={(event) =>
-            onChange({
-              ...mergedValue,
-              gcp_credentials_json: event.target.value,
-              gcp_credentials_format: "json",
-            })
-          }
-          rows={6}
-          placeholder="Paste your Google service account JSON"
-        />
-        <p className="text-xs text-muted-foreground">
-          Upload or paste the JSON from `vertex.json`. We only support JSON
-          format (base64 is set automatically when needed).
-        </p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/json,.json"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-      </div>
-    </div>
   );
 }

@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/providers/ThemeProvider";
 import {
+  BulkActionBar,
   ModelEditorDialog,
   ModelFilters,
   ModelTable,
@@ -82,6 +83,9 @@ export function ModelsPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "disabled">(
     "all",
   );
+  const [selectedAliases, setSelectedAliases] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const upsertMutation = useMutation({
     mutationFn: upsertModel,
@@ -115,6 +119,99 @@ export function ModelsPage() {
     },
   });
 
+  // Helper to convert ModelCatalogEntry to UpsertRequest
+  const entryToRequest = (entry: ModelCatalogEntry, overrides: Partial<ModelCatalogUpsertRequest> = {}): ModelCatalogUpsertRequest => ({
+    alias: entry.alias,
+    provider: entry.provider,
+    provider_model: entry.provider_model,
+    model_type: entry.model_type,
+    context_window: entry.context_window,
+    max_output_tokens: entry.max_output_tokens,
+    modalities: entry.modalities,
+    supports_tools: entry.supports_tools,
+    price_input: entry.price_input,
+    price_output: entry.price_output,
+    currency: entry.currency,
+    enabled: entry.enabled,
+    tenant_assignable: entry.tenant_assignable,
+    deployment: entry.deployment,
+    endpoint: entry.endpoint,
+    api_key: entry.apiKey,
+    api_version: entry.api_version,
+    region: entry.region,
+    metadata: entry.metadata,
+    weight: entry.weight,
+    ...overrides,
+  });
+
+  // Bulk operations
+  const handleBulkEnable = async () => {
+    if (selectedAliases.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const modelsToUpdate = models.filter((m) => selectedAliases.has(m.alias) && !m.enabled);
+      for (const model of modelsToUpdate) {
+        await upsertModel(entryToRequest(model, { enabled: true }));
+      }
+      toast({ title: `${modelsToUpdate.length} model(s) enabled` });
+      queryClient.invalidateQueries({ queryKey: CATALOG_QUERY_KEY });
+      setSelectedAliases(new Set());
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Failed to enable models",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkDisable = async () => {
+    if (selectedAliases.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const modelsToUpdate = models.filter((m) => selectedAliases.has(m.alias) && m.enabled);
+      for (const model of modelsToUpdate) {
+        await upsertModel(entryToRequest(model, { enabled: false }));
+      }
+      toast({ title: `${modelsToUpdate.length} model(s) disabled` });
+      queryClient.invalidateQueries({ queryKey: CATALOG_QUERY_KEY });
+      setSelectedAliases(new Set());
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Failed to disable models",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedAliases.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const aliasesToDelete = Array.from(selectedAliases);
+      for (const alias of aliasesToDelete) {
+        await deleteModel(alias);
+      }
+      toast({ title: `${aliasesToDelete.length} model(s) deleted` });
+      queryClient.invalidateQueries({ queryKey: CATALOG_QUERY_KEY });
+      setSelectedAliases(new Set());
+      setBulkDeleteOpen(false);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Failed to delete models",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const openCreate = () => {
     setEditingEntry(null);
     setForm(createEmptyModelForm());
@@ -124,6 +221,16 @@ export function ModelsPage() {
   const openEdit = (entry: ModelCatalogEntry) => {
     setEditingEntry(entry);
     setForm(mapEntryToForm(entry));
+    setEditorOpen(true);
+  };
+
+  const openClone = (entry: ModelCatalogEntry) => {
+    setEditingEntry(null); // Clone creates a new entry
+    const clonedForm = mapEntryToForm(entry);
+    setForm({
+      ...clonedForm,
+      alias: "", // Must be unique, so clear it
+    });
     setEditorOpen(true);
   };
 
@@ -193,15 +300,26 @@ export function ModelsPage() {
             onStatusFilterChange={setStatusFilter}
           />
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <BulkActionBar
+            selectedCount={selectedAliases.size}
+            onEnable={handleBulkEnable}
+            onDisable={handleBulkDisable}
+            onDelete={() => setBulkDeleteOpen(true)}
+            onClear={() => setSelectedAliases(new Set())}
+            isLoading={bulkLoading}
+          />
           <ModelTable
             models={filteredModels}
             isLoading={catalogQuery.isLoading}
             hasAnyModels={models.length > 0}
             statuses={statusMap}
             onEdit={openEdit}
+            onClone={openClone}
             onDelete={setDeleteTarget}
             theme={resolvedTheme}
+            selectedAliases={selectedAliases}
+            onSelectionChange={setSelectedAliases}
           />
         </CardContent>
       </Card>
@@ -246,6 +364,33 @@ export function ModelsPage() {
               }
             >
               {deleteMutation.isPending ? "Removing..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={bulkDeleteOpen}
+        onOpenChange={(open) => !open && setBulkDeleteOpen(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedAliases.size} models?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove {selectedAliases.size} model{selectedAliases.size === 1 ? "" : "s"} from the router.
+              Clients will no longer be able to request them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkLoading}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={bulkLoading}
+              onClick={handleBulkDelete}
+            >
+              {bulkLoading ? "Deleting..." : `Delete ${selectedAliases.size} models`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import { Copy, Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import type { ModelCatalogEntry, PricingTier } from "@/api/model-catalog";
 import { formatModelTypeLabel } from "../types";
 import { getProviderIcon } from "@/features/models/provider-icons";
@@ -34,9 +35,12 @@ type ModelTableProps = {
   isLoading: boolean;
   hasAnyModels: boolean;
   onEdit: (model: ModelCatalogEntry) => void;
+  onClone: (model: ModelCatalogEntry) => void;
   onDelete: (model: ModelCatalogEntry) => void;
   statuses?: Record<string, string>;
   theme: "light" | "dark";
+  selectedAliases?: Set<string>;
+  onSelectionChange?: (aliases: Set<string>) => void;
 };
 
 export function ModelTable({
@@ -44,10 +48,41 @@ export function ModelTable({
   isLoading,
   hasAnyModels,
   onEdit,
+  onClone,
   onDelete,
   statuses,
   theme,
+  selectedAliases = new Set(),
+  onSelectionChange,
 }: ModelTableProps) {
+  const allSelected = models.length > 0 && models.every((m) => selectedAliases.has(m.alias));
+  const someSelected = models.some((m) => selectedAliases.has(m.alias));
+
+  const toggleAll = () => {
+    if (!onSelectionChange) return;
+    if (allSelected) {
+      // Deselect all visible
+      const next = new Set(selectedAliases);
+      models.forEach((m) => next.delete(m.alias));
+      onSelectionChange(next);
+    } else {
+      // Select all visible
+      const next = new Set(selectedAliases);
+      models.forEach((m) => next.add(m.alias));
+      onSelectionChange(next);
+    }
+  };
+
+  const toggleOne = (alias: string) => {
+    if (!onSelectionChange) return;
+    const next = new Set(selectedAliases);
+    if (next.has(alias)) {
+      next.delete(alias);
+    } else {
+      next.add(alias);
+    }
+    onSelectionChange(next);
+  };
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -75,10 +110,22 @@ export function ModelTable({
     );
   }
 
+  const showSelection = Boolean(onSelectionChange);
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
+          {showSelection && (
+            <TableHead className="w-12">
+              <Checkbox
+                checked={allSelected}
+                onCheckedChange={toggleAll}
+                aria-label="Select all"
+                className={someSelected && !allSelected ? "opacity-50" : ""}
+              />
+            </TableHead>
+          )}
           <TableHead>Alias</TableHead>
           <TableHead>Provider model</TableHead>
           <TableHead>Deployment</TableHead>
@@ -95,8 +142,18 @@ export function ModelTable({
           const icon = getProviderIcon(model.provider, theme);
           const tierBuckets = summarizePricingBuckets(model.pricing_tiers);
           const tiersToShow = tierBuckets.slice(0, 3);
+          const isSelected = selectedAliases.has(model.alias);
           return (
-            <TableRow key={model.alias}>
+            <TableRow key={model.alias} className={isSelected ? "bg-muted/50" : undefined}>
+              {showSelection && (
+                <TableCell>
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => toggleOne(model.alias)}
+                    aria-label={`Select ${model.alias}`}
+                  />
+                </TableCell>
+              )}
               <TableCell className="font-medium">
                 <div className="flex items-center gap-3">
                   {icon ? (
@@ -184,6 +241,10 @@ export function ModelTable({
                   <DropdownMenuItem onSelect={() => onEdit(model)}>
                     <Pencil className="mr-2 h-4 w-4" /> Edit
                   </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onClone(model)}>
+                    <Copy className="mr-2 h-4 w-4" /> Clone
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onSelect={() => onDelete(model)}

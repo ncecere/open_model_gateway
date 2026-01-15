@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listPersonalTenants, listTenants } from "@/api/tenants";
 import { cancelBatch, listBatches, type BatchRecord } from "@/api/batches";
+import { downloadAdminFileContent } from "@/api/files";
 import { useToast } from "@/hooks/use-toast";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import { LiveIndicator } from "@/components/LiveIndicator";
@@ -127,6 +128,13 @@ export function BatchesPage() {
     personalTenantsQuery.isLoading ||
     batchesQuery.isLoading;
 
+  const handleDownload = (batch: BatchRecord, kind: "output" | "errors") => {
+    const fileId = kind === "output" ? batch.output_file_id : batch.error_file_id;
+    if (fileId) {
+      downloadAdminFileContent(fileId);
+    }
+  };
+
   const handleFiltersChange = (
     next: Partial<typeof filters>,
   ) => {
@@ -194,6 +202,7 @@ export function BatchesPage() {
         onSearchChange={handleSearchChange}
         onPaginate={handlePaginate}
         onView={(batch, tenantLabel) => setSelectedBatch({ batch, tenantLabel })}
+        onDownload={handleDownload}
         onCancel={(batch) => cancelMutation.mutate(batch.id)}
       />
 
@@ -206,6 +215,7 @@ export function BatchesPage() {
             setSelectedBatch(null);
           }
         }}
+        onDownload={handleDownload}
       />
     </div>
   );

@@ -1,4 +1,7 @@
+import { useState } from "react";
+import { Copy, Check, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { DetailsDialog, DetailItem } from "@/components/dialogs";
 import type { BatchRecord } from "@/api/batches";
 import type { UserBatchRecord } from "@/api/user/batches";
@@ -19,6 +22,8 @@ export type BatchDetailsDialogProps<T extends SharedBatchRecord = SharedBatchRec
   tenantLabel?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDownload?: (batch: T, kind: "output" | "errors") => void;
+  downloadingKey?: string | null;
 };
 
 export function BatchDetailsDialog<T extends SharedBatchRecord>({
@@ -26,27 +31,74 @@ export function BatchDetailsDialog<T extends SharedBatchRecord>({
   tenantLabel,
   open,
   onOpenChange,
+  onDownload,
+  downloadingKey,
 }: BatchDetailsDialogProps<T>) {
+  const [copied, setCopied] = useState(false);
+
   if (!batch) {
     return null;
   }
+
+  const handleCopyId = async () => {
+    await navigator.clipboard.writeText(batch.id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const outputDisabled =
+    !batch.output_file_id || downloadingKey === `${batch.id}-output`;
+  const errorsDisabled =
+    !batch.error_file_id || downloadingKey === `${batch.id}-errors`;
 
   return (
     <DetailsDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={`Batch ${batch.id}`}
+      title="Batch Details"
       description={
-        <>
-          Tenant:{" "}
-          <span className="font-medium text-foreground">
-            {tenantLabel ?? batch.tenant_name ?? "—"}
-          </span>
-        </>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs">{batch.id}</span>
+          <button
+            onClick={handleCopyId}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            title="Copy batch ID"
+          >
+            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          </button>
+        </div>
+      }
+      maxWidth="sm:max-w-[720px]"
+      extraFooter={
+        onDownload && (
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={outputDisabled}
+              onClick={() => onDownload(batch, "output")}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Output
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={errorsDisabled}
+              onClick={() => onDownload(batch, "errors")}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Errors
+            </Button>
+          </div>
+        )
       }
     >
       <div className="space-y-4 text-sm">
         <div className="grid gap-4 sm:grid-cols-2">
+          <DetailItem label="Tenant">
+            {tenantLabel ?? batch.tenant_name ?? "—"}
+          </DetailItem>
           <DetailItem label="Status">
             <Badge
               variant={statusVariants[batch.status] ?? "outline"}

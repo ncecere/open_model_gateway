@@ -43,6 +43,10 @@ All notable changes to this project will be documented in this file. The format 
 - **Files details dialogs enhancements**: wider dialog (720px), file type icon in title, copy-to-clipboard for file ID, and Download button in footer.
 - **ActionsMenu in User Files**: replaced individual icon buttons with ActionsMenu dropdown for consistent action discovery.
 - **Expires column** added to Admin Files table to show file expiration dates.
+- **Batches pages unification**: consistent layout structure across Admin and User portals with FilterBar outside Card, result counts in CardHeader, and unified column presentation.
+- **Batch ID column** added to User Batches table for easier batch reference.
+- **Download actions** added to Admin Batches table (output/errors) via ActionsMenu dropdown.
+- **BatchDetailsDialog enhancements**: wider dialog (720px), copy-to-clipboard for Batch ID, and Download buttons (Output/Errors) in footer.
 
 #### Backend
 - Audit logging added to default models add/remove, file deletion, and batch cancellation operations.

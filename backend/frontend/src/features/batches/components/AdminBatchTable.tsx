@@ -22,7 +22,7 @@ import {
   TableSkeleton,
   type FilterOption,
 } from "@/components/tables";
-import { AlertTriangle, Eye, RouteIcon, Trash2 } from "lucide-react";
+import { AlertTriangle, Download, Eye, RouteIcon, Trash2 } from "lucide-react";
 import type { BatchRecord } from "@/api/batches";
 import {
   formatFinishedTimestamp,
@@ -43,10 +43,12 @@ export type AdminBatchTableProps = {
     status: string;
     search: string;
   };
+  downloadingKey?: string | null;
   onFiltersChange: (next: Partial<AdminBatchTableProps["filters"]>) => void;
   onSearchChange: (value: string) => void;
   onPaginate: (direction: "next" | "prev") => void;
   onView: (batch: BatchRecord, tenantLabel: string) => void;
+  onDownload?: (batch: BatchRecord, kind: "output" | "errors") => void;
   onCancel: (batch: BatchRecord) => void;
 };
 
@@ -59,10 +61,12 @@ export function AdminBatchTable({
   canPageBackward,
   isLoading,
   filters,
+  downloadingKey,
   onFiltersChange,
   onSearchChange,
   onPaginate,
   onView,
+  onDownload,
   onCancel,
 }: AdminBatchTableProps) {
   const rows = batches.map((batch) => {
@@ -239,6 +243,26 @@ export function AdminBatchTable({
                             icon: <Eye className="h-4 w-4" />,
                             onClick: () => onView(batch, tenantLabel),
                           },
+                          ...(onDownload
+                            ? [
+                                {
+                                  label: "Download output",
+                                  icon: <Download className="h-4 w-4" />,
+                                  onClick: () => onDownload(batch, "output"),
+                                  disabled:
+                                    !batch.output_file_id ||
+                                    downloadingKey === `${batch.id}-output`,
+                                },
+                                {
+                                  label: "Download errors",
+                                  icon: <Download className="h-4 w-4" />,
+                                  onClick: () => onDownload(batch, "errors"),
+                                  disabled:
+                                    !batch.error_file_id ||
+                                    downloadingKey === `${batch.id}-errors`,
+                                },
+                              ]
+                            : []),
                           {
                             label: "Cancel batch",
                             icon: <Trash2 className="h-4 w-4" />,

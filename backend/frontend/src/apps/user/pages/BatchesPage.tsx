@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultSelection } from "@/hooks/useDefaultSelection";
 import {
@@ -28,23 +19,8 @@ import { PageHeader } from "@/components/layouts";
 
 export function UserBatchesPage() {
   const { toast } = useToast();
-  const { data: tenants, isLoading } = useUserTenantsQuery();
-  const tenantOptions = useMemo(
-    () =>
-      (tenants ?? [])
-        .map((tenant) => ({
-          ...tenant,
-          displayName: tenant.is_personal
-            ? "Personal"
-            : tenant.name?.trim() || "Unnamed tenant",
-        }))
-        .sort((a, b) => {
-          if (a.is_personal && !b.is_personal) return -1;
-          if (!a.is_personal && b.is_personal) return 1;
-          return a.displayName.localeCompare(b.displayName);
-        }),
-    [tenants],
-  );
+  const { data: tenants, isLoading: tenantsLoading } = useUserTenantsQuery();
+  const tenantOptions = useMemo(() => tenants ?? [], [tenants]);
   const personalTenant = useMemo(
     () => tenantOptions.find((tenant) => tenant.is_personal),
     [tenantOptions],
@@ -63,8 +39,6 @@ export function UserBatchesPage() {
     getDefault: () => personalTenant?.tenant_id ?? tenantOptions[0]?.tenant_id,
   });
 
-  const selectValue = selectedTenantId ?? "";
-
   const batchesQuery = useUserTenantBatchesQuery(selectedTenantId, {
     limit: BATCH_PAGE_SIZE,
     after: cursorAfter,
@@ -74,6 +48,9 @@ export function UserBatchesPage() {
   const selectedTenant = tenantOptions.find(
     (tenant) => tenant.tenant_id === selectedTenantId,
   );
+  const tenantLabel = selectedTenant?.is_personal
+    ? "Personal"
+    : selectedTenant?.name ?? "";
   const canManage =
     selectedTenant?.role === "owner" || selectedTenant?.role === "admin";
   const batches = batchesQuery.data?.data ?? [];
@@ -159,101 +136,63 @@ export function UserBatchesPage() {
     });
   };
 
-  const skeletonRows = (
-    <div className="space-y-2">
-      {[...Array(4)].map((_, idx) => (
-        <Skeleton key={idx} className="h-12 w-full" />
-      ))}
-    </div>
-  );
-
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Tenant Batches"
+        title="Batches"
         description="View the status of JSONL batch jobs you have access to and download their output files."
       />
 
-      <Card>
-        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <CardTitle>Scope</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Choose a tenant to inspect outstanding batches.
-            </p>
-          </div>
-          <Select
-            value={selectValue}
-            onValueChange={(value) => setSelectedTenantId(value || undefined)}
-            disabled={!tenantOptions.length}
-          >
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Select tenant" />
-            </SelectTrigger>
-            <SelectContent>
-              {tenantOptions.map((tenant) => (
-                <SelectItem key={tenant.tenant_id} value={tenant.tenant_id}>
-                  {tenant.displayName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            skeletonRows
-          ) : !selectedTenantId ? (
-            <p className="text-sm text-muted-foreground">
-              Join a tenant to submit batches.
-            </p>
-          ) : (
-            <UserBatchTable
-              batches={batches}
-              isLoading={batchesQuery.isLoading}
-              tenantName={selectedTenant?.displayName}
-              canManage={canManage}
-              downloadingKey={downloading}
-              hasMore={hasMore}
-              canPageBackward={canPrev}
-              pageSize={BATCH_PAGE_SIZE}
-              onView={(batch) => setSelectedBatch(batch)}
-              onDownload={handleDownload}
-              onCancel={
-                canManage && selectedTenantId
-                  ? (batch) => {
-                      cancelMutation.mutate(
-                        { tenantId: selectedTenantId, batchId: batch.id },
-                        {
-                          onSuccess: () =>
-                            toast({
-                              title: "Batch cancelled",
-                              description: `Batch ${batch.id} marked as cancelled`,
-                            }),
-                          onError: () =>
-                            toast({
-                              variant: "destructive",
-                              title: "Failed to cancel batch",
-                            }),
-                        },
-                      );
-                    }
-                  : undefined
+      <UserBatchTable
+        tenants={tenantOptions}
+        tenantsLoading={tenantsLoading}
+        selectedTenantId={selectedTenantId}
+        onTenantChange={setSelectedTenantId}
+        batches={batches}
+        total={batches.length}
+        isLoading={batchesQuery.isLoading}
+        canManage={canManage}
+        downloadingKey={downloading}
+        hasMore={hasMore}
+        canPageBackward={canPrev}
+        pageSize={BATCH_PAGE_SIZE}
+        onView={(batch) => setSelectedBatch(batch)}
+        onDownload={handleDownload}
+        onCancel={
+          canManage && selectedTenantId
+            ? (batch) => {
+                cancelMutation.mutate(
+                  { tenantId: selectedTenantId, batchId: batch.id },
+                  {
+                    onSuccess: () =>
+                      toast({
+                        title: "Batch cancelled",
+                        description: `Batch ${batch.id} marked as cancelled`,
+                      }),
+                    onError: () =>
+                      toast({
+                        variant: "destructive",
+                        title: "Failed to cancel batch",
+                      }),
+                  },
+                );
               }
-              disableCancel={cancelMutation.isPending || !selectedTenantId}
-              onNextPage={handleNextPage}
-              onPrevPage={handlePrevPage}
-            />
-          )}
-        </CardContent>
-      </Card>
+            : undefined
+        }
+        disableCancel={cancelMutation.isPending || !selectedTenantId}
+        onNextPage={handleNextPage}
+        onPrevPage={handlePrevPage}
+      />
 
       <BatchDetailsDialog
         batch={selectedBatch}
-        tenantLabel={selectedTenant?.displayName ?? ""}
+        tenantLabel={tenantLabel}
         open={Boolean(selectedBatch)}
         onOpenChange={(open) => {
           if (!open) setSelectedBatch(null);
         }}
+        onDownload={handleDownload}
+        downloadingKey={downloading}
       />
     </div>
   );

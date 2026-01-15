@@ -49,6 +49,13 @@ func Logger(cfg ...LoggerConfig) fiber.Handler {
 
 		latency := time.Since(start)
 		status := c.Response().StatusCode()
+		if err != nil {
+			if fiberErr, ok := err.(*fiber.Error); ok {
+				status = fiberErr.Code
+			} else {
+				status = fiber.StatusInternalServerError
+			}
+		}
 
 		// Build log attributes
 		attrs := []slog.Attr{

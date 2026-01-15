@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
+## [v0.1.27] - 2026-01-14
+### Added
+- Structured logging configuration with slog-backed middleware and container wiring.
+- Shared adapter HTTP base with retry/error helpers plus provider metadata typing and fixtures.
+- Pipeline base utilities for public endpoints (idempotency, budget headers, error handling).
+- Frontend UI primitives (dialogs, tables, skeletons, error boundaries) with expanded unit tests.
+- New architecture and onboarding documentation (`docs/architecture/*`, `docs/developer/ONBOARDING.md`).
+- Playwright test runner dependency for frontend e2e coverage (`bun run test:e2e`).
+
+### Changed
+- Config definitions split into focused files with dedicated sections for logging, server, telemetry, and bootstrap.
+- Container dependencies decomposed into sub-containers and service interfaces/mocks for cleaner layering.
+- Admin/user portals refactored for API clients, query keys, and feature-level composition.
+
+### Fixed
+- User/admin API error handling now standardizes codes/messages across shared utilities.
+
+### Removed
+- Archived refactor planning docs (`REFACTOR.md`, `REFACTOR-TASKS.md`).
+
 ## [v0.1.26] - 2026-01-06
 ### Fixed
 - Increased HTTP read/write buffer sizes to prevent 431 errors from large request headers (cookies).

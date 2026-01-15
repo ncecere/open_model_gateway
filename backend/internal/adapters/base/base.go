@@ -206,7 +206,26 @@ func (a *Adapter) Do(req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
 
+	if req.Body != nil && req.GetBody == nil {
+		bodyBytes, readErr := io.ReadAll(req.Body)
+		if readErr != nil {
+			return nil, apperror.WrapWithMessage("base.Do", readErr, "failed to read request body for retries")
+		}
+		_ = req.Body.Close()
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
+		req.Body, _ = req.GetBody()
+	}
+
 	for attempt := 0; attempt <= a.retryCount; attempt++ {
+		if attempt > 0 && req.GetBody != nil {
+			req.Body, err = req.GetBody()
+			if err != nil {
+				return nil, apperror.WrapWithMessage("base.Do", err, "failed to reset request body for retry")
+			}
+		}
+
 		resp, err = a.client.Do(req)
 		if err != nil {
 			// Network errors are retryable

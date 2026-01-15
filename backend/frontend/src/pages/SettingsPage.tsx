@@ -34,8 +34,8 @@ import {
   type AdminKeyScope,
 } from "@/api/admin-keys";
 import { useToast } from "@/hooks/use-toast";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/layouts";
 import { BudgetSettingsTab } from "@/pages/settings/BudgetSettingsTab";
 import { RateLimitSettingsTab } from "@/pages/settings/RateLimitSettingsTab";
 import { FileSettingsTab } from "@/pages/settings/FileSettingsTab";
@@ -522,15 +522,10 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Review platform defaults and operational guardrails. Tenant-specific
-          budgets can be edited directly from the Tenants tab.
-        </p>
-      </div>
-
-      <Separator />
+      <PageHeader
+        title="Settings"
+        description="Review platform defaults and operational guardrails. Tenant-specific budgets can be edited directly from the Tenants tab."
+      />
 
       <Tabs
         value={activeTab}

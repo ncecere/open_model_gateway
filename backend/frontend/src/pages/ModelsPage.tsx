@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCcw } from "lucide-react";
+import { RefreshCcw, Plus } from "lucide-react";
+import { PageHeader } from "@/components/layouts";
 
 import {
   deleteModel,
@@ -22,7 +23,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/providers/ThemeProvider";
 import {
@@ -158,29 +158,26 @@ export function ModelsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Model catalog
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Configure provider aliases, routing weights, pricing data, and
-            deployment metadata.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => catalogQuery.refetch()}
-            disabled={catalogQuery.isFetching}
-          >
-            <RefreshCcw className="h-4 w-4" />
-          </Button>
-          <Button onClick={openCreate}>Add model</Button>
-        </div>
-      </div>
-      <Separator />
+      <PageHeader
+        title="Model Catalog"
+        description="Configure provider aliases, routing weights, pricing data, and deployment metadata."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => catalogQuery.refetch()}
+              loading={catalogQuery.isFetching}
+            >
+              <RefreshCcw className="h-4 w-4" />
+            </Button>
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              Add Model
+            </Button>
+          </div>
+        }
+      />
 
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

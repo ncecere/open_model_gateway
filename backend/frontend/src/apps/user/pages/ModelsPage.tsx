@@ -25,6 +25,7 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { getProviderIcon } from "@/features/models/provider-icons";
 import { statusToneClass, toneFromStatus } from "@/ui/kit/status";
 import { useUserTenantsQuery } from "../hooks/useUserData";
+import { PageHeader } from "@/components/layouts";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -119,13 +120,10 @@ export function UserModelsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Model catalog</h1>
-        <p className="text-sm text-muted-foreground">
-          Review pricing and recent performance for the models currently exposed
-          to your API keys.
-        </p>
-      </div>
+      <PageHeader
+        title="Model Catalog"
+        description="Review pricing and recent performance for the models currently exposed to your API keys."
+      />
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">

@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDefaultSelection } from "@/hooks/useDefaultSelection";
+import { PageHeader } from "@/components/layouts";
 import { computeNextResetDate, formatScheduleLabel } from "@/features/api-keys";
 import { shortDateFormatter as dateFormatter } from "@/lib/formatters";
 import { getTenantSummary, type TenantBudgetSummary } from "@/api/user/tenants";
@@ -180,14 +181,10 @@ export function UserApiKeysPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">API Keys</h1>
-          <p className="text-sm text-muted-foreground">
-            Personal keys are always available. Tenant keys respect the role of each membership.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="API Keys"
+        description="Personal keys are always available. Tenant keys respect the role of each membership."
+      />
 
       {issuedSecret ? (
         <IssuedSecretCard issued={issuedSecret} onCopy={handleCopy} />

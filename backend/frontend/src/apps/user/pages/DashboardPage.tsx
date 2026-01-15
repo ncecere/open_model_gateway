@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Activity, Building2, CircleDollarSign, Key } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PageHeader } from "@/components/layouts";
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -73,30 +75,28 @@ export function UserDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">Scope</p>
-          <p className="text-xs text-muted-foreground">
-            View metrics for your personal account or tenant keys you issued.
-          </p>
-        </div>
-        <Select
-          value={scopeSelection}
-          onValueChange={(value) => setScopeSelection(value)}
-          disabled={!scopes.length}
-        >
-          <SelectTrigger className="w-full md:w-72">
-            <SelectValue placeholder="Select scope" />
-          </SelectTrigger>
-          <SelectContent>
-            {scopes.map((scope) => (
-              <SelectItem key={scope.id} value={scope.id}>
-                {scope.kind === "personal" ? "Personal" : scope.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </section>
+      <PageHeader
+        title="Dashboard"
+        description="View metrics for your personal account or tenant keys you issued."
+        actions={
+          <Select
+            value={scopeSelection}
+            onValueChange={(value) => setScopeSelection(value)}
+            disabled={!scopes.length}
+          >
+            <SelectTrigger className="w-full md:w-72">
+              <SelectValue placeholder="Select scope" />
+            </SelectTrigger>
+            <SelectContent>
+              {scopes.map((scope) => (
+                <SelectItem key={scope.id} value={scope.id}>
+                  {scope.kind === "personal" ? "Personal" : scope.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -110,12 +110,14 @@ export function UserDashboardPage() {
               : undefined
           }
           loading={isLoading}
+          icon={Activity}
         />
         <MetricCard
           title="Tokens"
           value={formatTokensShort(selectedTotals?.tokens ?? 0)}
           secondary="total processed"
           loading={isLoading}
+          icon={Key}
         />
         <MetricCard
           title="Spend"
@@ -126,12 +128,14 @@ export function UserDashboardPage() {
           }
           secondary={data ? `Window: ${data.period}` : undefined}
           loading={isLoading}
+          icon={CircleDollarSign}
         />
         <MetricCard
           title="Tenants"
           value={tenantScopes.length}
           secondary={`${tenantScopes.filter((t) => t.status === "active").length} active`}
           loading={isLoading}
+          icon={Building2}
         />
       </section>
 

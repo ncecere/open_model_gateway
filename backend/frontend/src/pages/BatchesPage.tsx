@@ -9,7 +9,7 @@ import {
   BatchDetailsDialog,
   BATCH_PAGE_SIZE,
 } from "@/features/batches";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/layouts";
 
 const TENANTS_QUERY_KEY = ["tenants", "list"] as const;
 
@@ -152,15 +152,10 @@ export function BatchesPage() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Batches</h1>
-        <p className="text-sm text-muted-foreground">
-          Monitor asynchronous workloads submitted by tenant API keys and manage
-          their lifecycle.
-        </p>
-      </header>
-
-      <Separator />
+      <PageHeader
+        title="Batches"
+        description="Monitor asynchronous workloads submitted by tenant API keys and manage their lifecycle."
+      />
 
       <AdminBatchTable
         tenants={tenants}

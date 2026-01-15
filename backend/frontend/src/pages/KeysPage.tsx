@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { RefreshCcw, Search } from "lucide-react";
+import { PageHeader } from "@/components/layouts";
 
 import type { ApiKeyRecord, CreateApiKeyResponse } from "@/api/tenants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -92,38 +92,35 @@ export function KeysPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">API keys</h1>
-          <p className="text-sm text-muted-foreground">
-            Issue, rotate, and revoke tenant-scoped virtual keys with quota controls.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => keysQuery.refetch()}
-            disabled={keysQuery.isFetching}
-          >
-            <RefreshCcw className="h-4 w-4" />
-          </Button>
-          <AdminKeyCreateDialog
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            selectedTenantId={selectedTenantId}
-            onTenantChange={setSelectedTenantId}
-            tenants={tenants}
-            tenantBudgetMap={tenantBudgetMap}
-            budgetDefaults={budgetDefaults}
-            defaultKeyRateLimit={defaultKeyRateLimit}
-            effectiveTenantRateLimit={effectiveTenantRateLimit}
-            isSubmitting={createKeyMutation.isPending}
-            onSubmit={handleCreateKey}
-          />
-        </div>
-      </div>
-      <Separator />
+      <PageHeader
+        title="API Keys"
+        description="Issue, rotate, and revoke tenant-scoped virtual keys with quota controls."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => keysQuery.refetch()}
+              loading={keysQuery.isFetching}
+            >
+              <RefreshCcw className="h-4 w-4" />
+            </Button>
+            <AdminKeyCreateDialog
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              selectedTenantId={selectedTenantId}
+              onTenantChange={setSelectedTenantId}
+              tenants={tenants}
+              tenantBudgetMap={tenantBudgetMap}
+              budgetDefaults={budgetDefaults}
+              defaultKeyRateLimit={defaultKeyRateLimit}
+              effectiveTenantRateLimit={effectiveTenantRateLimit}
+              isSubmitting={createKeyMutation.isPending}
+              onSubmit={handleCreateKey}
+            />
+          </div>
+        }
+      />
 
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start">

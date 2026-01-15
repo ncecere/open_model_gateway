@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, Mail, MoreHorizontal, RefreshCcw, UserPlus } from "lucide-react";
+import { PageHeader } from "@/components/layouts";
 
 import { type PersonalTenantRecord, type TenantStatus } from "@/api/tenants";
 import {
@@ -31,7 +32,6 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { BudgetMeter } from "@/ui/kit/BudgetMeter";
-import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -243,31 +243,27 @@ export function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-          <p className="text-sm text-muted-foreground">
-            Personal tenants seeded for each user. Use this view to audit
-            defaults, usage, and budget consumption.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setCreateOpen(true)} variant="default">
-            <UserPlus className="mr-2 h-4 w-4" /> New user
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => personalTenantsQuery.refetch()}
-            disabled={personalTenantsQuery.isFetching}
-            title="Refresh"
-          >
-            <RefreshCcw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      <Separator />
+      <PageHeader
+        title="Users"
+        description="Personal tenants seeded for each user. Audit defaults, usage, and budget consumption."
+        actions={
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => personalTenantsQuery.refetch()}
+              loading={personalTenantsQuery.isFetching}
+              title="Refresh"
+            >
+              <RefreshCcw className="h-4 w-4" />
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <UserPlus className="h-4 w-4" />
+              New User
+            </Button>
+          </div>
+        }
+      />
 
       <Card>
         <CardHeader className="gap-4">

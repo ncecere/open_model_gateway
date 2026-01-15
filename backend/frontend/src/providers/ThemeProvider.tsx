@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -32,6 +33,8 @@ export function ThemeProvider({ children, isAuthenticated, profileQuery }: Theme
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(
     getSystemTheme(),
   );
+  // Track the last server preference we synced to avoid re-syncing on local changes
+  const lastServerPref = useRef<ThemePreference | undefined>(undefined);
 
   const applyTheme = useCallback((pref: ThemePreference) => {
     const nextTheme = resolveTheme(pref);
@@ -45,18 +48,21 @@ export function ThemeProvider({ children, isAuthenticated, profileQuery }: Theme
     applyTheme(preference);
   }, [preference, applyTheme]);
 
+  // Only sync from server when the server preference actually changes
   useEffect(() => {
     const serverPref = profileQuery?.data?.theme_preference as
       | ThemePreference
       | undefined;
-    if (serverPref && serverPref !== preference) {
+    if (serverPref && serverPref !== lastServerPref.current) {
+      lastServerPref.current = serverPref;
       setPreference(serverPref);
     }
-  }, [profileQuery?.data?.theme_preference, preference]);
+  }, [profileQuery?.data?.theme_preference]);
 
   useEffect(() => {
     if (!isAuthenticated) {
       setPreference("system");
+      lastServerPref.current = undefined;
     }
   }, [isAuthenticated]);
 

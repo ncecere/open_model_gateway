@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, Gauge, ShieldCheck, Siren } from "lucide-react";
+import { AlertTriangle, Gauge, RefreshCcw, ShieldCheck, Siren } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/layouts";
 
 import { useProviderAlerts, useProviderIncidents, useProviderSLIs } from "@/api/hooks/useTelemetry";
 import {
@@ -150,22 +151,32 @@ export function ProviderHealthPage() {
 
   return (
     <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">Provider Health</h1>
-            <p className="text-sm text-muted-foreground">
-              Live SLIs, degraded routes, and recent incidents across providers.
-            </p>
-          </div>
-          <div className="flex gap-2">
+      <PageHeader
+        title="Provider Health"
+        description="Live SLIs, degraded routes, and recent incidents across providers."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                void slisQuery.refetch();
+                void incidentsQuery.refetch();
+                void alertsQuery.refetch();
+              }}
+              loading={slisQuery.isFetching || incidentsQuery.isFetching || alertsQuery.isFetching}
+            >
+              <RefreshCcw className="h-4 w-4" />
+            </Button>
             <Button variant="outline" onClick={() => void clearSeedData()} disabled={clearingSeed}>
-              {clearingSeed ? "Clearing…" : "Clear seed data"}
+              {clearingSeed ? "Clearing…" : "Clear seed"}
             </Button>
             <Button variant="secondary" onClick={() => void seedSampleData()}>
-              Seed sample data
+              Seed data
             </Button>
           </div>
-        </div>
+        }
+      />
 
       <Card>
         <CardContent className="flex flex-wrap gap-3 pt-6">

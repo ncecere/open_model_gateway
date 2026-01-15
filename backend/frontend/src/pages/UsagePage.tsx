@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { Download } from "lucide-react";
+import { Download, RefreshCcw } from "lucide-react";
+import { PageHeader } from "@/components/layouts";
 
 import { api } from "@/api/client";
 import {
@@ -37,7 +38,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Separator } from "@/components/ui/separator";
 import { UsageBreakdownChart } from "@/components/charts/UsageBreakdownChart";
 import type { UsageBreakdownDatum } from "@/components/charts/UsageBreakdownChart";
 import {
@@ -395,38 +395,42 @@ export function UsagePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Usage</h1>
-          <p className="text-sm text-muted-foreground">
-            Track platform-wide consumption and drill into tenants, users, or model trends.
-          </p>
-        </div>
-        <div className="w-full space-y-2 md:max-w-xl">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <UsageFilters
-              startInput={startInput}
-              endInput={endInput}
-              onStartChange={setStartInput}
-              onEndChange={setEndInput}
-              rangeError={rangeError}
-              rangeDisplay={rangeDisplay}
-              timezone={timezone}
-              idPrefix="usage"
-            />
+      <PageHeader
+        title="Usage"
+        description="Track platform-wide consumption and drill into tenants, users, or model trends."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => usageQuery.refetch()}
+              loading={usageQuery.isFetching}
+            >
+              <RefreshCcw className="h-4 w-4" />
+            </Button>
             <Button
               variant="outline"
               onClick={handleExport}
-              className="md:self-end"
               disabled={Boolean(rangeError) || exporting}
             >
               <Download className="mr-2 h-4 w-4" /> Export CSV
             </Button>
           </div>
-        </div>
-      </div>
+        }
+      />
 
-      <Separator />
+      <div className="flex flex-col gap-2 md:flex-row md:items-center">
+        <UsageFilters
+          startInput={startInput}
+          endInput={endInput}
+          onStartChange={setStartInput}
+          onEndChange={setEndInput}
+          rangeError={rangeError}
+          rangeDisplay={rangeDisplay}
+          timezone={timezone}
+          idPrefix="usage"
+        />
+      </div>
 
       {rangeError ? (
         <p className="text-sm text-destructive">Adjust the date range above to continue.</p>

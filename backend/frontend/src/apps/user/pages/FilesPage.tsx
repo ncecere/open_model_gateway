@@ -12,6 +12,7 @@ import {
   useUserFileFilters,
 } from "@/features/files";
 import { formatDuration } from "@/lib/formatters";
+import { PageHeader } from "@/components/layouts";
 
 export function UserFilesPage() {
   const { toast } = useToast();
@@ -127,10 +128,10 @@ export function UserFilesPage() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Files</h1>
-        <p className="text-sm text-muted-foreground">{ttlDescription}</p>
-      </header>
+      <PageHeader
+        title="Files"
+        description={ttlDescription}
+      />
 
       <UserFilesTable
         tenants={tenantOptions}

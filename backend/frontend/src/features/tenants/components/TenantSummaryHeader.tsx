@@ -1,6 +1,7 @@
-import { PlusCircle, RefreshCcw } from "lucide-react";
+import { Plus, RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layouts";
 
 type TenantSummaryHeaderProps = {
   activeCount: number;
@@ -18,27 +19,25 @@ export function TenantSummaryHeader({
   onCreate,
 }: TenantSummaryHeaderProps) {
   return (
-    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Tenants</h1>
-        <p className="text-sm text-muted-foreground">
-          {activeCount} active · {totalCount} total — manage lifecycle, memberships, and limits.
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={onRefresh}
-          disabled={refreshing}
-        >
-          <RefreshCcw className="h-4 w-4" />
-        </Button>
-        <Button onClick={onCreate}>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          Create tenant
-        </Button>
-      </div>
-    </div>
+    <PageHeader
+      title="Tenants"
+      description={`${activeCount} active · ${totalCount} total — manage lifecycle, memberships, and limits.`}
+      actions={
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={onRefresh}
+            loading={refreshing}
+          >
+            <RefreshCcw className="h-4 w-4" />
+          </Button>
+          <Button onClick={onCreate}>
+            <Plus className="h-4 w-4" />
+            Create Tenant
+          </Button>
+        </div>
+      }
+    />
   );
 }

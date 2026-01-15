@@ -21,6 +21,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { SummaryCard } from "@/ui/kit/Cards";
+import { PageHeader } from "@/components/layouts";
 import {
   QueryAlert,
   UsageDailySkeleton,
@@ -167,24 +168,22 @@ export function UserUsagePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Usage</h1>
-          <p className="text-sm text-muted-foreground">
-            Track your API activity across personal and shared tenants.
-          </p>
-        </div>
-        <UsageFilters
-          startInput={startInput}
-          endInput={endInput}
-          onStartChange={setStartInput}
-          onEndChange={setEndInput}
-          rangeError={rangeError}
-          rangeDisplay={rangeDisplay}
-          timezone={timezone}
-          idPrefix="user-usage"
-        />
-      </div>
+      <PageHeader
+        title="Usage"
+        description="Track your API activity across personal and shared tenants."
+        actions={
+          <UsageFilters
+            startInput={startInput}
+            endInput={endInput}
+            onStartChange={setStartInput}
+            onEndChange={setEndInput}
+            rangeError={rangeError}
+            rangeDisplay={rangeDisplay}
+            timezone={timezone}
+            idPrefix="user-usage"
+          />
+        }
+      />
 
       {rangeError ? (
         <p className="text-sm text-destructive">

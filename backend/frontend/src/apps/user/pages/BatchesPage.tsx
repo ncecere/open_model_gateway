@@ -24,6 +24,7 @@ import {
   UserBatchTable,
   BATCH_PAGE_SIZE,
 } from "@/features/batches";
+import { PageHeader } from "@/components/layouts";
 
 export function UserBatchesPage() {
   const { toast } = useToast();
@@ -168,13 +169,10 @@ export function UserBatchesPage() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Tenant Batches</h1>
-        <p className="text-sm text-muted-foreground">
-          View the status of JSONL batch jobs you have access to and download their
-          output files.
-        </p>
-      </header>
+      <PageHeader
+        title="Tenant Batches"
+        description="View the status of JSONL batch jobs you have access to and download their output files."
+      />
 
       <Card>
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

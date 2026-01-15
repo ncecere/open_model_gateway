@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { AdminFilesTable, FileDetailsDialog } from "@/features/files";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/layouts";
 import { getFileSettings } from "@/api/runtime-settings";
 import { formatDuration } from "@/lib/formatters";
 
@@ -155,12 +155,10 @@ export function FilesPage() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Files</h1>
-        <p className="text-sm text-muted-foreground">{ttlDescription}</p>
-      </header>
-
-      <Separator />
+      <PageHeader
+        title="Files"
+        description={ttlDescription}
+      />
 
       <AdminFilesTable
         tenants={tenantOptions}

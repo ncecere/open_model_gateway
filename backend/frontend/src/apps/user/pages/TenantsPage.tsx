@@ -9,6 +9,7 @@ import {
   TenantDetailDialog,
   type TenantMembership,
 } from "../features/tenants";
+import { PageHeader } from "@/components/layouts";
 
 export function UserTenantsPage() {
   const { data: tenants, isLoading } = useUserTenantsQuery();
@@ -56,13 +57,10 @@ export function UserTenantsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Tenants</h1>
-        <p className="text-sm text-muted-foreground">
-          Owners and admins can manage memberships, invite teammates, and review tenant budgets from
-          here.
-        </p>
-      </header>
+      <PageHeader
+        title="Tenants"
+        description="Owners and admins can manage memberships, invite teammates, and review tenant budgets from here."
+      />
 
       <section className="grid gap-4 md:grid-cols-3">
         <OverviewCard label="Memberships" value={totalMemberships} help="Total tenants you belong to" />

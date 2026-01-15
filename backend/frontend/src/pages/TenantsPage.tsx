@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import type { TenantRecord, TenantStatus } from "@/api/tenants";
-import { Separator } from "@/components/ui/separator";
 import { listModelCatalog } from "@/api/model-catalog";
 import { getBudgetDefaults } from "@/api/budgets";
 import { getRateLimitDefaults } from "@/api/rate-limits";
@@ -166,7 +165,6 @@ export function TenantsPage() {
         isSubmitting={mutations.createTenantMutation.isPending}
         onSubmit={handleCreateTenant}
       />
-      <Separator />
 
       <TenantDirectoryCard
         activeCount={activeCount}

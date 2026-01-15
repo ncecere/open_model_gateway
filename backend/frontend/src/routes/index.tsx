@@ -11,7 +11,7 @@ import { UsersPage } from "../pages/UsersPage";
 import { UsagePage } from "../pages/UsagePage";
 import { BatchesPage } from "../pages/BatchesPage";
 import { FilesPage } from "../pages/FilesPage";
-import { AppLayout } from "../components/AppLayout";
+import { EnterpriseLayout } from "../components/layouts";
 import { OIDCRedirectPage } from "../pages/OIDCRedirectPage";
 import { SettingsPage } from "../pages/SettingsPage";
 
@@ -46,7 +46,7 @@ export function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <AppLayout />
+            <EnterpriseLayout />
           </ProtectedRoute>
         }
       >

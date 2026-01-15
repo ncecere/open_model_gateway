@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [v0.1.28] - 2026-01-15
 ### Added
 #### Frontend
 - **System Status page** with real-time gateway metrics including uptime, memory usage, goroutines, request counts, and active connections; provider status grid with latency data; and recent error log display.
@@ -368,6 +369,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 - Initial release of the Open Model Gateway router, including the Go backend, React admin UI, provider routing, tenant/key management, budgets, usage tracking, and supporting docs.
 
+[v0.1.28]: https://github.com/ncecere/open_model_gateway/compare/v0.1.27...v0.1.28
 [v0.1.8]: https://github.com/ncecere/open_model_gateway/compare/v0.1.7...v0.1.8
 [v0.1.7]: https://github.com/ncecere/open_model_gateway/compare/v0.1.6...v0.1.7
 [v0.1.6]: https://github.com/ncecere/open_model_gateway/compare/v0.1.5...v0.1.6

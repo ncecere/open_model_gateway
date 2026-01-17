@@ -9,9 +9,23 @@ import (
 )
 
 type vertexPart struct {
-	Text       string            `json:"text,omitempty"`
-	InlineData *vertexInlineData `json:"inlineData,omitempty"`
-	FileData   *vertexFileData   `json:"fileData,omitempty"`
+	Text             string                  `json:"text,omitempty"`
+	InlineData       *vertexInlineData       `json:"inlineData,omitempty"`
+	FileData         *vertexFileData         `json:"fileData,omitempty"`
+	FunctionCall     *vertexFunctionCall     `json:"functionCall,omitempty"`
+	FunctionResponse *vertexFunctionResponse `json:"functionResponse,omitempty"`
+}
+
+// vertexFunctionCall represents a function call from the model.
+type vertexFunctionCall struct {
+	Name string         `json:"name"`
+	Args map[string]any `json:"args,omitempty"`
+}
+
+// vertexFunctionResponse represents the result of a function call sent back to the model.
+type vertexFunctionResponse struct {
+	Name     string         `json:"name"`
+	Response map[string]any `json:"response"`
 }
 
 type vertexInlineData struct {
@@ -51,6 +65,31 @@ type vertexGenerateRequest struct {
 	Contents          []vertexContent         `json:"contents"`
 	SystemInstruction *vertexContent          `json:"systemInstruction,omitempty"`
 	GenerationConfig  *vertexGenerationConfig `json:"generationConfig,omitempty"`
+	Tools             []vertexTool            `json:"tools,omitempty"`
+	ToolConfig        *vertexToolConfig       `json:"toolConfig,omitempty"`
+}
+
+// vertexTool wraps function declarations for the Gemini API.
+type vertexTool struct {
+	FunctionDeclarations []vertexFunctionDeclaration `json:"functionDeclarations,omitempty"`
+}
+
+// vertexFunctionDeclaration defines a callable function for the model.
+type vertexFunctionDeclaration struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"` // JSON Schema object
+}
+
+// vertexToolConfig controls how tools are used.
+type vertexToolConfig struct {
+	FunctionCallingConfig *vertexFunctionCallingConfig `json:"functionCallingConfig,omitempty"`
+}
+
+// vertexFunctionCallingConfig specifies how the model should call functions.
+type vertexFunctionCallingConfig struct {
+	Mode                 string   `json:"mode,omitempty"` // "AUTO", "ANY", "NONE"
+	AllowedFunctionNames []string `json:"allowedFunctionNames,omitempty"`
 }
 
 type vertexUsageMetadata struct {

@@ -562,6 +562,21 @@ func convertChatResponse(resp openai.ChatCompletion) models.ChatResponse {
 			ReasoningContent: reasoningContent,
 		}
 
+		// Extract tool_calls if present
+		if len(choice.Message.ToolCalls) > 0 {
+			message.ToolCalls = make([]models.ToolCall, 0, len(choice.Message.ToolCalls))
+			for _, tc := range choice.Message.ToolCalls {
+				message.ToolCalls = append(message.ToolCalls, models.ToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: models.ToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
+			}
+		}
+
 		if strings.TrimSpace(message.Content) == "" && message.ReasoningContent != "" {
 			message.Content = message.ReasoningContent
 		}
@@ -600,6 +615,24 @@ func convertChatChunk(chunk openai.ChatCompletionChunk) models.ChatChunk {
 			Reasoning:        reasoning,
 			ReasoningContent: reasoningContent,
 		}
+
+		// Extract streaming tool_calls if present
+		if len(choice.Delta.ToolCalls) > 0 {
+			msg.ToolCalls = make([]models.ToolCall, 0, len(choice.Delta.ToolCalls))
+			for _, tc := range choice.Delta.ToolCalls {
+				idx := int(tc.Index)
+				msg.ToolCalls = append(msg.ToolCalls, models.ToolCall{
+					ID:    tc.ID,
+					Type:  tc.Type,
+					Index: &idx,
+					Function: models.ToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
+			}
+		}
+
 		if strings.TrimSpace(msg.Content) == "" && msg.ReasoningContent != "" {
 			msg.Content = msg.ReasoningContent
 		}

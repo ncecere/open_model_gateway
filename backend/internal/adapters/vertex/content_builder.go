@@ -3,6 +3,7 @@ package vertex
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,26 @@ func (a *Adapter) buildGenerateContentRequest(ctx context.Context, req models.Ch
 	for idx, msg := range req.Messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
 		allowNonText := role != "system" && role != "developer"
+
+		// Handle tool role messages (function results)
+		if role == "tool" {
+			toolContent := a.convertToolResultMessage(msg)
+			if len(toolContent.Parts) > 0 {
+				contents = append(contents, toolContent)
+			}
+			continue
+		}
+
+		// Handle assistant messages with tool calls
+		if role == "assistant" && len(msg.ToolCalls) > 0 {
+			parts := convertToolCallsToParts(msg.ToolCalls)
+			// Also include any text content
+			if text := strings.TrimSpace(msg.Text()); text != "" {
+				parts = append([]vertexPart{{Text: text}}, parts...)
+			}
+			contents = append(contents, vertexContent{Role: "model", Parts: parts})
+			continue
+		}
 
 		parts, err := a.convertMessageParts(ctx, idx, msg, allowNonText)
 		if err != nil {
@@ -72,11 +93,121 @@ func (a *Adapter) buildGenerateContentRequest(ctx context.Context, req models.Ch
 		cfg = nil
 	}
 
+	// Convert tools and tool_choice to Gemini format
+	toolChoice, _ := req.ParsedToolChoice()
+	tools, toolConfig := convertToolsToVertex(req.Tools, toolChoice)
+
 	return vertexGenerateRequest{
 		Contents:          contents,
 		SystemInstruction: systemInstruction,
 		GenerationConfig:  cfg,
+		Tools:             tools,
+		ToolConfig:        toolConfig,
 	}, nil
+}
+
+// convertToolsToVertex converts OpenAI-style tools and tool_choice to Gemini format.
+func convertToolsToVertex(tools []models.Tool, toolChoice *models.ToolChoiceOption) ([]vertexTool, *vertexToolConfig) {
+	if len(tools) == 0 {
+		return nil, nil
+	}
+
+	declarations := make([]vertexFunctionDeclaration, 0, len(tools))
+	for _, t := range tools {
+		if t.Type != "function" {
+			continue
+		}
+		decl := vertexFunctionDeclaration{
+			Name:        t.Function.Name,
+			Description: t.Function.Description,
+		}
+		// Convert JSON schema parameters
+		if len(t.Function.Parameters) > 0 {
+			var params map[string]any
+			if err := json.Unmarshal(t.Function.Parameters, &params); err == nil {
+				decl.Parameters = params
+			}
+		}
+		declarations = append(declarations, decl)
+	}
+
+	if len(declarations) == 0 {
+		return nil, nil
+	}
+
+	vertexTools := []vertexTool{{FunctionDeclarations: declarations}}
+
+	// Convert tool_choice to toolConfig
+	var toolConfig *vertexToolConfig
+	if toolChoice != nil {
+		config := &vertexFunctionCallingConfig{}
+		switch {
+		case toolChoice.IsNone():
+			config.Mode = "NONE"
+		case toolChoice.IsRequired():
+			config.Mode = "ANY"
+		case toolChoice.IsSpecific():
+			config.Mode = "ANY"
+			config.AllowedFunctionNames = []string{toolChoice.Function.Name}
+		default: // auto
+			config.Mode = "AUTO"
+		}
+		toolConfig = &vertexToolConfig{FunctionCallingConfig: config}
+	}
+
+	return vertexTools, toolConfig
+}
+
+// convertToolCallsToParts converts assistant tool calls to Vertex functionCall parts.
+func convertToolCallsToParts(toolCalls []models.ToolCall) []vertexPart {
+	parts := make([]vertexPart, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		if tc.Type != "function" {
+			continue
+		}
+		// Parse arguments JSON string to map
+		var args map[string]any
+		if tc.Function.Arguments != "" {
+			_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		}
+		parts = append(parts, vertexPart{
+			FunctionCall: &vertexFunctionCall{
+				Name: tc.Function.Name,
+				Args: args,
+			},
+		})
+	}
+	return parts
+}
+
+// convertToolResultMessage converts a tool role message to Vertex functionResponse content.
+func (a *Adapter) convertToolResultMessage(msg models.ChatMessage) vertexContent {
+	// Get the tool call ID which should match the function name used
+	// In OpenAI format, tool messages have tool_call_id and content
+	// We need to find the corresponding function name
+	name := msg.Name // Some implementations put the function name here
+	if name == "" {
+		// Fall back to tool_call_id as name (not ideal but allows basic functionality)
+		name = msg.ToolCallID
+	}
+
+	// Parse the content as a response object
+	content := msg.Text()
+	var response map[string]any
+	if err := json.Unmarshal([]byte(content), &response); err != nil {
+		// If not valid JSON, wrap it
+		response = map[string]any{"result": content}
+	}
+
+	return vertexContent{
+		Role: "user", // Gemini expects function responses in user role
+		Parts: []vertexPart{{
+			FunctionResponse: &vertexFunctionResponse{
+				Name:     name,
+				Response: response,
+			},
+		}},
+	}
 }
 
 func (a *Adapter) convertMessageParts(ctx context.Context, msgIndex int, msg models.ChatMessage, allowNonText bool) ([]vertexPart, error) {

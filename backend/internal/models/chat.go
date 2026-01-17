@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -12,6 +13,10 @@ type ChatMessage struct {
 	Name             string               `json:"name,omitempty"`
 	Reasoning        string               `json:"reasoning,omitempty"`
 	ReasoningContent string               `json:"reasoning_content,omitempty"`
+
+	// Tool calling fields
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // For assistant messages invoking tools
+	ToolCallID string     `json:"tool_call_id,omitempty"` // For tool response messages
 }
 
 type ChatRequest struct {
@@ -22,6 +27,21 @@ type ChatRequest struct {
 	MaxTokens   *int32        `json:"max_tokens,omitempty"`
 	Stream      bool          `json:"stream,omitempty"`
 	Stop        []string      `json:"stop,omitempty"`
+
+	// Tool calling fields
+	Tools             []Tool          `json:"tools,omitempty"`
+	ToolChoice        json.RawMessage `json:"tool_choice,omitempty"` // string or object
+	ParallelToolCalls *bool           `json:"parallel_tool_calls,omitempty"`
+}
+
+// HasTools returns true if the request includes tool definitions.
+func (r ChatRequest) HasTools() bool {
+	return len(r.Tools) > 0
+}
+
+// ParsedToolChoice parses the tool_choice field.
+func (r ChatRequest) ParsedToolChoice() (*ToolChoiceOption, error) {
+	return ParseToolChoice(r.ToolChoice)
 }
 
 type ChatChoice struct {

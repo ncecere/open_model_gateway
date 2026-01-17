@@ -222,10 +222,26 @@ func (a *Adapter) newRequest(ctx context.Context, method, path string, body io.R
 func buildChatRequest(req models.ChatRequest, streaming bool) chatCompletionRequest {
 	messages := make([]chatMessage, 0, len(req.Messages))
 	for _, msg := range req.Messages {
-		messages = append(messages, chatMessage{
-			Role:    msg.Role,
-			Content: models.MarshalMessageContent(msg),
-		})
+		cm := chatMessage{
+			Role:       msg.Role,
+			Content:    models.MarshalMessageContent(msg),
+			ToolCallID: msg.ToolCallID,
+		}
+		// Convert tool_calls for assistant messages
+		if len(msg.ToolCalls) > 0 {
+			cm.ToolCalls = make([]chatToolCall, 0, len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				cm.ToolCalls = append(cm.ToolCalls, chatToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: chatToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
+			}
+		}
+		messages = append(messages, cm)
 	}
 	payload := chatCompletionRequest{
 		Model:    req.Model,
@@ -248,6 +264,33 @@ func buildChatRequest(req models.ChatRequest, streaming bool) chatCompletionRequ
 	if streaming {
 		payload.StreamOptions = &streamOptions{IncludeUsage: true}
 	}
+
+	// Add tools
+	if len(req.Tools) > 0 {
+		payload.Tools = make([]chatTool, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			payload.Tools = append(payload.Tools, chatTool{
+				Type: tool.Type,
+				Function: chatToolFunction{
+					Name:        tool.Function.Name,
+					Description: tool.Function.Description,
+					Parameters:  tool.Function.Parameters,
+					Strict:      tool.Function.Strict,
+				},
+			})
+		}
+	}
+
+	// Add tool_choice
+	if len(req.ToolChoice) > 0 {
+		payload.ToolChoice = req.ToolChoice
+	}
+
+	// Add parallel_tool_calls
+	if req.ParallelToolCalls != nil {
+		payload.ParallelToolCalls = req.ParallelToolCalls
+	}
+
 	return payload
 }
 
@@ -255,13 +298,29 @@ func convertChatResponse(resp chatCompletionResponse) models.ChatResponse {
 	choices := make([]models.ChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
 		content, parts := openaihelper.ExtractMessageContent(string(choice.Message.Content), "")
+		msg := models.ChatMessage{
+			Role:         choice.Message.Role,
+			Content:      content,
+			ContentParts: parts,
+			ToolCallID:   choice.Message.ToolCallID,
+		}
+		// Extract tool_calls
+		if len(choice.Message.ToolCalls) > 0 {
+			msg.ToolCalls = make([]models.ToolCall, 0, len(choice.Message.ToolCalls))
+			for _, tc := range choice.Message.ToolCalls {
+				msg.ToolCalls = append(msg.ToolCalls, models.ToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: models.ToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
+			}
+		}
 		choices = append(choices, models.ChatChoice{
-			Index: choice.Index,
-			Message: models.ChatMessage{
-				Role:         choice.Message.Role,
-				Content:      content,
-				ContentParts: parts,
-			},
+			Index:        choice.Index,
+			Message:      msg,
 			FinishReason: choice.FinishReason,
 		})
 	}
@@ -282,6 +341,21 @@ func convertChatChunk(chunk chatCompletionChunk) models.ChatChunk {
 			Role:         choice.Delta.Role,
 			Content:      content,
 			ContentParts: parts,
+		}
+		// Extract streaming tool_calls
+		if len(choice.Delta.ToolCalls) > 0 {
+			msg.ToolCalls = make([]models.ToolCall, 0, len(choice.Delta.ToolCalls))
+			for _, tc := range choice.Delta.ToolCalls {
+				msg.ToolCalls = append(msg.ToolCalls, models.ToolCall{
+					ID:    tc.ID,
+					Type:  tc.Type,
+					Index: tc.Index,
+					Function: models.ToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
+			}
 		}
 		choices = append(choices, models.ChunkDelta{
 			Index:        choice.Index,
@@ -333,20 +407,49 @@ func decodeAPIError(resp *http.Response) error {
 }
 
 type chatCompletionRequest struct {
-	Model               string         `json:"model"`
-	Messages            []chatMessage  `json:"messages"`
-	Temperature         *float32       `json:"temperature,omitempty"`
-	TopP                *float32       `json:"top_p,omitempty"`
-	MaxTokens           *int32         `json:"max_tokens,omitempty"`
-	MaxCompletionTokens *int32         `json:"max_completion_tokens,omitempty"`
-	Stop                []string       `json:"stop,omitempty"`
-	Stream              bool           `json:"stream,omitempty"`
-	StreamOptions       *streamOptions `json:"stream_options,omitempty"`
+	Model               string          `json:"model"`
+	Messages            []chatMessage   `json:"messages"`
+	Temperature         *float32        `json:"temperature,omitempty"`
+	TopP                *float32        `json:"top_p,omitempty"`
+	MaxTokens           *int32          `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int32          `json:"max_completion_tokens,omitempty"`
+	Stop                []string        `json:"stop,omitempty"`
+	Stream              bool            `json:"stream,omitempty"`
+	StreamOptions       *streamOptions  `json:"stream_options,omitempty"`
+	Tools               []chatTool      `json:"tools,omitempty"`
+	ToolChoice          json.RawMessage `json:"tool_choice,omitempty"`
+	ParallelToolCalls   *bool           `json:"parallel_tool_calls,omitempty"`
+}
+
+type chatTool struct {
+	Type     string           `json:"type"` // "function"
+	Function chatToolFunction `json:"function"`
+}
+
+type chatToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Strict      *bool           `json:"strict,omitempty"`
+}
+
+type chatToolCall struct {
+	ID       string               `json:"id"`
+	Type     string               `json:"type"` // "function"
+	Function chatToolCallFunction `json:"function"`
+	Index    *int                 `json:"index,omitempty"`
+}
+
+type chatToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type chatMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`
+	ToolCalls  []chatToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
 }
 
 type streamOptions struct {

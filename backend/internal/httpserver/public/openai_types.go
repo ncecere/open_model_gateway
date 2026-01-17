@@ -2,11 +2,41 @@ package public
 
 import "encoding/json"
 
+// Tool calling types for OpenAI-compatible API
+
+type openAITool struct {
+	Type     string             `json:"type"` // "function"
+	Function openAIToolFunction `json:"function"`
+}
+
+type openAIToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Strict      *bool           `json:"strict,omitempty"`
+}
+
+type openAIToolCall struct {
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"` // "function"
+	Function openAIToolCallFunction `json:"function"`
+	Index    *int                   `json:"index,omitempty"` // For streaming deltas
+}
+
+type openAIToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// Message types
+
 type openAIChatMessage struct {
-	Role      string          `json:"role"`
-	Content   json.RawMessage `json:"content"`
-	Name      string          `json:"name,omitempty"`
-	Reasoning string          `json:"reasoning,omitempty"`
+	Role       string           `json:"role"`
+	Content    json.RawMessage  `json:"content"`
+	Name       string           `json:"name,omitempty"`
+	Reasoning  string           `json:"reasoning,omitempty"`
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`   // For assistant messages
+	ToolCallID string           `json:"tool_call_id,omitempty"` // For tool response messages
 }
 
 type openAIChatChoice struct {
@@ -22,10 +52,13 @@ type openAIUsage struct {
 	TotalTokens      int32 `json:"total_tokens"`
 }
 
+// Streaming types
+
 type openAIStreamDelta struct {
-	Role      string          `json:"role,omitempty"`
-	Content   json.RawMessage `json:"content,omitempty"`
-	Reasoning string          `json:"reasoning,omitempty"`
+	Role      string           `json:"role,omitempty"`
+	Content   json.RawMessage  `json:"content,omitempty"`
+	Reasoning string           `json:"reasoning,omitempty"`
+	ToolCalls []openAIToolCall `json:"tool_calls,omitempty"` // For streaming tool calls
 }
 
 type openAIStreamChoice struct {

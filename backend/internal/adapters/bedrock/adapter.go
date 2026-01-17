@@ -749,9 +749,7 @@ func (a *Adapter) buildAnthropicBody(ctx context.Context, req models.ChatRequest
 		if err != nil {
 			return nil, err
 		}
-		if len(parts) == 0 {
-			continue
-		}
+
 		switch role {
 		case "system", "developer":
 			for _, part := range parts {
@@ -760,9 +758,36 @@ func (a *Adapter) buildAnthropicBody(ctx context.Context, req models.ChatRequest
 				}
 			}
 		case "assistant":
-			messages = append(messages, anthropicMessage{Role: "assistant", Content: parts})
-		default:
+			// For assistant messages with tool_calls, add tool_use content blocks
+			if len(msg.ToolCalls) > 0 {
+				for _, tc := range msg.ToolCalls {
+					parts = append(parts, anthropicContent{
+						Type:  "tool_use",
+						ID:    tc.ID,
+						Name:  tc.Function.Name,
+						Input: json.RawMessage(tc.Function.Arguments),
+					})
+				}
+			}
+			if len(parts) > 0 {
+				messages = append(messages, anthropicMessage{Role: "assistant", Content: parts})
+			}
+		case "tool":
+			// Tool response messages become user messages with tool_result content
+			toolResultContent := json.RawMessage(`"` + strings.ReplaceAll(msg.Text(), `"`, `\"`) + `"`)
+			if json.Valid([]byte(msg.Text())) {
+				toolResultContent = json.RawMessage(msg.Text())
+			}
+			parts = []anthropicContent{{
+				Type:      "tool_result",
+				ToolUseID: msg.ToolCallID,
+				Content:   toolResultContent,
+			}}
 			messages = append(messages, anthropicMessage{Role: "user", Content: parts})
+		default:
+			if len(parts) > 0 {
+				messages = append(messages, anthropicMessage{Role: "user", Content: parts})
+			}
 		}
 	}
 
@@ -799,18 +824,116 @@ func (a *Adapter) buildAnthropicBody(ctx context.Context, req models.ChatRequest
 		body.StopSequences = append(body.StopSequences, req.Stop...)
 	}
 
+	// Add tools if present
+	if len(req.Tools) > 0 {
+		body.Tools = convertToolsToBedrockAnthropic(req.Tools)
+	}
+
+	// Add tool_choice if present
+	if len(req.ToolChoice) > 0 {
+		toolChoice, err := convertToolChoiceToBedrockAnthropic(req.ToolChoice, req.ParallelToolCalls)
+		if err != nil {
+			return nil, err
+		}
+		body.ToolChoice = toolChoice
+	}
+
 	return json.Marshal(body)
+}
+
+// convertToolsToBedrockAnthropic converts OpenAI-style tools to Bedrock/Anthropic format.
+func convertToolsToBedrockAnthropic(tools []models.Tool) []anthropicTool {
+	result := make([]anthropicTool, 0, len(tools))
+	for _, tool := range tools {
+		if tool.Type != "function" && tool.Type != "" {
+			continue
+		}
+		at := anthropicTool{
+			Name:        tool.Function.Name,
+			Description: tool.Function.Description,
+		}
+		if len(tool.Function.Parameters) > 0 {
+			at.InputSchema = tool.Function.Parameters
+		} else {
+			at.InputSchema = json.RawMessage(`{"type":"object","properties":{}}`)
+		}
+		result = append(result, at)
+	}
+	return result
+}
+
+// convertToolChoiceToBedrockAnthropic converts OpenAI-style tool_choice to Bedrock/Anthropic format.
+func convertToolChoiceToBedrockAnthropic(raw json.RawMessage, parallelToolCalls *bool) (*anthropicToolChoice, error) {
+	var str string
+	if err := json.Unmarshal(raw, &str); err == nil {
+		mode := strings.ToLower(strings.TrimSpace(str))
+		switch mode {
+		case "none":
+			return nil, nil
+		case "auto":
+			choice := &anthropicToolChoice{Type: "auto"}
+			if parallelToolCalls != nil && !*parallelToolCalls {
+				choice.DisableParallelToolUse = true
+			}
+			return choice, nil
+		case "required":
+			choice := &anthropicToolChoice{Type: "any"}
+			if parallelToolCalls != nil && !*parallelToolCalls {
+				choice.DisableParallelToolUse = true
+			}
+			return choice, nil
+		default:
+			return &anthropicToolChoice{Type: mode}, nil
+		}
+	}
+
+	var obj struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("invalid tool_choice format: %w", err)
+	}
+
+	if obj.Function.Name != "" {
+		choice := &anthropicToolChoice{
+			Type: "tool",
+			Name: obj.Function.Name,
+		}
+		if parallelToolCalls != nil && !*parallelToolCalls {
+			choice.DisableParallelToolUse = true
+		}
+		return choice, nil
+	}
+
+	return nil, nil
 }
 
 // anthropicRequest models the payload expected by Claude 3 on Bedrock.
 type anthropicRequest struct {
-	AnthropicVersion string             `json:"anthropic_version"`
-	System           string             `json:"system,omitempty"`
-	Messages         []anthropicMessage `json:"messages"`
-	MaxTokens        int32              `json:"max_tokens"`
-	Temperature      float64            `json:"temperature,omitempty"`
-	TopP             float64            `json:"top_p,omitempty"`
-	StopSequences    []string           `json:"stop_sequences,omitempty"`
+	AnthropicVersion string               `json:"anthropic_version"`
+	System           string               `json:"system,omitempty"`
+	Messages         []anthropicMessage   `json:"messages"`
+	MaxTokens        int32                `json:"max_tokens"`
+	Temperature      float64              `json:"temperature,omitempty"`
+	TopP             float64              `json:"top_p,omitempty"`
+	StopSequences    []string             `json:"stop_sequences,omitempty"`
+	Tools            []anthropicTool      `json:"tools,omitempty"`
+	ToolChoice       *anthropicToolChoice `json:"tool_choice,omitempty"`
+}
+
+type anthropicTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+type anthropicToolChoice struct {
+	Type                   string `json:"type"`                                // "auto", "any", or "tool"
+	Name                   string `json:"name,omitempty"`                      // Only for type "tool"
+	DisableParallelToolUse bool   `json:"disable_parallel_tool_use,omitempty"` // optional
 }
 
 type anthropicMessage struct {
@@ -822,6 +945,13 @@ type anthropicContent struct {
 	Type   string                `json:"type"`
 	Text   string                `json:"text,omitempty"`
 	Source *anthropicImageSource `json:"source,omitempty"`
+	// Tool use fields (for responses)
+	ID    string          `json:"id,omitempty"`    // tool_use ID
+	Name  string          `json:"name,omitempty"`  // tool name
+	Input json.RawMessage `json:"input,omitempty"` // tool arguments as JSON
+	// Tool result fields (for requests)
+	ToolUseID string          `json:"tool_use_id,omitempty"` // ID of the tool_use being responded to
+	Content   json.RawMessage `json:"content,omitempty"`     // Result content
 }
 
 type anthropicImageSource struct {
@@ -1074,6 +1204,8 @@ func decodeDataURL(raw string) (string, []byte, error) {
 
 func bedrockAnthropicContentsToMessage(role string, content []anthropicContent) models.ChatMessage {
 	parts := make([]models.MessageContentPart, 0, len(content))
+	var toolCalls []models.ToolCall
+
 	for _, block := range content {
 		switch strings.ToLower(block.Type) {
 		case "text":
@@ -1096,6 +1228,20 @@ func bedrockAnthropicContentsToMessage(role string, content []anthropicContent) 
 					},
 				})
 			}
+		case "tool_use":
+			// Convert Anthropic tool_use to OpenAI-compatible tool_call
+			arguments := ""
+			if len(block.Input) > 0 {
+				arguments = string(block.Input)
+			}
+			toolCalls = append(toolCalls, models.ToolCall{
+				ID:   block.ID,
+				Type: "function",
+				Function: models.ToolCallFunction{
+					Name:      block.Name,
+					Arguments: arguments,
+				},
+			})
 		}
 	}
 	text := models.TextFromContentParts(parts)
@@ -1106,6 +1252,7 @@ func bedrockAnthropicContentsToMessage(role string, content []anthropicContent) 
 		Role:         role,
 		Content:      text,
 		ContentParts: parts,
+		ToolCalls:    toolCalls,
 	}
 }
 
@@ -1115,6 +1262,8 @@ func mapAnthropicStopReason(reason string) string {
 		return "stop"
 	case "max_tokens":
 		return "length"
+	case "tool_use":
+		return "tool_calls"
 	default:
 		if reason == "" {
 			return "stop"

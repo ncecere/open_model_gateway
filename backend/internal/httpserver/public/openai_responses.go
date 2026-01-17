@@ -88,8 +88,9 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 	if len(req.Input) == 0 {
 		return httputil.WriteError(c, fiber.StatusBadRequest, "input is required")
 	}
-	if len(req.Tools) > 0 || len(req.ToolChoice) > 0 || len(req.ResponseFormat) > 0 || len(req.Conversation) > 0 || req.PreviousResponse != "" {
-		return httputil.WriteError(c, fiber.StatusBadRequest, "tools, conversations, and response_format are not supported")
+	// Conversations and response_format are not yet supported
+	if len(req.ResponseFormat) > 0 || len(req.Conversation) > 0 || req.PreviousResponse != "" {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "conversations and response_format are not supported")
 	}
 	if err := validateResponseMetadata(req.Metadata); err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
@@ -98,6 +99,27 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 	messages, err := buildResponseMessages(req.Instructions, req.Input)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusBadRequest, err.Error())
+	}
+
+	// Parse tools
+	var tools []models.Tool
+	if len(req.Tools) > 0 {
+		var parsedTools []openAITool
+		if err := json.Unmarshal(req.Tools, &parsedTools); err != nil {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "invalid tools format")
+		}
+		tools = make([]models.Tool, 0, len(parsedTools))
+		for _, t := range parsedTools {
+			tools = append(tools, models.Tool{
+				Type: t.Type,
+				Function: models.ToolFunction{
+					Name:        t.Function.Name,
+					Description: t.Function.Description,
+					Parameters:  t.Function.Parameters,
+					Strict:      t.Function.Strict,
+				},
+			})
+		}
 	}
 
 	ctx := c.UserContext()
@@ -109,14 +131,25 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 		return httputil.WriteError(c, fiber.StatusForbidden, "model not enabled for tenant")
 	}
 
+	// Validate that the model supports tools if tools are provided
+	if len(tools) > 0 {
+		model, err := h.container.Queries.GetModelByAlias(ctx, alias)
+		if err == nil && !model.SupportsTools {
+			return httputil.WriteError(c, fiber.StatusBadRequest, "model does not support tool calling")
+		}
+	}
+
 	traceID := traceIDFromContext(c)
 	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 
 	modelReq := models.ChatRequest{
-		Messages:    messages,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		MaxTokens:   req.MaxOutputTokens,
+		Messages:          messages,
+		Temperature:       req.Temperature,
+		TopP:              req.TopP,
+		MaxTokens:         req.MaxOutputTokens,
+		Tools:             tools,
+		ToolChoice:        req.ToolChoice,
+		ParallelToolCalls: req.ParallelToolCalls,
 	}
 
 	parallel := true

@@ -25,12 +25,31 @@ func convertOpenAIMessages(msgs []openAIChatMessage, label string) ([]models.Cha
 		if err != nil {
 			return nil, fmt.Errorf("invalid content for %s %d: %v", label, idx, err)
 		}
-		sanitized = append(sanitized, models.ChatMessage{
+
+		msg := models.ChatMessage{
 			Role:         role,
 			Content:      textContent,
 			ContentParts: parts,
 			Name:         m.Name,
-		})
+			ToolCallID:   m.ToolCallID,
+		}
+
+		// Convert tool_calls for assistant messages
+		if len(m.ToolCalls) > 0 {
+			msg.ToolCalls = make([]models.ToolCall, 0, len(m.ToolCalls))
+			for _, tc := range m.ToolCalls {
+				msg.ToolCalls = append(msg.ToolCalls, models.ToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: models.ToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
+			}
+		}
+
+		sanitized = append(sanitized, msg)
 	}
 	return sanitized, nil
 }
@@ -88,10 +107,27 @@ func convertChatResponse(resp models.ChatResponse, alias string) openAIChatRespo
 	choices := make([]openAIChatChoice, 0, len(resp.Choices))
 	for _, choice := range resp.Choices {
 		msg := openAIChatMessage{
-			Role:      choice.Message.Role,
-			Content:   models.MarshalMessageContent(choice.Message),
-			Reasoning: choice.Message.Reasoning,
+			Role:       choice.Message.Role,
+			Content:    models.MarshalMessageContent(choice.Message),
+			Reasoning:  choice.Message.Reasoning,
+			ToolCallID: choice.Message.ToolCallID,
 		}
+
+		// Convert tool_calls from the model response
+		if len(choice.Message.ToolCalls) > 0 {
+			msg.ToolCalls = make([]openAIToolCall, 0, len(choice.Message.ToolCalls))
+			for _, tc := range choice.Message.ToolCalls {
+				msg.ToolCalls = append(msg.ToolCalls, openAIToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: openAIToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
+			}
+		}
+
 		choices = append(choices, openAIChatChoice{
 			Index:        choice.Index,
 			Message:      msg,
@@ -143,6 +179,26 @@ func convertStreamChunk(chunk models.ChatChunk, alias string) openAIStreamChunk 
 			Content:   models.MarshalMessageContent(choice.Delta),
 			Reasoning: choice.Delta.Reasoning,
 		}
+
+		// Convert tool_calls for streaming deltas
+		if len(choice.Delta.ToolCalls) > 0 {
+			delta.ToolCalls = make([]openAIToolCall, 0, len(choice.Delta.ToolCalls))
+			for _, tc := range choice.Delta.ToolCalls {
+				toolCall := openAIToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: openAIToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				}
+				if tc.Index != nil {
+					toolCall.Index = tc.Index
+				}
+				delta.ToolCalls = append(delta.ToolCalls, toolCall)
+			}
+		}
+
 		choices = append(choices, openAIStreamChoice{
 			Index:        choice.Index,
 			Delta:        delta,

@@ -414,10 +414,7 @@ func convertChatResponse(v vertexGenerateResponse, model string) (models.ChatRes
 	choices := make([]models.ChatChoice, 0, len(v.Candidates))
 	for idx, candidate := range v.Candidates {
 		msg := vertexContentToMessage(candidate.Content)
-		finish := strings.ToLower(strings.TrimSpace(candidate.FinishReason))
-		if finish == "" {
-			finish = "stop"
-		}
+		finish := mapVertexFinishReason(candidate.FinishReason, len(msg.ToolCalls) > 0)
 		choices = append(choices, models.ChatChoice{
 			Index:        idx,
 			Message:      msg,
@@ -439,11 +436,34 @@ func convertChatResponse(v vertexGenerateResponse, model string) (models.ChatRes
 	return resp, nil
 }
 
+// mapVertexFinishReason converts Gemini finish reasons to OpenAI format.
+func mapVertexFinishReason(reason string, hasToolCalls bool) string {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+
+	// If there are tool calls, override finish reason to "tool_calls"
+	if hasToolCalls {
+		return "tool_calls"
+	}
+
+	switch reason {
+	case "stop", "":
+		return "stop"
+	case "max_tokens":
+		return "length"
+	case "safety":
+		return "content_filter"
+	case "recitation":
+		return "content_filter"
+	default:
+		return reason
+	}
+}
+
 func convertStreamChunk(v vertexGenerateResponse, model string) []models.ChatChunk {
 	chunks := make([]models.ChatChunk, 0, 2)
 	if candidate := v.FirstCandidate(); candidate != nil {
 		msg := vertexContentToMessage(candidate.Content)
-		finish := strings.ToLower(strings.TrimSpace(candidate.FinishReason))
+		finish := mapVertexFinishReason(candidate.FinishReason, len(msg.ToolCalls) > 0)
 		chunks = append(chunks, models.ChatChunk{
 			ID:      uuid.NewString(),
 			Model:   model,

@@ -1,11 +1,13 @@
 package openaihelper
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 )
@@ -41,7 +43,90 @@ func BuildChatParams(req models.ChatRequest) (openai.ChatCompletionNewParams, er
 	} else if len(req.Stop) > 1 {
 		params.Stop.OfStringArray = append(params.Stop.OfStringArray, req.Stop...)
 	}
+
+	// Add tools
+	if len(req.Tools) > 0 {
+		params.Tools = convertTools(req.Tools)
+	}
+
+	// Add tool_choice
+	if len(req.ToolChoice) > 0 {
+		toolChoice, err := convertToolChoice(req.ToolChoice)
+		if err != nil {
+			return openai.ChatCompletionNewParams{}, err
+		}
+		params.ToolChoice = toolChoice
+	}
+
+	// Add parallel_tool_calls
+	if req.ParallelToolCalls != nil {
+		params.ParallelToolCalls = param.NewOpt(*req.ParallelToolCalls)
+	}
+
 	return params, nil
+}
+
+// convertTools converts the internal Tool representation to OpenAI SDK format.
+func convertTools(tools []models.Tool) []openai.ChatCompletionToolUnionParam {
+	result := make([]openai.ChatCompletionToolUnionParam, 0, len(tools))
+	for _, tool := range tools {
+		if tool.Type != "function" && tool.Type != "" {
+			// Skip non-function tools
+			continue
+		}
+
+		funcDef := shared.FunctionDefinitionParam{
+			Name: tool.Function.Name,
+		}
+		if tool.Function.Description != "" {
+			funcDef.Description = param.NewOpt(tool.Function.Description)
+		}
+		if tool.Function.Strict != nil {
+			funcDef.Strict = param.NewOpt(*tool.Function.Strict)
+		}
+		if len(tool.Function.Parameters) > 0 {
+			var params shared.FunctionParameters
+			if err := json.Unmarshal(tool.Function.Parameters, &params); err == nil {
+				funcDef.Parameters = params
+			}
+		}
+
+		result = append(result, openai.ChatCompletionFunctionTool(funcDef))
+	}
+	return result
+}
+
+// convertToolChoice converts the tool_choice parameter to OpenAI SDK format.
+func convertToolChoice(raw json.RawMessage) (openai.ChatCompletionToolChoiceOptionUnionParam, error) {
+	var result openai.ChatCompletionToolChoiceOptionUnionParam
+
+	// Try string first: "none", "auto", "required"
+	var str string
+	if err := json.Unmarshal(raw, &str); err == nil {
+		mode := strings.ToLower(strings.TrimSpace(str))
+		// OfAuto is used for all string values: "none", "auto", "required"
+		result.OfAuto = param.NewOpt(mode)
+		return result, nil
+	}
+
+	// Try object: { "type": "function", "function": { "name": "..." } }
+	var obj struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return result, fmt.Errorf("invalid tool_choice format: %w", err)
+	}
+
+	if obj.Function.Name != "" {
+		result = openai.ToolChoiceOptionFunctionToolChoice(openai.ChatCompletionNamedToolChoiceFunctionParam{
+			Name: obj.Function.Name,
+		})
+	}
+
+	return result, nil
 }
 
 func convertMessage(idx int, msg models.ChatMessage) (openai.ChatCompletionMessageParamUnion, error) {
@@ -51,7 +136,9 @@ func convertMessage(idx int, msg models.ChatMessage) (openai.ChatCompletionMessa
 		return buildSystemLikeMessage(role, msg)
 	case "assistant":
 		return buildAssistantMessage(msg), nil
-	case "user", "tool", "":
+	case "tool":
+		return buildToolMessage(msg), nil
+	case "user", "":
 		return buildUserMessage(idx, msg)
 	default:
 		return buildUserMessage(idx, msg)
@@ -86,8 +173,29 @@ func buildSystemLikeMessage(role string, msg models.ChatMessage) (openai.ChatCom
 func buildAssistantMessage(msg models.ChatMessage) openai.ChatCompletionMessageParamUnion {
 	content := strings.TrimSpace(msg.Text())
 	union := openai.AssistantMessage(content)
+
+	// Add tool_calls if present
+	if len(msg.ToolCalls) > 0 && union.OfAssistant != nil {
+		union.OfAssistant.ToolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(msg.ToolCalls))
+		for _, tc := range msg.ToolCalls {
+			union.OfAssistant.ToolCalls = append(union.OfAssistant.ToolCalls, openai.ChatCompletionMessageToolCallUnionParam{
+				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+					ID: tc.ID,
+					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				},
+			})
+		}
+	}
+
 	applyName(&union, msg.Name)
 	return union
+}
+
+func buildToolMessage(msg models.ChatMessage) openai.ChatCompletionMessageParamUnion {
+	return openai.ToolMessage(msg.ToolCallID, msg.Text())
 }
 
 func buildUserMessage(idx int, msg models.ChatMessage) (openai.ChatCompletionMessageParamUnion, error) {

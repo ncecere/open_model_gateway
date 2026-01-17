@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [v0.1.30] - 2026-01-17
+### Added
+#### Backend
+- **Wide event logging** (canonical log lines) for comprehensive request tracing - each HTTP request now emits a single structured JSON log line containing all relevant context for debugging and analytics.
+- New `WideEvent` struct (`internal/logging/wide_event.go`) with ~40 fields covering request identity, HTTP context, auth/tenant context, model/provider details, usage metrics, budget status, and error information.
+- `WideEvent` middleware (`internal/httpserver/middleware/wide_event.go`) that initializes events at request start, accumulates context through the request lifecycle, and emits on completion.
+- `ExecutionMetrics` added to executor results (`ChatResult`, `ImageResult`, `EmbeddingsResult`, `ModerationResult`) capturing provider, latency, retry count, route count, and cost data.
+- `EnrichWideEvent()` helper in pipeline base for consistent wide event enrichment across all executor-based pipelines.
+- `LastRecordCostMicros` field in `BudgetStatus` to track per-request cost for wide event emission.
+- `WideEventConfig` in config (`logging.wide_event`) with `enabled`, `include_user_agent`, and `include_headers` options.
+- Wide event enrichment in all pipelines: chat (sync and streaming), embeddings, images, audio (transcribe, speech, streaming), and moderation.
+- Wide event context propagation through all auth middlewares (public API, admin, user).
+
+### Changed
+- Replaced legacy logger middleware with new wide event middleware for improved observability.
+- Streaming handlers now capture wide event before stream start and emit at stream close with final metrics.
+
+### Removed
+- Legacy `middleware/logger.go` replaced by wide event middleware.
+
 ## [v0.1.29] - 2026-01-16
 ### Added
 #### Backend

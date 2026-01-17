@@ -35,10 +35,22 @@ func New(container *app.Container) *Executor {
 	return &Executor{container: container}
 }
 
+// ExecutionMetrics captures provider execution details for logging.
+type ExecutionMetrics struct {
+	Provider      string
+	ProviderModel string
+	Deployment    string
+	LatencyMs     int64
+	RetryCount    int
+	RouteCount    int
+	CostMicroUSD  int64
+}
+
 // ChatResult captures the outcome of a chat execution.
 type ChatResult struct {
 	Response     models.ChatResponse
 	BudgetStatus usagepipeline.BudgetStatus
+	Metrics      ExecutionMetrics
 }
 
 // ImageOperationConfig wraps shared parameters for image executions.
@@ -55,18 +67,21 @@ type ImageOperationConfig struct {
 type ImageResult struct {
 	Response     models.ImageResponse
 	BudgetStatus usagepipeline.BudgetStatus
+	Metrics      ExecutionMetrics
 }
 
 // EmbeddingsResult captures the outcome of an embedding execution.
 type EmbeddingsResult struct {
 	Response     models.EmbeddingsResponse
 	BudgetStatus usagepipeline.BudgetStatus
+	Metrics      ExecutionMetrics
 }
 
 // ModerationResult captures moderation execution output.
 type ModerationResult struct {
 	Response     models.ModerationResponse
 	BudgetStatus usagepipeline.BudgetStatus
+	Metrics      ExecutionMetrics
 }
 
 // apiError wraps an error with an HTTP status code so callers can map it
@@ -279,6 +294,15 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 			return ChatResult{
 				Response:     resp,
 				BudgetStatus: budgetStatus,
+				Metrics: ExecutionMetrics{
+					Provider:      route.Provider,
+					ProviderModel: route.Model,
+					Deployment:    route.ResolveDeployment(),
+					LatencyMs:     elapsed.Milliseconds(),
+					RetryCount:    attempt - 1,
+					RouteCount:    len(routes),
+					CostMicroUSD:  budgetStatus.LastRecordCostMicros,
+				},
 			}, nil
 		}
 	}
@@ -442,6 +466,15 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 			return ImageResult{
 				Response:     resp,
 				BudgetStatus: budgetStatus,
+				Metrics: ExecutionMetrics{
+					Provider:      route.Provider,
+					ProviderModel: route.Model,
+					Deployment:    route.ResolveDeployment(),
+					LatencyMs:     elapsed.Milliseconds(),
+					RetryCount:    attempt - 1,
+					RouteCount:    len(routes),
+					CostMicroUSD:  budgetStatus.LastRecordCostMicros,
+				},
 			}, nil
 		}
 	}
@@ -587,6 +620,15 @@ func (e *Executor) Embed(ctx context.Context, rc *requestctx.Context, alias stri
 			return EmbeddingsResult{
 				Response:     resp,
 				BudgetStatus: budgetStatus,
+				Metrics: ExecutionMetrics{
+					Provider:      route.Provider,
+					ProviderModel: route.Model,
+					Deployment:    route.ResolveDeployment(),
+					LatencyMs:     elapsed.Milliseconds(),
+					RetryCount:    attempt - 1,
+					RouteCount:    len(routes),
+					CostMicroUSD:  budgetStatus.LastRecordCostMicros,
+				},
 			}, nil
 		}
 	}
@@ -735,6 +777,15 @@ func (e *Executor) Moderate(ctx context.Context, rc *requestctx.Context, alias s
 			return ModerationResult{
 				Response:     resp,
 				BudgetStatus: budgetStatus,
+				Metrics: ExecutionMetrics{
+					Provider:      route.Provider,
+					ProviderModel: route.Model,
+					Deployment:    route.ResolveDeployment(),
+					LatencyMs:     elapsed.Milliseconds(),
+					RetryCount:    attempt - 1,
+					RouteCount:    len(routes),
+					CostMicroUSD:  budgetStatus.LastRecordCostMicros,
+				},
 			}, nil
 		}
 	}

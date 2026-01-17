@@ -15,6 +15,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 	"github.com/ncecere/open_model_gateway/backend/internal/limits"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
@@ -215,6 +216,15 @@ func (p *chatStreamPipeline) streamChat(
 			p.container.Telemetry.Observability.IncProviderStream(route.Provider, alias, route.ResolveDeployment())
 		}
 
+		// Capture wide event before entering stream writer and mark as streaming
+		wideEvent, hasWideEvent := logging.WideEventFromContext(ctx)
+		if hasWideEvent {
+			wideEvent.MarkStreaming()
+			wideEvent.ModelAlias = alias
+			wideEvent.SetModelContext(alias, route.Provider, route.Model, route.ResolveDeployment())
+			wideEvent.RouteCount = len(routes)
+		}
+
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 			defer cancel()
 			defer release()
@@ -229,11 +239,11 @@ func (p *chatStreamPipeline) streamChat(
 			reported := false
 			var streamUsage models.Usage
 			usageCaptured := false
-			var recordErr error
+			var streamErr error
 
 			if err := renderer.Init(w); err != nil {
 				recordStatus = fiber.StatusInternalServerError
-				recordErr = err
+				streamErr = err
 				return
 			}
 
@@ -279,8 +289,9 @@ func (p *chatStreamPipeline) streamChat(
 					Success:        recordSuccess && recordStatus == fiber.StatusOK,
 				}
 
-				if _, err := p.container.Telemetry.UsageLogger.Record(ctx, record); err != nil {
-					slog.Error("record stream usage", slog.String("alias", alias), slog.String("error", err.Error()))
+				budgetStatus, recordErr := p.container.Telemetry.UsageLogger.Record(ctx, record)
+				if recordErr != nil {
+					slog.Error("record stream usage", slog.String("alias", alias), slog.String("error", recordErr.Error()))
 				}
 				p.container.RecordProviderTelemetry(ctx, providermetrics.Sample{
 					Provider:     route.Provider,
@@ -293,6 +304,32 @@ func (p *chatStreamPipeline) streamChat(
 					OutputTokens: int64(streamUsage.CompletionTokens),
 					Timestamp:    time.Now().UTC(),
 				})
+
+				// Emit wide event at stream close
+				if hasWideEvent {
+					totalDuration := time.Since(streamStart)
+					wideEvent.SetUsageMetrics(
+						int64(streamUsage.PromptTokens),
+						int64(streamUsage.CompletionTokens),
+						int64(streamUsage.TotalTokens),
+						budgetStatus.LastRecordCostMicros,
+					)
+					wideEvent.SetExecutionMetrics(latency.Milliseconds(), 0, len(routes))
+					remainingCents := budgetStatus.LimitCents - budgetStatus.TotalCostCents
+					if remainingCents < 0 {
+						remainingCents = 0
+					}
+					wideEvent.SetBudgetStatus(
+						budgetStatus.TotalCostCents,
+						remainingCents,
+						budgetStatus.Exceeded,
+					)
+					if streamErr != nil {
+						wideEvent.SetError("stream_error", "", streamErr.Error(), false)
+					}
+					wideEvent.Finalize(totalDuration.Milliseconds(), recordStatus, 0)
+					wideEvent.Emit(slog.Default())
+				}
 			}
 
 			defer recordUsage()
@@ -318,12 +355,12 @@ func (p *chatStreamPipeline) streamChat(
 
 				if err := renderer.HandleChunk(chunk, w); err != nil {
 					recordStatus = fiber.StatusInternalServerError
-					recordErr = err
+					streamErr = err
 					return
 				}
 				if err := w.Flush(); err != nil {
 					recordStatus = fiber.StatusInternalServerError
-					recordErr = err
+					streamErr = err
 					return
 				}
 
@@ -342,7 +379,7 @@ func (p *chatStreamPipeline) streamChat(
 			}
 			if err := renderer.Done(w, usagePtr); err != nil {
 				recordStatus = fiber.StatusInternalServerError
-				recordErr = err
+				streamErr = err
 				return
 			}
 

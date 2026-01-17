@@ -83,10 +83,11 @@ type Record struct {
 
 // BudgetStatus reflects the tenant's budget posture after a request.
 type BudgetStatus struct {
-	TotalCostCents int64
-	LimitCents     int64
-	Warning        bool
-	Exceeded       bool
+	TotalCostCents       int64
+	LimitCents           int64
+	Warning              bool
+	Exceeded             bool
+	LastRecordCostMicros int64 // Cost of the last recorded request in micro-USD
 }
 
 // NewLogger constructs a usage logger using the shared pool and queries.
@@ -177,10 +178,11 @@ func (l *Logger) Record(ctx context.Context, rec Record) (BudgetStatus, error) {
 	warning := !exceeded && overThreshold(total, limit, rec.Context.WarningThreshold)
 
 	status := BudgetStatus{
-		TotalCostCents: total,
-		LimitCents:     limit,
-		Warning:        warning,
-		Exceeded:       exceeded,
+		TotalCostCents:       total,
+		LimitCents:           limit,
+		Warning:              warning,
+		Exceeded:             exceeded,
+		LastRecordCostMicros: costMicros,
 	}
 
 	l.enqueueEvent(usageEvent{

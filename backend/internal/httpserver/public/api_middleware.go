@@ -12,6 +12,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/auth"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 )
 
@@ -83,6 +84,11 @@ func apiKeyAuth(container *app.Container) fiber.Handler {
 		c.Locals(requestctx.FiberLocalsKey(), rc)
 		newCtx := requestctx.WithContext(ctx, rc)
 		c.SetUserContext(newCtx)
+
+		// Enrich wide event with tenant/API key context
+		if event, ok := logging.WideEventFromContext(newCtx); ok {
+			event.EnrichFromRequestContext(rc)
+		}
 
 		return c.Next()
 	}

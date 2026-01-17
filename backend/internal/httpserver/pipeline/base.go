@@ -68,6 +68,8 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/cache"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
+	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 	usagepipeline "github.com/ncecere/open_model_gateway/backend/internal/services/usagepipeline"
 )
@@ -179,4 +181,29 @@ func (b *Base) CheckRoutes(c *fiber.Ctx, alias string) error {
 		return httputil.WriteError(c, fiber.StatusServiceUnavailable, "no backend available for model")
 	}
 	return nil
+}
+
+// EnrichWideEvent enriches the wide event from executor metrics and budget status.
+// This is a helper for pipelines that use the executor pattern.
+func (b *Base) EnrichWideEvent(c *fiber.Ctx, alias string, metrics executor.ExecutionMetrics, budgetStatus usagepipeline.BudgetStatus, usage models.Usage) {
+	ctx := c.UserContext()
+	event, ok := logging.WideEventFromContext(ctx)
+	if !ok {
+		return
+	}
+
+	event.SetModelContext(alias, metrics.Provider, metrics.ProviderModel, metrics.Deployment)
+	event.SetExecutionMetrics(metrics.LatencyMs, metrics.RetryCount, metrics.RouteCount)
+	event.SetUsageMetrics(
+		int64(usage.PromptTokens),
+		int64(usage.CompletionTokens),
+		int64(usage.TotalTokens),
+		metrics.CostMicroUSD,
+	)
+
+	remainingCents := budgetStatus.LimitCents - budgetStatus.TotalCostCents
+	if remainingCents < 0 {
+		remainingCents = 0
+	}
+	event.SetBudgetStatus(budgetStatus.TotalCostCents, remainingCents, budgetStatus.Exceeded)
 }

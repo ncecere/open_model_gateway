@@ -9,6 +9,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/pipeline"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 )
@@ -57,6 +58,11 @@ func (p *chatPipeline) ExecuteWithConverter(
 	}
 	httputil.ApplyBudgetHeaders(c, result.BudgetStatus)
 
+	// Enrich wide event with execution metrics
+	if event, ok := logging.WideEventFromContext(ctx); ok {
+		enrichWideEventFromChatResult(event, alias, &result)
+	}
+
 	respBody, err := convert(result.Response, alias)
 	if err != nil {
 		return httputil.WriteError(c, fiber.StatusInternalServerError, err.Error())
@@ -70,4 +76,31 @@ func (p *chatPipeline) ExecuteWithConverter(
 
 	c.Set("Content-Type", "application/json")
 	return c.Send(payload)
+}
+
+// enrichWideEventFromChatResult populates wide event fields from a chat result.
+func enrichWideEventFromChatResult(event *logging.WideEvent, alias string, result *executor.ChatResult) {
+	event.ModelAlias = alias
+	event.SetModelContext(
+		alias,
+		result.Metrics.Provider,
+		result.Metrics.ProviderModel,
+		result.Metrics.Deployment,
+	)
+	event.SetExecutionMetrics(
+		result.Metrics.LatencyMs,
+		result.Metrics.RetryCount,
+		result.Metrics.RouteCount,
+	)
+	event.SetUsageMetrics(
+		int64(result.Response.Usage.PromptTokens),
+		int64(result.Response.Usage.CompletionTokens),
+		int64(result.Response.Usage.TotalTokens),
+		result.Metrics.CostMicroUSD,
+	)
+	event.SetBudgetStatus(
+		result.BudgetStatus.TotalCostCents,
+		result.BudgetStatus.LimitCents-result.BudgetStatus.TotalCostCents,
+		result.BudgetStatus.Exceeded,
+	)
 }

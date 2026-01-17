@@ -26,6 +26,14 @@ redis:
   db: 0
   pool_size: 20
 
+logging:
+  level: "info"                # debug, info, warn, error
+  format: "json"               # text or json
+  wide_event:
+    enabled: true              # emit a single comprehensive log line per request
+    include_user_agent: true   # include User-Agent in the wide event
+    include_headers: false     # include additional headers (if applicable)
+
 observability:
   enable_metrics: true
   enable_otlp: true

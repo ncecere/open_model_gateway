@@ -37,5 +37,8 @@ func (p *moderationPipeline) Execute(c *fiber.Ctx, rc *requestctx.Context, alias
 		return p.HandleExecutorError(c, err)
 	}
 
+	// Enrich wide event with execution metrics
+	p.EnrichWideEvent(c, alias, result.Metrics, result.BudgetStatus, result.Response.Usage)
+
 	return p.SendJSONResponse(c, result.BudgetStatus, convertModerationHTTPResponse(result.Response, alias))
 }

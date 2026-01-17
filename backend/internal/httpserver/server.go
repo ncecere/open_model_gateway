@@ -53,9 +53,12 @@ func New(container *app.Container, health runtime.HealthReporter) (*Server, erro
 	})
 
 	app.Use(requestid.New())
-	app.Use(middleware.Logger(middleware.LoggerConfig{
-		Logger:    container.Log(),
-		SkipPaths: []string{"/healthz", "/metrics"},
+	app.Use(middleware.WideEvent(middleware.WideEventConfig{
+		Logger:           container.Log(),
+		ServiceName:      "open-model-gateway",
+		ServiceVersion:   cfg.Version,
+		SkipPaths:        []string{"/healthz", "/metrics"},
+		IncludeUserAgent: cfg.Logging.WideEvent.IncludeUserAgent,
 	}))
 	app.Use(recover.New())
 

@@ -10,6 +10,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 )
 
 type adminContextKey string
@@ -62,6 +63,16 @@ func adminAuthMiddleware(container *app.Container) fiber.Handler {
 		c.SetUserContext(ctx)
 		c.Locals("adminUserID", userID.String())
 		c.Locals("adminUser", user)
+
+		// Enrich wide event with admin user context
+		if event, ok := logging.WideEventFromContext(ctx); ok {
+			var adminKeyID *uuid.UUID
+			if keyID, ok := ctx.Value(adminContextKeyIDKey).(uuid.UUID); ok {
+				adminKeyID = &keyID
+			}
+			event.SetAdminContext(userID.String(), user.Email, adminKeyID)
+		}
+
 		return c.Next()
 	}
 }

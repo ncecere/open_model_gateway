@@ -17,6 +17,9 @@ import (
 
 // Config captures the runtime configuration for the router service.
 type Config struct {
+	// Version is the application version (set at build time or runtime).
+	Version string `mapstructure:"version"`
+
 	Server        ServerConfig        `mapstructure:"server"`
 	Database      DatabaseConfig      `mapstructure:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"`
@@ -398,6 +401,8 @@ func (p *ProviderTelemetryConfig) validate() error {
 }
 
 func setDefaults(v *viper.Viper) {
+	v.SetDefault("version", "dev")
+
 	v.SetDefault("server.listen_addr", ":8080")
 	v.SetDefault("server.body_limit_mb", 20)
 	v.SetDefault("server.sync_timeout", "300s")
@@ -410,6 +415,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "text")
 	v.SetDefault("logging.add_source", false)
+	v.SetDefault("logging.wide_event.enabled", true)
+	v.SetDefault("logging.wide_event.include_user_agent", true)
+	v.SetDefault("logging.wide_event.include_headers", []string{})
 
 	v.SetDefault("rate_limits.default_tokens_per_minute", 1_000_000)
 	v.SetDefault("rate_limits.default_requests_per_minute", 1_000)

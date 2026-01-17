@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/db"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 )
 
 type userContextKey string
@@ -36,6 +37,11 @@ func attachUserContext(c *fiber.Ctx, user db.User, id uuid.UUID) {
 	ctx = context.WithValue(ctx, ctxUserIDKey, id)
 	c.SetUserContext(ctx)
 	c.Locals("userID", id.String())
+
+	// Enrich wide event with user context
+	if event, ok := logging.WideEventFromContext(ctx); ok {
+		event.SetUserContext(id.String(), user.Email)
+	}
 }
 
 func userFromContext(ctx context.Context) (db.User, bool) {

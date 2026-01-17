@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 	"github.com/ncecere/open_model_gateway/backend/internal/limits"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
@@ -161,10 +163,30 @@ func (p *audioPipeline) Transcribe(c *fiber.Ctx, inv audioInvocation) error {
 			Timestamp: time.Now().UTC(),
 			Success:   true,
 		}
-		if status, err := p.container.Telemetry.UsageLogger.Record(ctx, record); err == nil {
-			httputil.ApplyBudgetHeaders(c, status)
+		budgetStatus, recordErr := p.container.Telemetry.UsageLogger.Record(ctx, record)
+		if recordErr == nil {
+			httputil.ApplyBudgetHeaders(c, budgetStatus)
 		}
 		p.recordProviderSample(ctx, rc, inv.Model, route, time.Since(start), providermetrics.ResultSuccess, nil, resp.Usage)
+
+		// Enrich wide event
+		if event, ok := logging.WideEventFromContext(ctx); ok {
+			event.SetModelContext(inv.Model, route.Provider, route.Model, route.ResolveDeployment())
+			latency := time.Since(start)
+			event.SetExecutionMetrics(latency.Milliseconds(), 0, len(routes))
+			event.SetUsageMetrics(
+				int64(resp.Usage.PromptTokens),
+				int64(resp.Usage.CompletionTokens),
+				int64(resp.Usage.TotalTokens),
+				budgetStatus.LastRecordCostMicros,
+			)
+			remainingCents := budgetStatus.LimitCents - budgetStatus.TotalCostCents
+			if remainingCents < 0 {
+				remainingCents = 0
+			}
+			event.SetBudgetStatus(budgetStatus.TotalCostCents, remainingCents, budgetStatus.Exceeded)
+		}
+
 		return writeAudioTranscriptionResponse(c, resp)
 	}
 
@@ -289,6 +311,13 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 		c.Set("Connection", "keep-alive")
 		streamStart := time.Now()
 
+		// Capture wide event before entering stream writer
+		wideEvent, hasWideEvent := logging.WideEventFromContext(ctx)
+		if hasWideEvent {
+			wideEvent.MarkStreaming()
+			wideEvent.SetModelContext(inv.Model, route.Provider, route.Model, route.ResolveDeployment())
+		}
+
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 			defer cancel()
 			defer releaseOnce()
@@ -299,6 +328,7 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 			var streamUsage models.Usage
 			var firstTokenLatency time.Duration
 			var firstTokenMeasured bool
+			var streamErr error
 
 			recordUsage := func() {
 				if usageCaptured {
@@ -337,14 +367,37 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 					Timestamp: time.Now().UTC(),
 					Success:   recordSuccess && recordStatus == fiber.StatusOK,
 				}
-				if status, err := p.container.Telemetry.UsageLogger.Record(ctx, record); err == nil {
-					httputil.ApplyBudgetHeaders(c, status)
+				budgetStatus, recordErr := p.container.Telemetry.UsageLogger.Record(ctx, record)
+				if recordErr == nil {
+					httputil.ApplyBudgetHeaders(c, budgetStatus)
 				}
 				result := providermetrics.ResultSuccess
 				if !record.Success {
 					result = providermetrics.ResultError
 				}
 				p.recordProviderSample(ctx, rc, inv.Model, route, latency, result, nil, streamUsage)
+
+				// Emit wide event at stream close
+				if hasWideEvent {
+					totalDuration := time.Since(streamStart)
+					wideEvent.SetUsageMetrics(
+						int64(streamUsage.PromptTokens),
+						int64(streamUsage.CompletionTokens),
+						int64(streamUsage.TotalTokens),
+						budgetStatus.LastRecordCostMicros,
+					)
+					wideEvent.SetExecutionMetrics(latency.Milliseconds(), 0, len(routes))
+					remainingCents := budgetStatus.LimitCents - budgetStatus.TotalCostCents
+					if remainingCents < 0 {
+						remainingCents = 0
+					}
+					wideEvent.SetBudgetStatus(budgetStatus.TotalCostCents, remainingCents, budgetStatus.Exceeded)
+					if streamErr != nil {
+						wideEvent.SetError("stream_error", "", streamErr.Error(), false)
+					}
+					wideEvent.Finalize(totalDuration.Milliseconds(), recordStatus, 0)
+					wideEvent.Emit(slog.Default())
+				}
 			}
 
 			defer recordUsage()
@@ -359,6 +412,7 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 			for chunk := range chunks {
 				if chunk.Err != nil {
 					recordStatus = fiber.StatusBadGateway
+					streamErr = chunk.Err
 					lastErr = chunk.Err
 					return
 				}
@@ -377,18 +431,22 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 
 				if _, err := w.WriteString("data: "); err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					streamErr = err
 					return
 				}
 				if _, err := w.Write(chunk.Payload); err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					streamErr = err
 					return
 				}
 				if _, err := w.WriteString("\n\n"); err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					streamErr = err
 					return
 				}
 				if err := w.Flush(); err != nil {
 					recordStatus = fiber.StatusInternalServerError
+					streamErr = err
 					return
 				}
 
@@ -402,8 +460,10 @@ func (p *audioPipeline) TranscribeStream(c *fiber.Ctx, inv audioInvocation) erro
 
 			if _, err := w.WriteString("data: [DONE]\n\n"); err != nil {
 				recordStatus = fiber.StatusInternalServerError
+				streamErr = err
 			} else if err := w.Flush(); err != nil {
 				recordStatus = fiber.StatusInternalServerError
+				streamErr = err
 			}
 		})
 
@@ -520,21 +580,40 @@ func (p *audioPipeline) Speech(c *fiber.Ctx, req models.AudioSpeechRequest) erro
 				return httputil.WriteError(c, fiber.StatusInternalServerError, "token accounting failed")
 			}
 		}
+		latency := time.Since(start)
 		record := usagepipeline.Record{
 			Context:   rc,
 			Alias:     alias,
 			Provider:  route.Provider,
 			Usage:     resp.Usage,
-			Latency:   time.Since(start),
+			Latency:   latency,
 			Status:    fiber.StatusOK,
 			TraceID:   traceID,
 			Timestamp: time.Now().UTC(),
 			Success:   true,
 		}
-		if status, err := p.container.Telemetry.UsageLogger.Record(ctx, record); err == nil {
-			httputil.ApplyBudgetHeaders(c, status)
+		budgetStatus, recordErr := p.container.Telemetry.UsageLogger.Record(ctx, record)
+		if recordErr == nil {
+			httputil.ApplyBudgetHeaders(c, budgetStatus)
 		}
-		p.recordProviderSample(ctx, rc, alias, route, time.Since(start), providermetrics.ResultSuccess, nil, resp.Usage)
+		p.recordProviderSample(ctx, rc, alias, route, latency, providermetrics.ResultSuccess, nil, resp.Usage)
+
+		// Enrich wide event
+		if event, ok := logging.WideEventFromContext(ctx); ok {
+			event.SetModelContext(alias, route.Provider, route.Model, route.ResolveDeployment())
+			event.SetExecutionMetrics(latency.Milliseconds(), 0, len(routes))
+			event.SetUsageMetrics(
+				int64(resp.Usage.PromptTokens),
+				int64(resp.Usage.CompletionTokens),
+				int64(resp.Usage.TotalTokens),
+				budgetStatus.LastRecordCostMicros,
+			)
+			remainingCents := budgetStatus.LimitCents - budgetStatus.TotalCostCents
+			if remainingCents < 0 {
+				remainingCents = 0
+			}
+			event.SetBudgetStatus(budgetStatus.TotalCostCents, remainingCents, budgetStatus.Exceeded)
+		}
 
 		return writeAudioSpeechResponse(c, providerReq, resp)
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
 	"github.com/ncecere/open_model_gateway/backend/internal/executor"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/pipeline"
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
@@ -73,6 +74,12 @@ func (p *imagePipeline) Execute(c *fiber.Ctx, rc *requestctx.Context, cfg imageO
 	})
 	if err != nil {
 		return p.HandleExecutorError(c, err)
+	}
+
+	// Enrich wide event with execution metrics and image count
+	p.EnrichWideEvent(c, alias, result.Metrics, result.BudgetStatus, models.Usage{})
+	if event, ok := logging.WideEventFromContext(ctx); ok {
+		event.ImageCount = len(result.Response.Data)
 	}
 
 	return p.SendJSONWithIdempotency(c, ctx, result.BudgetStatus, convertImageResponse(result.Response), idempotencyKey)

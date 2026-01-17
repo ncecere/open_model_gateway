@@ -52,4 +52,19 @@ type LoggingConfig struct {
 
 	// AddSource adds source file information to log entries.
 	AddSource bool `mapstructure:"add_source"`
+
+	// WideEvent configures wide event (canonical log line) logging.
+	WideEvent WideEventConfig `mapstructure:"wide_event"`
+}
+
+// WideEventConfig holds wide event logging settings.
+type WideEventConfig struct {
+	// Enabled enables wide event logging (single comprehensive log per request).
+	Enabled bool `mapstructure:"enabled"`
+
+	// IncludeUserAgent includes the User-Agent header in log events.
+	IncludeUserAgent bool `mapstructure:"include_user_agent"`
+
+	// IncludeHeaders lists additional headers to include in log events.
+	IncludeHeaders []string `mapstructure:"include_headers"`
 }

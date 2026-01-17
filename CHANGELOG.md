@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [v0.1.29] - 2026-01-16
+### Added
+#### Backend
+- **Tool calling support** across all provider adapters, enabling OpenAI-compatible function/tool calling through the gateway.
+- New `Tool`, `ToolCall`, `ToolChoiceOption` types in `models/tools.go` for tool definitions and invocations.
+- `ChatRequest` extended with `tools`, `tool_choice`, and `parallel_tool_calls` fields.
+- `ChatMessage` extended with `tool_calls` (for assistant messages) and `tool_call_id` (for tool response messages).
+- Tool validation in `/v1/chat/completions` and `/v1/responses` endpoints with `supports_tools` catalog flag enforcement.
+- Legacy `functions`/`function_call` parameters auto-converted to modern `tools` format.
+- **OpenAI adapter**: Extract `tool_calls` from sync and streaming responses.
+- **Azure OpenAI adapter**: Extract `tool_calls` from sync and streaming responses.
+- **Anthropic adapter**: Convert to/from `tool_use`/`tool_result` content blocks with full streaming support.
+- **Bedrock adapter**: Tool support for Claude models via Anthropic Messages API format.
+- **Groq adapter**: OpenAI-compatible tool handling for sync and streaming.
+- **OpenRouter adapter**: OpenAI-compatible tool handling for sync and streaming.
+- **Vertex AI adapter**: Convert to Gemini `functionDeclarations`/`functionCall`/`functionResponse` format with `toolConfig` for tool_choice mapping.
+
+### Changed
+- `finish_reason` now returns `"tool_calls"` when model responses contain function calls (mapped from provider-specific values like Anthropic's `"tool_use"`).
+
 ## [v0.1.28] - 2026-01-15
 ### Added
 #### Frontend

@@ -87,5 +87,5 @@ After edits, call the Admin API to verify tiers arrive sorted because the router
 ---
 
 #### Research
-- Collated tier behavior from the previous `docs/runtime/pricing.md` plus `deploy/router.example.yaml` samples.
+- Collated tier behavior from the previous pricing guide plus `deploy/router.example.yaml` samples.
 - Verified cache and unit handling via `backend/internal/pricing/cache.go` and the latest tier migration referenced in `AGENTS.md`.

@@ -108,7 +108,7 @@ Refer to `docs/deployment/releases.md` for publishing and `deploy/docker-compose
 | `bootstrap` | Declarative tenants, admin users, memberships, keys, per-tenant limits/budgets, and default models. |
 | `observability` | OTLP exporter toggle/endpoint, Prometheus `/metrics`, sampling settings. |
 
-See `docs/runtime/router.example.yaml` for a fully annotated reference plus comments for each field.
+See `docs/admin/runtime/router-example.md` for a fully annotated reference plus comments for each field.
 
 ## Quick verification
 
@@ -163,7 +163,9 @@ curl -s http://localhost:8090/v1/images/generations \
 ## Additional resources
 
 - `docs/developer/README.md` – end-to-end developer workflows, config structure, and contribution guide.
+- `docs/admin/install.md` – system administrator install/upgrade guide.
 - `docs/admin/runtime/README.md` – runtime config reference and bootstrap annotations.
 - `docs/admin/` – onboarding guides for admins, tenant owners, and standard users.
+- `docs/personal/guide.md` – personal tenant and API key walkthrough.
 - `Code_Examples/` – curl/Python/TypeScript snippets that hit models, chat, embeddings, images, audio, and admin APIs.
 - `CHANGELOG.md` – feature timeline and migration hints between releases.

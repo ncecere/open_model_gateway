@@ -12,44 +12,53 @@ Tenant owners (or delegated tenant admins) are responsible for modeling use case
 ## Onboarding Checklist
 
 1. Accept the invitation email from the platform admin (local credentials or SSO).
-2. Sign in to the admin portal, select your tenant, and confirm ownership under **Tenants → Members**.
-3. Review pre-provisioned models/keys/budgets seeded via bootstrap.
-4. Capture the shared API key strategy (per application vs per user) and budget owners.
+2. Sign in to the user portal at `/` and switch to the tenant you own.
+3. If you have admin access, you can also use the admin portal at `/admin/ui` for platform-wide settings.
+4. Review pre-provisioned models/keys/budgets seeded via bootstrap.
+5. Capture the shared API key strategy (per application vs per user) and budget owners.
+
+![TODO: User portal tenant switcher showing shared tenant](../assets/screenshots/user-portal-tenant-switcher.png)
 
 ## Manage Tenant Members
 
 | Action | Path |
 | --- | --- |
-| Invite a teammate | **Tenants → Members → Invite** (choose role) |
-| Change a role | **Tenants → Members → Edit** |
+| Invite a teammate | **Tenants -> Members -> Invite** (choose role) |
+| Change a role | **Tenants -> Members -> Edit** |
 | Remove access | Delete membership from the same view |
 | Automate | `POST /admin/tenants/{tenantID}/memberships` (requires platform admin token) |
 
+![TODO: Tenant members tab with invite dialog](../assets/screenshots/tenant-members-invite.png)
+
 Roles:
-- **Owner** – full control over tenant settings, budgets, and keys.
-- **Admin** – manage models, keys, and members but cannot delete the tenant.
-- **Viewer** – read-only dashboards.
-- **User** – scoped to API key visibility only.
+- **Owner** - full control over tenant settings, budgets, and keys.
+- **Admin** - manage models, keys, and members but cannot delete the tenant.
+- **Viewer** - read-only dashboards.
+- **User** - scoped to API key visibility only.
 
 ## Models & Providers
 
 1. Browse **Models** for tenant-assignable aliases. Each entry lists provider, deployment ID, supported modalities, rate limits, budgets, and health.
-2. Enable/disable models for your tenant via **Models → Assignments**. Requests to non-assigned aliases return `404 model_not_found`.
+2. Enable/disable models for your tenant via **Models -> Assignments**. Requests to non-assigned aliases return `404 model_not_found`.
 3. If you need a new model or provider:
-   - Open an ops request with the alias/provder details.
+   - Open an ops request with the alias/provider details.
    - Platform admins will attach the model globally or flag it tenant-assignable, then you can enable it.
-4. Check `docs/reference/requests.md` for sample payloads and headers.
+4. Check `docs/reference/requests/README.md` for sample payloads and headers.
+
+![TODO: Tenant model assignments panel](../assets/screenshots/tenant-model-assignments.png)
 
 ## API Keys
 
-- Generate keys via **Tenants → API Keys → Create**. Provide a name, optional description, and overrides for budgets/rate limits.
+- Generate keys via **Tenants -> API Keys -> Create**. Provide a name, optional description, and overrides for budgets/rate limits.
 - Secrets are only shown once; store them securely (vault, secret manager).
 - Revoke keys when staff change roles or incidents occur.
 - Rotate keys regularly and update applications with the new secrets before revoking the old ones.
 
+![TODO: Tenant API key create modal](../assets/screenshots/tenant-api-key-create.png)
+
 ## Budgets, Rate Limits, and Alerts
 
-1. Define tenant-level budgets under **Tenants → Budgets**. Configure:
+1. Define tenant-level budgets under **Tenants -> Budgets**. Configure:
    - USD amount
    - Refresh schedule (rolling/weekly/calendar)
    - Warning threshold (percentage)
@@ -58,11 +67,15 @@ Roles:
 3. Adjust rate limits (RPM/TPM/parallel) under the same screens. Platform defaults set the ceiling; tenant overrides can only go lower unless a platform admin raises them.
 4. Test alerts with the **Send test alert** button to verify recipients and webhook endpoints.
 
+![TODO: Tenant budget and limit overrides](../assets/screenshots/tenant-budgets-limits.png)
+
 ## Monitoring Usage
 
 - **Usage dashboard**: filter by model, API key, or timeframe. Monitor token counts, latency, provider health, and 4xx/5xx rates.
 - **Budget cards**: show remaining USD and next refresh. Investigate spikes early to avoid enforced `402 budget_exceeded` errors.
 - **Response headers**: propagate to clients via `X-Budget-*` and `X-RateLimit-*` headers for client-side telemetry.
+
+![TODO: Tenant usage dashboard filters](../assets/screenshots/tenant-usage-dashboard.png)
 
 ## Working with Users
 

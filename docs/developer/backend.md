@@ -71,7 +71,7 @@ Register adapters via `internal/providers` and read the [provider guides](./prov
 Enable OTEL spans (`executor`, `ratelimiter`, `budget-evaluator`) and Prometheus metrics (`/metrics`) as described in [observability](./observability.md). `/healthz` exposes Postgres/Redis latency so dashboards can render status without Grafana.
 
 ## Configure environments
-Use `docs/runtime/router.example.yaml` and `docs/runtime/config.md` as templates, then override knobs via `ROUTER_*` env vars. Leverage `bootstrap.*` blocks to seed admin users, tenants, keys, budgets, and limits for dev installs.
+Use `deploy/router.example.yaml` and `docs/admin/runtime/config.md` as templates, then override knobs via `ROUTER_*` env vars. Leverage `bootstrap.*` blocks to seed admin users, tenants, keys, budgets, and limits for dev installs.
 
 ## Continue building
 Track upcoming work in `agents.md`. Focus on provider coverage, budget + alert UX, usage exports and billing hooks, observability wins, and adapter resilience tests.

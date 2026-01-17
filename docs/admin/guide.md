@@ -1,6 +1,6 @@
 # Platform administrator guide
 
-Use this handbook when you are responsible for deploying, operating, and auditing Open Model Gateway. It consolidates every operator-facing workflow—deployment, defaults, model catalogs, budgets, automation, and troubleshooting—so you can run the router without jumping between multiple docs.
+Use this handbook for day-2 operations once the system is installed. It consolidates operator-facing workflows (catalogs, budgets, tenant onboarding, automation, and troubleshooting) so you can run the router without jumping between multiple docs. For installation and upgrades, start with `docs/admin/install.md`.
 
 ## Overview & responsibilities
 
@@ -9,6 +9,16 @@ Use this handbook when you are responsible for deploying, operating, and auditin
 - Onboard tenants/admins, grant roles, and issue scoped API keys with budgets + rate limits.
 - Respond to incidents (budget exhaustion, provider failures, auth errors) and keep stakeholders informed.
 - Automate repetitive admin flows using the `/admin/*` API surface or the provided curl scripts.
+
+## Portal access
+
+| Surface | Path | Notes |
+| --- | --- | --- |
+| Admin portal | `/admin/ui` | Tenant management, model catalog, provider health, budgets, audit log. |
+| User portal | `/` | Tenant admin self-service, personal tenants, usage dashboards. |
+| Admin API | `/admin/*` | Automation endpoints for tenants, keys, budgets, providers. |
+| User API | `/user/*` | Tenant-scoped usage, keys, and memberships. |
+| Public API | `/v1/*` | OpenAI-compatible endpoints for workloads. |
 
 ### Architecture & dependencies
 
@@ -23,48 +33,24 @@ Use this handbook when you are responsible for deploying, operating, and auditin
 
 ## Deploy & upgrade
 
-### Option A – release bundle / systemd
-
-1. Download `open-model-gateway_<tag>_<os>_<arch>.tar.gz` from GitHub Releases.
-2. Extract into `/opt/open-model-gateway` (or another prefix) and copy `deploy/router.local.yaml` to your config path.
-3. Set ENV secrets:
-   ```bash
-   export ROUTER_CONFIG_FILE=/etc/open-model-gateway/router.yaml
-   export ROUTER_DB_URL=postgres://user:pass@db:5432/open_gateway?sslmode=disable
-   export ROUTER_REDIS_URL=redis://cache:6379/0
-   export ROUTER_ADMIN_SESSION_JWT_SECRET=<hmac-secret>
-   ```
-4. Run migrations (let `routerd` run them via `database.run_migrations: true` or invoke `goose up`).
-5. Supervise with systemd, Nomad, or Kubernetes and expose the chosen `server.listen_addr` (default `:8090`).
-6. Smoke test using [Code_Examples/curl](../../Code_Examples/curl/README.md) (`models.sh`, `chat.sh`, `admin.sh`).
-
-### Option B – Docker / container platforms
-
-1. Fill `deploy/router.local.yaml` with provider keys, bootstrap tenants, budgets, rate limits, and OTEL targets.
-2. Start the stack:
-   ```bash
-   cd deploy
-   docker compose up -d
-   ```
-3. Use `docker compose -f docker-compose.dev.yml up --build` to bake local edits.
-4. Publish multi-arch images via `docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/<org>/open_model_gateway:latest --push .`.
+Install and upgrade steps now live in `docs/admin/install.md` so this guide can focus on day-2 operations. Use that guide for release bundles, Docker/Compose, and Kubernetes guidance.
 
 ### Configuration hygiene
 
 - Keep env-specific configs under `deploy/` and reference them with `ROUTER_CONFIG_FILE`.
 - Store secrets (DB/Redis URLs, provider keys, JWT secrets) in your secret manager and inject via ENV (`ROUTER_DB_URL`, `ROUTER_PROVIDERS_AZURE_OPENAI_KEY`, etc.).
 - Use the `bootstrap.*` block for idempotent tenants/admins/keys. Restarting applies deltas safely.
-- Document any overrides from `docs/runtime/router.example.yaml` in your runbooks so on-call responders know what changed.
+- Document any overrides from `docs/admin/runtime/router-example.md` in your runbooks so on-call responders know what changed.
 - Upgrades: rebuild `routerd` after `make build-ui`, redeploy, and let migrations run (`database.run_migrations: true`) or run `goose` manually. Catalog edits hot-reload; send `SIGHUP` or restart after YAML changes.
 
 ## Configure defaults & runtime settings
 
-`docs/runtime/config.md` lists every key. Operators regularly touch the sections below:
+`docs/admin/runtime/config.md` lists every key. Operators regularly touch the sections below:
 
 | Block | What to tune | Notes |
 | --- | --- | --- |
 | `rate_limits.*` | Default RPM/TPM/parallel ceilings for tenants + keys. | Tenant overrides can only lower the ceiling; keys never exceed tenant limits. |
-| `budgets.*` | Default USD budget, refresh cadence (`calendar_month`, `weekly`, `rolling_30d`), alert channels (`emails`, `webhooks`). | Alerts require SMTP/webhook config; see “Budgets & alerts”. |
+| `budgets.*` | Default USD budget, refresh cadence (`calendar_month`, `weekly`, `rolling_30d`), alert channels (`emails`, `webhooks`). | Alerts require SMTP/webhook config; see "Budgets & alerts". |
 | `providers.*` | Shared credentials/endpoints (OpenAI, Azure, Bedrock, Vertex, Anthropic, OpenRouter, Groq, vLLM, openai-compatible). | Catalog entries can override per alias via metadata. |
 | `files.*` | Upload size, TTLs, storage backend (local/S3), encryption key, sweeper cadence. | Applies to `/v1/files` and batch output/error artifacts. |
 | `batches.*` | `max_requests`, `max_concurrency`, TTLs for output files. | Keep within Redis/Postgres capacity. |
@@ -74,25 +60,29 @@ Use this handbook when you are responsible for deploying, operating, and auditin
 
 ## Manage tenants, memberships, and keys
 
+![TODO: Admin tenants table and create tenant modal](../assets/screenshots/admin-tenants-create.png)
+
 | Task | Portal path / API |
 | --- | --- |
-| Create tenant | **Admin → Tenants → New** or `POST /admin/tenants` |
-| Manage members/roles | **Admin → Tenants → Members** or `POST/DELETE /admin/tenants/{id}/memberships` |
-| Invite admins | **Admin → Users → Invite** or `POST /admin/users` |
-| Issue API keys | **Admin → Tenants → API Keys** or `POST /admin/tenants/{id}/api-keys` |
-| Reset tenant rate limits | **Admin → Tenants → Rate limits → Clear override** or `DELETE /admin/tenants/{id}/rate-limits` |
+| Create tenant | **Admin -> Tenants -> New** or `POST /admin/tenants` |
+| Manage members/roles | **Admin -> Tenants -> Members** or `POST/DELETE /admin/tenants/{id}/memberships` |
+| Invite admins | **Admin -> Users -> Invite** or `POST /admin/users` |
+| Issue API keys | **Admin -> Tenants -> API Keys** or `POST /admin/tenants/{id}/api-keys` |
+| Reset tenant rate limits | **Admin -> Tenants -> Rate limits -> Clear override** or `DELETE /admin/tenants/{id}/rate-limits` |
 
 Guidance:
 - Leave tenant rate-limit fields blank to inherit `rate_limits.*`. Overrides clamp all keys in that tenant.
 - When creating keys, specify budgets and RPM/TPM/parallel overrides per key; the UI shows the effective ceiling based on tenant + global defaults.
-- Audit membership/role changes under **Admin → Settings → Audit log**.
-- Tenant owners can self-serve within **Tenants → Members** but only super admins can edit global catalog entries or provider settings.
+- Audit membership/role changes under **Admin -> Settings -> Audit log**.
+- Tenant owners can self-serve within **Tenants -> Members** but only super admins can edit global catalog entries or provider settings.
 
 ## Providers & model catalog
 
+![TODO: Admin model catalog list + edit drawer](../assets/screenshots/admin-model-catalog.png)
+
 1. Load credentials under `providers.<slug>` and keep secrets in ENV.
 2. Create aliases via the UI or `model_catalog` YAML, capturing deployment IDs, supported modalities, pricing, routing weight, health policy, and tenant assignment flags.
-3. Monitor **Admin → Providers** or `/admin/providers` for health/incidents. The router polls upstreams, records incidents, and automatically down-weights unhealthy deployments.
+3. Monitor **Admin -> Providers** or `/admin/providers` for health/incidents. The router polls upstreams, records incidents, and automatically down-weights unhealthy deployments.
 4. Adjust routing weights or disable affected aliases during incidents. Responses stay OpenAI-compatible, so clients retry without code changes.
 5. Reference `docs/admin/model-catalog-examples.md` (copied from the legacy library) for per-provider YAML templates, pricing tiers, and capability overrides.
 
@@ -119,6 +109,8 @@ Define audio aliases with `model_type: audio_transcription` or `audio_speech` so
 
 ## Budgets, alerts, and billing workflows
 
+![TODO: Admin budgets settings panel](../assets/screenshots/admin-budgets-settings.png)
+
 - Default budgets come from `budgets.default_usd`, `warning_threshold_perc`, and `refresh_schedule`. Tenants inherit them unless you add overrides via `bootstrap.tenant_budgets` or the portal.
 - Per-key budgets can be set at key creation time; they can never exceed the tenant budget.
 - Alert routing:
@@ -126,7 +118,7 @@ Define audio aliases with `model_type: audio_transcription` or `audio_speech` so
   - **Webhook**: configure `budgets.alert.webhook.*` (timeout, retries). Payloads mirror the email body and include HMAC signatures.
   - Alert history lives in `budget_alert_events` and will surface in future UI releases.
 - Every API response includes `X-Budget-*` and `X-RateLimit-*` headers, so you can verify changes without opening the UI.
-- Usage exports + billing webhooks (`/admin/usage-exports`, `/admin/billing-webhooks`) are documented in `docs/runtime/usage.md`. Use them to hand finance teams CSV/Parquet exports or to post monthly summaries into billing systems.
+- Usage exports + billing webhooks (`/admin/usage-exports`, `/admin/billing-webhooks`) are documented in `docs/admin/runtime/usage.md`. Use them to hand finance teams CSV/Parquet exports or to post monthly summaries into billing systems.
 
 ## Storage, files, and batch jobs
 
@@ -145,16 +137,14 @@ Define audio aliases with `model_type: audio_transcription` or `audio_speech` so
 
 ## Monitoring, incidents, and analytics
 
+![TODO: Admin provider incidents view](../assets/screenshots/admin-provider-incidents.png)
+
 - Health endpoints: `/healthz` (JSON), `/metrics` (Prometheus, gated by `observability.enable_metrics`).
 - OTEL: set `observability.enable_otlp=true` and point `observability.otlp_endpoint` at your collector (enable TLS for remote collectors).
-- Provider incidents: **Admin → Providers** lists each deployment, last probe, error rate, and any incidents. `/admin/providers` exposes the same data for automation.
-- Usage dashboards: **Admin → Usage** and `/admin/usage/compare` overlay tenants/models. Query params `tenant_ids`, `model_aliases`, `period`, `start`, `end`, `timezone` mirror the API (capped at 10 entities per request). The user portal uses `/user/usage/compare` scoped to the caller’s tenants.
-- Logs: monitor budget alerts, provider incidents, batch workers, and file sweepers via application logs (structured output includes request IDs).
+- Provider incidents: **Admin -> Providers** lists each deployment, last probe, error rate, and any incidents. `/admin/providers` exposes the same data for automation.
+- Usage dashboards: **Admin -> Usage** and `/admin/usage/compare` overlay tenants/models. Query params `tenant_ids`, `model_aliases`, `period`, `start`, `end`, `timezone` mirror the API (capped at 10 entities per request). The user portal uses `/user/usage/compare` scoped to the caller's tenants.
+- Admin API tokens (Settings -> Admin tokens) remove the need for browser sessions. Tokens are only shown once, scoped to the issuing admin or super-admin, and require an expiry.
 
-## Automation & admin API tokens
-
-- Use `POST /admin/auth/login` with JSON `{"email":"...","password":"..."}` to obtain an access token and call `/admin/*` endpoints.
-- Admin API tokens (Settings → Admin tokens) remove the need for browser sessions. Tokens are only shown once, scoped to the issuing admin or super-admin, and require an expiry.
   ```bash
   curl -sS -X POST http://localhost:8090/admin/admin-keys \
     -H "Authorization: Bearer $ADMIN_SESSION" \

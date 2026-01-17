@@ -8,12 +8,10 @@ Finance and RevOps teams need self-serve access to normalized token/spend data w
 ## Implementation Overview
 
 ### Export Delivery
-1. **Export Service** – new `internal/services/exports` package that queries the aggregated usage tables and writes CSV/Parquet blobs to the existing Files backend (purpose=`usage_export`).
-2. **API Surface** –
-   - `POST /user/usage-exports` and `/admin/usage-exports` for scoped vs. global exports.
-   - `GET /user/usage-exports/:id` to poll status and download the generated file.
-   - Query params: tenant IDs, date range (max 90 days), granularity (daily/monthly), currency override.
-3. **Scheduling** – optional cron that auto-generates monthly exports per tenant and emails a signed download link.
+1. **Export Service** - new `internal/services/exports` package that queries the aggregated usage tables and writes CSV/Parquet blobs to the existing Files backend (purpose=`usage_export`).
+2. **API Surface** -
+3. **Scheduling** - optional cron that auto-generates monthly exports per tenant and emails a signed download link.
+
 
 ### Billing Webhooks
 1. Extend the notification service with a `billing_summary` webhook type. Payload: `{tenant_id, period_start, period_end, spend, token_counts, top_models}`.
@@ -33,10 +31,10 @@ Finance and RevOps teams need self-serve access to normalized token/spend data w
 - **Database**: materialized views or temp tables to speed up long-range exports; `usage_exports` table to track status/metadata.
 - **Files service**: new purpose + TTL defaults.
 - **Frontend**: admin + user portal panels showing export history, download buttons, and webhook configuration (pending).
-- **Docs/Samples**: see `docs/runtime/usage.md` for current payloads and curl examples.
+- **Docs/Samples**: see `docs/admin/runtime/usage.md` for current payloads and curl examples.
 
 ## Risks & Considerations
-- Large exports may exceed request timeouts → perform work asynchronously and poll status.
+- Large exports may exceed request timeouts; perform work asynchronously and poll status.
 - Ensure tenant scoping is enforced so users cannot export other tenants’ data.
 - Hook payloads should be idempotent and signed (HMAC) to avoid duplicate billing entries.
 

@@ -54,5 +54,5 @@ Ensure the gateway namespace can reach the collector Service through network pol
 ---
 
 #### Research
-- Adapted instructions from `docs/runtime/observability.md` and deployment manifests in `deploy/otel-collector*.yaml`.
+- Adapted instructions from deployment manifests in `deploy/otel-collector*.yaml` and recent telemetry updates.
 - Confirmed OTLP env overrides and metric names via recent observability work logged in `AGENTS.md`.

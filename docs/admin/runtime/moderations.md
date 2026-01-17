@@ -53,5 +53,5 @@ Grant tenants access through the model catalog UI or `default_models` when every
 ---
 
 #### Research
-- Ported behavior from `docs/runtime/moderations.md` and validated routing across adapters mentioned in `docs/architecture/providers/adding.md`.
+- Ported behavior from the original moderation runtime guide and validated routing across adapters mentioned in `docs/architecture/providers/adding.md`.
 - Checked batch integration against `backend/internal/runtime/batches` so NDJSON outputs stay in lockstep with chat jobs.

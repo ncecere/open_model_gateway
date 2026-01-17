@@ -26,7 +26,7 @@ This guide describes how to extend Open Model Gateway, from architecture concept
 - Key sections: `server`, `database`, `redis`, `providers.<slug>`, `model_catalog`, `rate_limits`, `budgets`, `bootstrap`, `observability`, `health`, `admin`.
 - Provider definitions register through `internal/providers` and optionally load secret overrides from ENV (e.g., `ROUTER_PROVIDERS_AZURE_OPENAI_KEY`).
 - `bootstrap` is idempotent; edits re-sync tenants, keys, default models, and limits on restart.
-- Store per-environment overlays (dev/stage/prod) under `deploy/` or `docs/runtime/` to keep reviewed configs alongside the repo.
+- Store per-environment overlays (dev/stage/prod) under `deploy/` or `docs/admin/runtime/` to keep reviewed configs alongside the repo.
 
 ## Daily workflows
 
@@ -35,7 +35,7 @@ This guide describes how to extend Open Model Gateway, from architecture concept
 ```bash
 make compose-up          # Postgres + Redis via Docker
 bun install --cwd backend/frontend
-cp docs/runtime/router.example.yaml deploy/router.local.yaml
+cp deploy/router.example.yaml deploy/router.local.yaml
 export ROUTER_CONFIG_FILE=$(pwd)/deploy/router.local.yaml
 ```
 
@@ -64,7 +64,7 @@ export ROUTER_CONFIG_FILE=$(pwd)/deploy/router.local.yaml
 - Branch naming: `feat/<area>-<slug>`, `fix/<bug-id>`, or `docs/<topic>`; reference work items when available.
 - Keep PRs scoped (backend vs frontend vs docs) and mention cross-cutting impacts in the description.
 - Always run `make test-backend` and the relevant frontend tests before pushing; attach output snippets in the PR.
-- Document new config knobs or provider behaviors in `docs/runtime/config.md` and `docs/architecture/providers/adding.md`.
+- Document new config knobs or provider behaviors in `docs/admin/runtime/config.md` and `docs/architecture/providers/adding.md`.
 - Update `Code_Examples/` when adding endpoints or headers so operators have copy/pasteable snippets.
 - Use `docs:`-prefixed commit messages for documentation-only changes to keep history readable.
 

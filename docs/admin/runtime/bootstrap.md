@@ -73,5 +73,5 @@ Keep sensitive values (admin passwords, API key secrets) in environment-specific
 ---
 
 #### Research
-- Mirrored behavior from `docs/runtime/bootstrap.md` and cross-referenced rate limit + budget overrides with `AGENTS.md` release notes.
+- Mirrored behavior from the original runtime bootstrap guide and cross-referenced rate limit + budget overrides with `AGENTS.md` release notes.
 - Validated key structure against `backend/internal/bootstrap` services to ensure field names match current structs.

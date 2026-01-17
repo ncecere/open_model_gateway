@@ -140,5 +140,5 @@ batches:
 ---
 
 #### Research
-- Pulled authoritative values from `docs/runtime/config.md` and the existing `docs/runtime/router.example.yaml` sample.
+- Pulled authoritative values from `deploy/router.example.yaml` and the config defaults used by the router.
 - Cross-referenced provider metadata in `docs/architecture/providers/*.md` and recent admin settings releases noted in `AGENTS.md`.

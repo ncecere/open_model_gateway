@@ -144,7 +144,7 @@ All notable changes to this project will be documented in this file. The format 
 ## [v0.1.26] - 2026-01-06
 ### Fixed
 - Increased HTTP read/write buffer sizes to prevent 431 errors from large request headers (cookies).
-- Restored `docs/runtime/router.example.yaml` so release packaging can bundle the sample config.
+- Restored `docs/runtime/router.example.yaml` so release packaging can bundle the sample config. (Runtime docs now live under `docs/admin/runtime/`.)
 
 ## [v0.1.25] - 2025-12-24
 ### Added
@@ -219,7 +219,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [v0.1.20] - 2025-12-20
 ### Added
-- Dedicated pricing documentation (`docs/runtime/pricing.md`) detailing tier schema, supported units, metadata semantics, admin/API workflows, and copy/paste YAML samples for LLM/image/audio/video aliases.
+- Dedicated pricing documentation (`docs/admin/runtime/pricing.md`) detailing tier schema, supported units, metadata semantics, admin/API workflows, and copy/paste YAML samples for LLM/image/audio/video aliases.
 - `pricing_tiers` coverage in the runtime config reference so operators can discover the new knobs directly from the Model Catalog docs.
 - Reasoning-token telemetry: adapters store provider reasoning counts, `models.Usage` records them, and OpenAI-compatible responses/batch worker payloads now expose `usage.reasoning_tokens` when the upstream includes that counter.
 
@@ -350,7 +350,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 - Implemented the OpenAI-compatible `/v1/moderations` endpoint end-to-end: provider interfaces/adapters, HTTP handler with budgets/rate limits, batch worker integration, config samples, documentation, and admin/user defaults so tenants can route moderation traffic through the gateway without hitting upstream APIs directly.
 ### Documentation
-- Added `docs/runtime/moderations.md`, README/roadmap updates, and sample config entries that highlight how to onboard moderation aliases (native OpenAI, Azure deployments, or OpenAI-compatible stacks).
+- Added `docs/admin/runtime/moderations.md`, README/roadmap updates, and sample config entries that highlight how to onboard moderation aliases (native OpenAI, Azure deployments, or OpenAI-compatible stacks).
 
 ## [v0.1.5] - 2025-11-15
 ### Added

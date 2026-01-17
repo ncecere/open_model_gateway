@@ -214,5 +214,5 @@ Keep `pricing_tiers` aligned with upstream contracts so usage exports and per-te
 ---
 
 #### Research
-- Rebased every snippet from `docs/runtime/router.example.yaml` to keep parity with the canonical sample.
+- Rebased every snippet from `deploy/router.example.yaml` to keep parity with the canonical sample.
 - Ensured provider coverage matches current adapters listed in `AGENTS.md` and `docs/architecture/providers/adding.md`.

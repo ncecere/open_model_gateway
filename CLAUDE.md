@@ -75,7 +75,7 @@ React/Vite with TypeScript, Tailwind CSS, and shadcn/ui components. Two portals:
 
 ## Configuration
 
-Primary config: `deploy/router.local.yaml` (copy from `docs/runtime/router.example.yaml`)
+Primary config: `deploy/router.local.yaml` (copy from `deploy/router.example.yaml`)
 
 Key sections:
 - `server`: Listener address, timeouts, body limits

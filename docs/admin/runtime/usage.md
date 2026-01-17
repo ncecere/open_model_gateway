@@ -72,5 +72,5 @@ Retries obey the global webhook timeout and `max_retries` set under `budgets.ale
 ---
 
 #### Research
-- Lifted payloads, field names, and flow details from `docs/runtime/usage.md`.
+- Lifted payloads, field names, and flow details from the original usage runtime guide.
 - Confirmed webhook signature headers and retry settings against the limiter + alerting releases listed in `AGENTS.md`.

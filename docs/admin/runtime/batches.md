@@ -25,7 +25,7 @@ description: Align batch jobs with OpenAI semantics
 | `finalizing` | Results are being flushed to files. | `finalizing_at`. |
 | `completed` | All items processed; errors file may still hold failed rows. | `completed_at`, `expires_at`. |
 | `failed` | Batch aborted due to validation/runtime error. | `failed_at`, `errors` filled. |
-| `cancelling` → `cancelled` | User requested cancellation before completion. | `cancelling_at`, `cancelled_at`. |
+| `cancelling` -> `cancelled` | User requested cancellation before completion. | `cancelling_at`, `cancelled_at`. |
 | `expired` | Output TTL elapsed. | `expired_at`. |
 
 `request_counts.total/completed/failed` must stay in sync with status changes so exports show accurate throughput.
@@ -59,5 +59,5 @@ Switch list APIs to cursor pagination (`after`, `limit`, `has_more`) to match SD
 ---
 
 #### Research
-- Adopted the authoritative content from `docs/runtime/batches.md` and upstream Azure/OpenAI references cited there.
+- Adopted the authoritative content from upstream Azure/OpenAI references cited in the original runtime guide.
 - Confirmed status timestamps and NDJSON schema with the latest worker implementation in `backend/internal/runtime/batches`.

@@ -42,6 +42,7 @@ type Provider struct {
 	providerErrors      *promreg.CounterVec
 	providerStreams     *promreg.GaugeVec
 	responsesCounter    *promreg.CounterVec
+	authFailuresCounter *promreg.CounterVec
 }
 
 func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, error) {
@@ -191,7 +192,7 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		}
 		providerLatency := promreg.NewHistogramVec(
 			promreg.HistogramOpts{
-				Namespace: "gateway",
+				Namespace: "open_model_gateway",
 				Name:      "provider_request_duration_seconds",
 				Help:      "Upstream provider latency by alias/provider/route.",
 				Buckets:   []float64{0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20},
@@ -200,7 +201,7 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		)
 		providerRequests := promreg.NewCounterVec(
 			promreg.CounterOpts{
-				Namespace: "gateway",
+				Namespace: "open_model_gateway",
 				Name:      "provider_requests_total",
 				Help:      "Total provider requests by outcome.",
 			},
@@ -208,7 +209,7 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		)
 		providerTokens := promreg.NewCounterVec(
 			promreg.CounterOpts{
-				Namespace: "gateway",
+				Namespace: "open_model_gateway",
 				Name:      "provider_tokens_total",
 				Help:      "Tokens per provider/model alias.",
 			},
@@ -216,7 +217,7 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		)
 		providerErrors := promreg.NewCounterVec(
 			promreg.CounterOpts{
-				Namespace: "gateway",
+				Namespace: "open_model_gateway",
 				Name:      "provider_upstream_errors_total",
 				Help:      "Upstream provider errors by class.",
 			},
@@ -224,7 +225,7 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		)
 		providerStreams := promreg.NewGaugeVec(
 			promreg.GaugeOpts{
-				Namespace: "gateway",
+				Namespace: "open_model_gateway",
 				Name:      "provider_active_streams",
 				Help:      "In-flight provider streams by route.",
 			},
@@ -270,6 +271,19 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 			return nil, err
 		}
 		provider.responsesCounter = responsesCounter
+
+		authFailures := promreg.NewCounterVec(
+			promreg.CounterOpts{
+				Namespace: "open_model_gateway",
+				Name:      "auth_failures_total",
+				Help:      "Authentication/authorization failures by type and source.",
+			},
+			[]string{"type", "source"},
+		)
+		if err := registry.Register(authFailures); err != nil {
+			return nil, err
+		}
+		provider.authFailuresCounter = authFailures
 	}
 
 	return provider, nil
@@ -417,4 +431,14 @@ func (p *Provider) RecordResponsesRequest(model, status, truncation string, hasT
 		reasoningLabel = "true"
 	}
 	p.responsesCounter.WithLabelValues(model, status, truncation, toolsLabel, reasoningLabel).Inc()
+}
+
+// RecordAuthFailure increments the auth failure counter.
+// failureType: "invalid_key", "expired_token", "missing_token", "rate_limited", "forbidden"
+// source: "api", "admin", "user"
+func (p *Provider) RecordAuthFailure(failureType, source string) {
+	if p == nil || p.authFailuresCounter == nil {
+		return
+	}
+	p.authFailuresCounter.WithLabelValues(failureType, source).Inc()
 }

@@ -6,6 +6,33 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Added
 #### Backend
+- **CORS middleware** — configurable cross-origin resource sharing via `server.cors.*` config fields (allowed origins, methods, headers, credentials, max age).
+- **Auth rate limiting** — in-memory sliding-window rate limiter for `/admin/auth/login` and `/admin/auth/refresh` endpoints, configurable via `server.auth_rate_limit.*`.
+- **CSRF origin check** — validates `Origin` header on cookie-authenticated admin mutating requests to prevent cross-site request forgery.
+- **Security headers middleware** — sets `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, `Content-Security-Policy`, and `Referrer-Policy` on all responses, configurable via `server.security.*`.
+- **Readiness probe** (`/readyz`) — checks Postgres pool and Redis connectivity, returns 503 when not ready.
+- **Executor retry consolidation** — extracted generic `executeWithRetry[T]()` in `internal/executor/retry_loop.go`, eliminating ~400 lines of duplicated retry logic across `Chat()`, `Image()`, `Embed()`, `Moderate()`.
+- **Shared `DecodeAPIError`** in `adapters/base` — unified provider error decoding with Retry-After support (429/503/529), JSON body parsing, and status code mapping. Replaces 4 per-adapter implementations (anthropic, groq, openrouter, vertex).
+- **Auth failure Prometheus counter** — `open_model_gateway_auth_failures_total` metric with `type` and `source` labels, wired into API key authentication middleware.
+- **Database indexes migration** — adds indexes on `usage_records(api_key_id)`, `tenant_memberships(user_id)`, `requests(api_key_id)` for frequently queried columns.
+- **Config validations** — `logging.level` must be debug/info/warn/error, `logging.format` must be text/json, `server.body_limit_mb > 0`, `jwt_secret >= 16 chars`.
+- **Structured outputs pass-through** — `/v1/chat/completions` now forwards `response_format` (including `json_schema` for structured outputs) to upstream providers. Previously silently dropped.
+
+#### Frontend
+- **Shared currency formatter** — consolidated 7 inline `Intl.NumberFormat` instances into `formatPricingCurrency()` and `currencyFormatter` exports in `src/lib/formatters.ts`.
+- **Dead code removal** — deleted unused `src/auth/useAuth.ts` (canonical hook is `src/hooks/useAuth.ts`).
+- **TypeScript fix** — fixed `AxiosError` generic type in `errors.test.ts` to resolve `tsc` build failure.
+
+### Changed
+#### Backend
+- **Prometheus namespace unified** — 5 provider telemetry metrics changed from `gateway_*` to `open_model_gateway_*` for consistency with all other metrics.
+- **Adapter error handling cleaned up** — removed dead error types (`apiError`, `apiErrorResponse`, `vertexAPIError`) after consolidation into shared `base.DecodeAPIError`.
+- **Streaming JSON parse errors logged** — 5 adapter streaming files (bedrock, anthropic, groq, openrouter, vllm) now emit `slog.Warn` instead of silently dropping `json.Unmarshal` errors.
+- **Config error message fixed** — corrected misleading `ROUTER_DB_URL` → `ROUTER_DATABASE_URL` in config validation.
+- **Duplicate bootstrap call removed** — removed redundant `bootstrap.Ensure` invocation from `container.go` (already called in `services.go`).
+- **Migration fixed** — removed `CONCURRENTLY` from `CREATE INDEX` statements incompatible with Goose transactional migrations.
+
+### Added
 - **Tokenizer package** (`internal/tokenizer/`) — pure-Go token counting via `tiktoken-go` with `o200k_base` for newer OpenAI models and `cl100k_base` as universal fallback for Anthropic/Bedrock/Vertex/Groq/OpenRouter/Llama (~5-10% variance vs chars/4 at ~50%). Lazy-init with RWMutex caching, `CountTokens`, `MustCountTokens`, `EstimateMessageTokens` helpers, and 8 tests.
 - **Retry-After header parser** (`internal/adapters/retryafter/`) — parses `Retry-After` as delta-seconds or HTTP-date, with convenience constructors for rate-limit and overload errors. 8 tests.
 - **`RetryAfter` field on `apperror.Error`** — new `RateLimitedWithRetryAfter` constructor and `GetRetryAfter` helper to propagate provider backpressure through the error chain.

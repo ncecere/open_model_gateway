@@ -25,6 +25,9 @@ type openAIChatRequest struct {
 	ToolChoice        json.RawMessage `json:"tool_choice,omitempty"`
 	ParallelToolCalls *bool           `json:"parallel_tool_calls,omitempty"`
 
+	// Structured output / response format
+	ResponseFormat json.RawMessage `json:"response_format,omitempty"`
+
 	// Legacy function calling (deprecated, converted to tools)
 	Functions    json.RawMessage `json:"functions,omitempty"`
 	FunctionCall json.RawMessage `json:"function_call,omitempty"`
@@ -89,14 +92,15 @@ func (h *openAIHandler) chatCompletions(c *fiber.Ctx) error {
 	idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
 
 	modelReq := models.ChatRequest{
-		Messages:          messages,
-		Temperature:       req.Temperature,
-		TopP:              req.TopP,
-		MaxTokens:         req.MaxTokens,
-		Stop:              stop,
-		Tools:             tools,
-		ToolChoice:        toolChoice,
-		ParallelToolCalls: parallelToolCalls,
+		Messages:           messages,
+		Temperature:        req.Temperature,
+		TopP:               req.TopP,
+		MaxTokens:          req.MaxTokens,
+		Stop:               stop,
+		Tools:              tools,
+		ToolChoice:         toolChoice,
+		ParallelToolCalls:  parallelToolCalls,
+		ChatResponseFormat: req.ResponseFormat,
 	}
 
 	if req.Stream {

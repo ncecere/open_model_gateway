@@ -181,100 +181,27 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 		return ChatResult{}, err
 	}
 
-	budgetStatus, err := e.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
-	if err != nil {
-		e.spanError(span, err)
-		return ChatResult{}, err
-	}
-	if budgetStatus.Exceeded {
-		_, _ = e.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return ChatResult{BudgetStatus: budgetStatus}, NewAPIError(fiber.StatusForbidden, "tenant budget exceeded")
-	}
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := e.container.AcquireRateLimits(ctx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			err = NewAPIError(fiber.StatusTooManyRequests, "rate limit exceeded")
-			e.spanError(span, err)
-			return ChatResult{}, err
-		}
-		e.spanError(span, err)
-		return ChatResult{}, err
-	}
-	defer func() {
-		if release != nil {
-			release()
-		}
-	}()
-
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-
-	for _, route := range routes {
-		if route.Chat == nil {
-			continue
-		}
-		lastRoute = route
-		req.Model = route.ResolveDeployment()
-		retryCfg := normalizedRetry(route)
-
-		for attempt := 1; attempt <= retryCfg.MaxAttempts; attempt++ {
-			attemptCtx, attemptSpan := execTracer.Start(ctx, "Executor.ChatAttempt", trace.WithAttributes(
-				attribute.String("provider", route.Provider),
-				attribute.String("model", route.Model),
-				attribute.Int("attempt", attempt),
-			))
-			start := time.Now()
+	result, err := executeWithRetry(ctx, e, span, rc, routes, retryLoopConfig[models.ChatResponse]{
+		spanName: "Executor.Chat",
+		alias:    alias,
+		traceID:  traceID,
+		routeFilter: func(route providers.Route) bool {
+			return route.Chat != nil
+		},
+		call: func(attemptCtx context.Context, route providers.Route) (routeCallResult[models.ChatResponse], error) {
+			req.Model = route.ResolveDeployment()
 			resp, err := route.Chat.Chat(attemptCtx, req)
-			elapsed := time.Since(start)
 			if err != nil {
-				e.container.Engine.ReportFailure(alias, route)
-				lastLatency = elapsed
-				lastErr = err
-				retryable := shouldRetryProvider(err)
-				attemptSpan.RecordError(err)
-				attemptSpan.SetStatus(codes.Error, err.Error())
-				attemptSpan.End()
-
-				if retryable && attempt < retryCfg.MaxAttempts {
-					e.recordRetry(rc, alias, route.Provider, retryReason(err))
-					delay := retryDelay(err, retryCfg.InitialBackoff, retryCfg.BackoffMultiplier, attempt)
-					if delay > 0 {
-						if err := waitForRetry(ctx, delay); err != nil {
-							return ChatResult{}, err
-						}
-					}
-					continue
-				}
-				break
+				return routeCallResult[models.ChatResponse]{}, err
 			}
-			e.container.Engine.ReportSuccess(alias, route)
-			lastLatency = elapsed
-			attemptSpan.SetAttributes(attribute.Float64("duration_ms", float64(elapsed.Milliseconds())))
-			attemptSpan.SetStatus(codes.Ok, "")
-			attemptSpan.End()
-
-			if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
-				if err := e.consumeTokens(ctx, keyKey, tenantKey, tokens, keyCfg, tenantCfg); err != nil {
-					return ChatResult{}, err
-				}
-			}
-
-			record := usagepipeline.Record{
+			return routeCallResult[models.ChatResponse]{response: resp, usage: resp.Usage}, nil
+		},
+		buildRecord: func(rc *requestctx.Context, alias string, route providers.Route, usage models.Usage, elapsed time.Duration, traceID string) usagepipeline.Record {
+			return usagepipeline.Record{
 				Context:        rc,
 				Alias:          alias,
 				Provider:       route.Provider,
-				Usage:          resp.Usage,
+				Usage:          usage,
 				Latency:        elapsed,
 				Status:         fiber.StatusOK,
 				IdempotencyKey: idempotencyKey,
@@ -282,54 +209,21 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 				Timestamp:      time.Now().UTC(),
 				Success:        true,
 			}
-			budgetStatus, err := e.container.UsageLogger.Record(ctx, record)
-			if err != nil {
-				return ChatResult{}, err
-			}
-
-			span.SetStatus(codes.Ok, "")
-			e.recordProviderSample(ctx, rc, route, alias, elapsed, providermetrics.ResultSuccess, nil, resp.Usage)
-			return ChatResult{
-				Response:     resp,
-				BudgetStatus: budgetStatus,
-				Metrics: ExecutionMetrics{
-					Provider:      route.Provider,
-					ProviderModel: route.Model,
-					Deployment:    route.ResolveDeployment(),
-					LatencyMs:     elapsed.Milliseconds(),
-					RetryCount:    attempt - 1,
-					RouteCount:    len(routes),
-					CostMicroUSD:  budgetStatus.LastRecordCostMicros,
-				},
-			}, nil
-		}
+		},
+	})
+	if err != nil {
+		return ChatResult{BudgetStatus: result.budgetStatus}, err
 	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	e.spanError(span, lastErr)
-	if lastRoute.Provider != "" {
-		_, _ = e.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Latency:   lastLatency,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: lastErr.Error(),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-	e.recordProviderSample(ctx, rc, lastRoute, alias, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
-
-	return ChatResult{}, NewAPIError(fiber.StatusBadGateway, lastErr.Error())
+	return ChatResult{
+		Response:     result.response,
+		BudgetStatus: result.budgetStatus,
+		Metrics:      result.metrics,
+	}, nil
 }
 
 // Image executes an image generation/edit/variation operation across routed providers.
-func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID string, cfg ImageOperationConfig) (ImageResult, error) {
-	alias := strings.TrimSpace(cfg.Alias)
+func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID string, imgCfg ImageOperationConfig) (ImageResult, error) {
+	alias := strings.TrimSpace(imgCfg.Alias)
 	if alias == "" {
 		return ImageResult{}, NewAPIError(fiber.StatusBadRequest, "model is required")
 	}
@@ -341,159 +235,58 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 		return ImageResult{}, err
 	}
 
-	budgetStatus, err := e.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
-	if err != nil {
-		e.spanError(span, err)
-		return ImageResult{}, err
-	}
-	if budgetStatus.Exceeded {
-		_, _ = e.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return ImageResult{BudgetStatus: budgetStatus}, NewAPIError(fiber.StatusForbidden, "tenant budget exceeded")
-	}
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := e.container.AcquireRateLimits(ctx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			err = NewAPIError(fiber.StatusTooManyRequests, "rate limit exceeded")
-			e.spanError(span, err)
-			return ImageResult{}, err
-		}
-		e.spanError(span, err)
-		return ImageResult{}, err
-	}
-	defer release()
-
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-
-	for _, route := range routes {
-		if route.Image == nil {
-			continue
-		}
-		lastRoute = route
-		retryCfg := normalizedRetry(route)
-
-		for attempt := 1; attempt <= retryCfg.MaxAttempts; attempt++ {
-			attemptCtx, attemptSpan := execTracer.Start(ctx, "Executor.ImageAttempt", trace.WithAttributes(
-				attribute.String("provider", route.Provider),
-				attribute.String("model", route.Model),
-				attribute.Int("attempt", attempt),
-			))
-			start := time.Now()
-			resp, err := cfg.Builder(attemptCtx, route)
-			elapsed := time.Since(start)
+	result, err := executeWithRetry(ctx, e, span, rc, routes, retryLoopConfig[models.ImageResponse]{
+		spanName: "Executor.Image",
+		alias:    alias,
+		traceID:  traceID,
+		routeFilter: func(route providers.Route) bool {
+			return route.Image != nil
+		},
+		call: func(attemptCtx context.Context, route providers.Route) (routeCallResult[models.ImageResponse], error) {
+			resp, err := imgCfg.Builder(attemptCtx, route)
 			if err != nil {
 				if errors.Is(err, models.ErrImageOperationUnsupported) {
-					attemptSpan.End()
-					break
+					return routeCallResult[models.ImageResponse]{breakRoute: true}, err
 				}
-				e.container.Engine.ReportFailure(alias, route)
-				lastLatency = elapsed
-				lastErr = err
-				retryable := shouldRetryProvider(err)
-				attemptSpan.RecordError(err)
-				attemptSpan.SetStatus(codes.Error, err.Error())
-				attemptSpan.End()
-
-				if retryable && attempt < retryCfg.MaxAttempts {
-					e.recordRetry(rc, alias, route.Provider, retryReason(err))
-					delay := retryDelay(err, retryCfg.InitialBackoff, retryCfg.BackoffMultiplier, attempt)
-					if delay > 0 {
-						if err := waitForRetry(ctx, delay); err != nil {
-							return ImageResult{}, err
-						}
-					}
-					continue
-				}
-				break
+				return routeCallResult[models.ImageResponse]{}, err
 			}
-			e.container.Engine.ReportSuccess(alias, route)
-			lastLatency = elapsed
-			attemptSpan.SetAttributes(attribute.Float64("duration_ms", float64(elapsed.Milliseconds())))
-			attemptSpan.SetStatus(codes.Ok, "")
-			attemptSpan.End()
-
-			if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
-				if err := e.consumeTokens(ctx, keyKey, tenantKey, tokens, keyCfg, tenantCfg); err != nil {
-					return ImageResult{}, err
-				}
-			}
-
+			return routeCallResult[models.ImageResponse]{response: resp, usage: resp.Usage}, nil
+		},
+		buildRecord: func(rc *requestctx.Context, alias string, route providers.Route, usage models.Usage, elapsed time.Duration, traceID string) usagepipeline.Record {
 			record := usagepipeline.Record{
 				Context:         rc,
 				Alias:           alias,
 				Provider:        route.Provider,
-				Usage:           resp.Usage,
+				Usage:           usage,
 				Latency:         elapsed,
 				Status:          fiber.StatusOK,
 				TraceID:         traceID,
 				Timestamp:       time.Now().UTC(),
 				Success:         true,
-				IdempotencyKey:  cfg.IdempotencyKey,
-				PricingMetadata: cfg.PricingMetadata,
+				IdempotencyKey:  imgCfg.IdempotencyKey,
+				PricingMetadata: imgCfg.PricingMetadata,
 			}
-			if cfg.OverrideCost != nil {
-				record.OverrideCostCents = cfg.OverrideCost(route.Metadata)
+			if imgCfg.OverrideCost != nil {
+				record.OverrideCostCents = imgCfg.OverrideCost(route.Metadata)
 			}
-			if cfg.ImagePixels > 0 && record.Usage.ImagePixels == 0 {
-				record.Usage.ImagePixels = cfg.ImagePixels
+			if imgCfg.ImagePixels > 0 && record.Usage.ImagePixels == 0 {
+				record.Usage.ImagePixels = imgCfg.ImagePixels
 			}
-			if record.Usage.ImageCount == 0 && len(resp.Data) > 0 {
-				record.Usage.ImageCount = int32(len(resp.Data))
-			}
-			budgetStatus, err := e.container.UsageLogger.Record(ctx, record)
-			if err != nil {
-				return ImageResult{}, err
-			}
-
-			e.recordProviderSample(ctx, rc, route, alias, elapsed, providermetrics.ResultSuccess, nil, resp.Usage)
-			span.SetStatus(codes.Ok, "")
-			return ImageResult{
-				Response:     resp,
-				BudgetStatus: budgetStatus,
-				Metrics: ExecutionMetrics{
-					Provider:      route.Provider,
-					ProviderModel: route.Model,
-					Deployment:    route.ResolveDeployment(),
-					LatencyMs:     elapsed.Milliseconds(),
-					RetryCount:    attempt - 1,
-					RouteCount:    len(routes),
-					CostMicroUSD:  budgetStatus.LastRecordCostMicros,
-				},
-			}, nil
-		}
+			return record
+		},
+	})
+	if err != nil {
+		return ImageResult{BudgetStatus: result.budgetStatus}, err
 	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
+	// Patch ImageCount if not set by provider.
+	if result.metrics.CostMicroUSD == 0 {
+		// The metrics are already populated by the loop.
 	}
-	e.spanError(span, lastErr)
-	if lastRoute.Provider != "" {
-		_, _ = e.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Latency:   lastLatency,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: lastErr.Error(),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-	e.recordProviderSample(ctx, rc, lastRoute, alias, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
-
-	return ImageResult{}, NewAPIError(fiber.StatusBadGateway, lastErr.Error())
+	return ImageResult{
+		Response:     result.response,
+		BudgetStatus: result.budgetStatus,
+		Metrics:      result.metrics,
+	}, nil
 }
 
 // Embed executes an embeddings request against routed providers.
@@ -506,144 +299,43 @@ func (e *Executor) Embed(ctx context.Context, rc *requestctx.Context, alias stri
 		return EmbeddingsResult{}, err
 	}
 
-	budgetStatus, err := e.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
-	if err != nil {
-		e.spanError(span, err)
-		return EmbeddingsResult{}, err
-	}
-	if budgetStatus.Exceeded {
-		_, _ = e.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return EmbeddingsResult{BudgetStatus: budgetStatus}, NewAPIError(fiber.StatusForbidden, "tenant budget exceeded")
-	}
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := e.container.AcquireRateLimits(ctx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			err = NewAPIError(fiber.StatusTooManyRequests, "rate limit exceeded")
-			e.spanError(span, err)
-			return EmbeddingsResult{}, err
-		}
-		e.spanError(span, err)
-		return EmbeddingsResult{}, err
-	}
-	defer release()
-
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-
-	for _, route := range routes {
-		if route.Embedding == nil {
-			continue
-		}
-		lastRoute = route
-		req.Model = route.ResolveDeployment()
-		retryCfg := normalizedRetry(route)
-		for attempt := 1; attempt <= retryCfg.MaxAttempts; attempt++ {
-			attemptCtx, attemptSpan := execTracer.Start(ctx, "Executor.EmbedAttempt", trace.WithAttributes(
-				attribute.String("provider", route.Provider),
-				attribute.String("model", route.Model),
-				attribute.Int("attempt", attempt),
-			))
-			start := time.Now()
+	result, err := executeWithRetry(ctx, e, span, rc, routes, retryLoopConfig[models.EmbeddingsResponse]{
+		spanName: "Executor.Embed",
+		alias:    alias,
+		traceID:  traceID,
+		routeFilter: func(route providers.Route) bool {
+			return route.Embedding != nil
+		},
+		call: func(attemptCtx context.Context, route providers.Route) (routeCallResult[models.EmbeddingsResponse], error) {
+			req.Model = route.ResolveDeployment()
 			resp, err := route.Embedding.Embed(attemptCtx, req)
-			elapsed := time.Since(start)
 			if err != nil {
-				e.container.Engine.ReportFailure(alias, route)
-				lastLatency = elapsed
-				lastErr = err
-				retryable := shouldRetryProvider(err)
-				attemptSpan.RecordError(err)
-				attemptSpan.SetStatus(codes.Error, err.Error())
-				attemptSpan.End()
-
-				if retryable && attempt < retryCfg.MaxAttempts {
-					e.recordRetry(rc, alias, route.Provider, retryReason(err))
-					delay := retryDelay(err, retryCfg.InitialBackoff, retryCfg.BackoffMultiplier, attempt)
-					if delay > 0 {
-						if err := waitForRetry(ctx, delay); err != nil {
-							return EmbeddingsResult{}, err
-						}
-					}
-					continue
-				}
-				break
+				return routeCallResult[models.EmbeddingsResponse]{}, err
 			}
-			e.container.Engine.ReportSuccess(alias, route)
-			lastLatency = elapsed
-			attemptSpan.SetAttributes(attribute.Float64("duration_ms", float64(elapsed.Milliseconds())))
-			attemptSpan.SetStatus(codes.Ok, "")
-			attemptSpan.End()
-
-			if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
-				if err := e.consumeTokens(ctx, keyKey, tenantKey, tokens, keyCfg, tenantCfg); err != nil {
-					return EmbeddingsResult{}, err
-				}
-			}
-
-			record := usagepipeline.Record{
+			return routeCallResult[models.EmbeddingsResponse]{response: resp, usage: resp.Usage}, nil
+		},
+		buildRecord: func(rc *requestctx.Context, alias string, route providers.Route, usage models.Usage, elapsed time.Duration, traceID string) usagepipeline.Record {
+			return usagepipeline.Record{
 				Context:   rc,
 				Alias:     alias,
 				Provider:  route.Provider,
-				Usage:     resp.Usage,
+				Usage:     usage,
 				Latency:   elapsed,
 				Status:    fiber.StatusOK,
 				TraceID:   traceID,
 				Timestamp: time.Now().UTC(),
 				Success:   true,
 			}
-			budgetStatus, err := e.container.UsageLogger.Record(ctx, record)
-			if err != nil {
-				return EmbeddingsResult{}, err
-			}
-
-			e.recordProviderSample(ctx, rc, route, alias, elapsed, providermetrics.ResultSuccess, nil, resp.Usage)
-			span.SetStatus(codes.Ok, "")
-			return EmbeddingsResult{
-				Response:     resp,
-				BudgetStatus: budgetStatus,
-				Metrics: ExecutionMetrics{
-					Provider:      route.Provider,
-					ProviderModel: route.Model,
-					Deployment:    route.ResolveDeployment(),
-					LatencyMs:     elapsed.Milliseconds(),
-					RetryCount:    attempt - 1,
-					RouteCount:    len(routes),
-					CostMicroUSD:  budgetStatus.LastRecordCostMicros,
-				},
-			}, nil
-		}
+		},
+	})
+	if err != nil {
+		return EmbeddingsResult{BudgetStatus: result.budgetStatus}, err
 	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	e.spanError(span, lastErr)
-	if lastRoute.Provider != "" {
-		_, _ = e.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Latency:   lastLatency,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: lastErr.Error(),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-	e.recordProviderSample(ctx, rc, lastRoute, alias, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
-
-	return EmbeddingsResult{}, NewAPIError(fiber.StatusBadGateway, lastErr.Error())
+	return EmbeddingsResult{
+		Response:     result.response,
+		BudgetStatus: result.budgetStatus,
+		Metrics:      result.metrics,
+	}, nil
 }
 
 // Moderate executes moderation requests across routed providers.
@@ -656,148 +348,46 @@ func (e *Executor) Moderate(ctx context.Context, rc *requestctx.Context, alias s
 		return ModerationResult{}, err
 	}
 
-	budgetStatus, err := e.container.UsageLogger.CheckBudget(ctx, rc, time.Now().UTC())
-	if err != nil {
-		e.spanError(span, err)
-		return ModerationResult{}, err
-	}
-	if budgetStatus.Exceeded {
-		_, _ = e.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  "budget",
-			Status:    fiber.StatusForbidden,
-			ErrorCode: "budget_exceeded",
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-		return ModerationResult{BudgetStatus: budgetStatus}, NewAPIError(fiber.StatusForbidden, "tenant budget exceeded")
-	}
-
-	keyKey, keyCfg, tenantKey, tenantCfg, release, err := e.container.AcquireRateLimits(ctx, alias)
-	if err != nil {
-		if errors.Is(err, limits.ErrLimitExceeded) {
-			err = NewAPIError(fiber.StatusTooManyRequests, "rate limit exceeded")
-			e.spanError(span, err)
-			return ModerationResult{}, err
-		}
-		e.spanError(span, err)
-		return ModerationResult{}, err
-	}
-	defer release()
-
-	var lastErr error
-	var lastRoute providers.Route
-	var lastLatency time.Duration
-
-	for _, route := range routes {
-		if route.Moderations == nil {
-			continue
-		}
-		lastRoute = route
-		req := models.ModerationRequest{
-			Model: route.ResolveDeployment(),
-			Input: inputs,
-		}
-		retryCfg := normalizedRetry(route)
-
-		for attempt := 1; attempt <= retryCfg.MaxAttempts; attempt++ {
-			attemptCtx, attemptSpan := execTracer.Start(ctx, "Executor.ModerateAttempt", trace.WithAttributes(
-				attribute.String("provider", route.Provider),
-				attribute.String("model", route.Model),
-				attribute.Int("attempt", attempt),
-			))
-			start := time.Now()
+	result, err := executeWithRetry(ctx, e, span, rc, routes, retryLoopConfig[models.ModerationResponse]{
+		spanName: "Executor.Moderate",
+		alias:    alias,
+		traceID:  traceID,
+		routeFilter: func(route providers.Route) bool {
+			return route.Moderations != nil
+		},
+		call: func(attemptCtx context.Context, route providers.Route) (routeCallResult[models.ModerationResponse], error) {
+			req := models.ModerationRequest{
+				Model: route.ResolveDeployment(),
+				Input: inputs,
+			}
 			resp, err := route.Moderations.Moderate(attemptCtx, req)
-			elapsed := time.Since(start)
 			if err != nil {
-				e.container.Engine.ReportFailure(alias, route)
-				lastLatency = elapsed
-				lastErr = err
-				retryable := shouldRetryProvider(err)
-				attemptSpan.RecordError(err)
-				attemptSpan.SetStatus(codes.Error, err.Error())
-				attemptSpan.End()
-
-				if retryable && attempt < retryCfg.MaxAttempts {
-					e.recordRetry(rc, alias, route.Provider, retryReason(err))
-					delay := retryDelay(err, retryCfg.InitialBackoff, retryCfg.BackoffMultiplier, attempt)
-					if delay > 0 {
-						if err := waitForRetry(ctx, delay); err != nil {
-							return ModerationResult{}, err
-						}
-					}
-					continue
-				}
-				break
+				return routeCallResult[models.ModerationResponse]{}, err
 			}
-			e.container.Engine.ReportSuccess(alias, route)
-			lastLatency = elapsed
-			attemptSpan.SetAttributes(attribute.Float64("duration_ms", float64(elapsed.Milliseconds())))
-			attemptSpan.SetStatus(codes.Ok, "")
-			attemptSpan.End()
-
-			if tokens := int(resp.Usage.TotalTokens); tokens > 0 {
-				if err := e.consumeTokens(ctx, keyKey, tenantKey, tokens, keyCfg, tenantCfg); err != nil {
-					return ModerationResult{}, err
-				}
-			}
-
-			record := usagepipeline.Record{
+			return routeCallResult[models.ModerationResponse]{response: resp, usage: resp.Usage}, nil
+		},
+		buildRecord: func(rc *requestctx.Context, alias string, route providers.Route, usage models.Usage, elapsed time.Duration, traceID string) usagepipeline.Record {
+			return usagepipeline.Record{
 				Context:   rc,
 				Alias:     alias,
 				Provider:  route.Provider,
-				Usage:     resp.Usage,
+				Usage:     usage,
 				Latency:   elapsed,
 				Status:    fiber.StatusOK,
 				TraceID:   traceID,
 				Timestamp: time.Now().UTC(),
 				Success:   true,
 			}
-			budgetStatus, err := e.container.UsageLogger.Record(ctx, record)
-			if err != nil {
-				return ModerationResult{}, err
-			}
-
-			e.recordProviderSample(ctx, rc, route, alias, elapsed, providermetrics.ResultSuccess, nil, resp.Usage)
-			span.SetStatus(codes.Ok, "")
-			return ModerationResult{
-				Response:     resp,
-				BudgetStatus: budgetStatus,
-				Metrics: ExecutionMetrics{
-					Provider:      route.Provider,
-					ProviderModel: route.Model,
-					Deployment:    route.ResolveDeployment(),
-					LatencyMs:     elapsed.Milliseconds(),
-					RetryCount:    attempt - 1,
-					RouteCount:    len(routes),
-					CostMicroUSD:  budgetStatus.LastRecordCostMicros,
-				},
-			}, nil
-		}
+		},
+	})
+	if err != nil {
+		return ModerationResult{BudgetStatus: result.budgetStatus}, err
 	}
-
-	if lastErr == nil {
-		lastErr = errors.New("no backend available")
-	}
-	e.spanError(span, lastErr)
-	if lastRoute.Provider != "" {
-		_, _ = e.container.UsageLogger.Record(ctx, usagepipeline.Record{
-			Context:   rc,
-			Alias:     alias,
-			Provider:  lastRoute.Provider,
-			Latency:   lastLatency,
-			Status:    fiber.StatusBadGateway,
-			ErrorCode: lastErr.Error(),
-			TraceID:   traceID,
-			Timestamp: time.Now().UTC(),
-			Success:   false,
-		})
-	}
-	e.recordProviderSample(ctx, rc, lastRoute, alias, lastLatency, providermetrics.ResultError, lastErr, models.Usage{})
-
-	return ModerationResult{}, NewAPIError(fiber.StatusBadGateway, lastErr.Error())
+	return ModerationResult{
+		Response:     result.response,
+		BudgetStatus: result.budgetStatus,
+		Metrics:      result.metrics,
+	}, nil
 }
 
 func (e *Executor) consumeTokens(ctx context.Context, keyKey, tenantKey string, tokens int, keyCfg, tenantCfg limits.LimitConfig) error {

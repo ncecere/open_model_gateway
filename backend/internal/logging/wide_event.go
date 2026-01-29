@@ -83,6 +83,15 @@ type WideEvent struct {
 	BudgetExceeded       bool  `json:"budget_exceeded,omitempty"`
 	RateLimited          bool  `json:"rate_limited,omitempty"`
 
+	// Responses API fields
+	ResponsesAPI       bool   `json:"responses_api,omitempty"`
+	Truncation         string `json:"truncation,omitempty"`
+	PreviousResponseID string `json:"previous_response_id,omitempty"`
+	ToolCallCount      int    `json:"tool_call_count,omitempty"`
+	ReasoningTokens    int64  `json:"reasoning_tokens,omitempty"`
+	ResponseStored     bool   `json:"response_stored,omitempty"`
+	IncompleteReason   string `json:"incomplete_reason,omitempty"`
+
 	// Cache/Idempotency
 	IdempotencyCacheHit bool `json:"idempotency_cache_hit,omitempty"`
 

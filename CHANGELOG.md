@@ -20,6 +20,13 @@ All notable changes to this project will be documented in this file. The format 
 - **Open Responses spec compliance — error shape** — `writeResponsesError()` returns `{error: {type, code, message, param}}` matching spec error format.
 - **`presence_penalty` and `frequency_penalty` on `ChatRequest`** — new fields forwarded through to providers via `BuildChatParams`, benefiting both `/v1/chat/completions` and `/v1/responses`.
 - **`ChatResponseFormat` on `ChatRequest`** — new `json.RawMessage` field forwarded as `response_format` to the OpenAI SDK; the responses handler maps `text.format` into it.
+- **`previous_response_id` support** — new `responses_cache` Postgres table (with 7-day TTL) and `responsestore.Service` store completed responses for conversation chaining; the handler reconstructs input + output from the previous response and prepends it to the current messages while preserving system/developer prefix ordering.
+- **Truncation enforcement** — `truncation: "auto"` looks up the model's `context_window`, estimates tokens (chars/4), and trims oldest non-system messages; `truncation: "disabled"` (default) passes through to the provider. Accurate `incomplete_details.reason` populated from provider `finish_reason`.
+- **`allowed_tools` in `tool_choice`** — `applyAllowedTools()` parses the `{"type": "function", "allowed": ["fn1", "fn2"]}` variant per Open Responses spec, filters the tools list to the allowed subset, and converts `tool_choice` to `"required"` for the provider.
+- **Reasoning output items + streaming** — sync responses emit `type: "reasoning"` output items with `summary_text` content parts when the model returns reasoning; streaming emits `response.reasoning_summary_part.added`, `response.reasoning_summary_text.delta`, `response.reasoning_summary_text.done`, `response.reasoning_summary_part.done`, and `response.output_item.done` events.
+- **`text.format` validation** — `validateTextFormat()` validates the `type` field (`text`, `json_object`, `json_schema`), requires `json_schema.name` when type is `json_schema`, and returns a spec-shaped error on invalid input.
+- **Responses-specific observability** — `WideEvent` gains 7 new fields (`ResponsesAPI`, `Truncation`, `PreviousResponseID`, `ToolCallCount`, `ReasoningTokens`, `ResponseStored`, `IncompleteReason`); new Prometheus counter `open_model_gateway_responses_api_total` with labels `model`, `status`, `truncation`, `has_tools`, `has_reasoning`.
+- **Stream renderer test fixtures** — 4 new tests covering text-only, tool-call, reasoning+text, and mixed output-index ordering scenarios for the Responses SSE renderer.
 
 ### Changed
 #### Backend
@@ -28,6 +35,9 @@ All notable changes to this project will be documented in this file. The format 
 - **`UpsertWithWarnings()`** method added to admin catalog service, returning normalization warnings alongside the persisted entry.
 - **Batch worker responses format updated** — `convertResponsesPayload` now produces spec-compliant output with `completed_at`, `incomplete_details`, `instructions` (nullable), `truncation`, `input_tokens_details`, function_call output items for tool calls, non-nil `metadata` default, and `annotations` on content items.
 - **Responses instructions role** changed from `"system"` to `"developer"` per Open Responses spec, with `developer` → `system` mapping when forwarding to providers that don't support the developer role.
+- **Deterministic output ordering in streaming** — stream renderer uses a single `nextOutput` counter for all item types (reasoning → tool calls → messages), guaranteeing strictly increasing `output_index` values in SSE events.
+- **Batch parity for tools** — batch `/v1/responses` now accepts `tools`, `tool_choice`, and `response_format` (previously rejected); only `conversation` and `previous_response_id` remain unsupported in batch mode.
+- **Provider parity for penalties and response_format** — Groq and OpenRouter adapters now pass through `presence_penalty`, `frequency_penalty`, and `response_format` to their upstream APIs; Anthropic/Bedrock/Vertex silently ignore unsupported parameters (best-effort policy).
 
 #### Frontend
 - **"Config" badge** shown on model catalog entries seeded from YAML configuration, using the new `managed_by` field.

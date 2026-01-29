@@ -41,6 +41,7 @@ type Provider struct {
 	providerTokens      *promreg.CounterVec
 	providerErrors      *promreg.CounterVec
 	providerStreams     *promreg.GaugeVec
+	responsesCounter    *promreg.CounterVec
 }
 
 func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, error) {
@@ -256,6 +257,19 @@ func Setup(ctx context.Context, cfg config.ObservabilityConfig) (*Provider, erro
 		provider.providerTokens = providerTokens
 		provider.providerErrors = providerErrors
 		provider.providerStreams = providerStreams
+
+		responsesCounter := promreg.NewCounterVec(
+			promreg.CounterOpts{
+				Namespace: "open_model_gateway",
+				Name:      "responses_api_total",
+				Help:      "Total Open Responses API requests by status and truncation.",
+			},
+			[]string{"model", "status", "truncation", "has_tools", "has_reasoning"},
+		)
+		if err := registry.Register(responsesCounter); err != nil {
+			return nil, err
+		}
+		provider.responsesCounter = responsesCounter
 	}
 
 	return provider, nil
@@ -387,4 +401,20 @@ func (p *Provider) RecordBudgetEval(schedule string, duration time.Duration) {
 		return
 	}
 	p.budgetEvalHistogram.WithLabelValues(schedule).Observe(duration.Seconds())
+}
+
+// RecordResponsesRequest increments the Open Responses API counter.
+func (p *Provider) RecordResponsesRequest(model, status, truncation string, hasTools, hasReasoning bool) {
+	if p == nil || p.responsesCounter == nil {
+		return
+	}
+	toolsLabel := "false"
+	if hasTools {
+		toolsLabel = "true"
+	}
+	reasoningLabel := "false"
+	if hasReasoning {
+		reasoningLabel = "true"
+	}
+	p.responsesCounter.WithLabelValues(model, status, truncation, toolsLabel, reasoningLabel).Inc()
 }

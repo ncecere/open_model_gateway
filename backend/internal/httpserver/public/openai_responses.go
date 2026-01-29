@@ -9,8 +9,10 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/logging"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
+	"github.com/ncecere/open_model_gateway/backend/internal/services/responsestore"
 )
 
 // ---------------------------------------------------------------------------
@@ -124,6 +126,9 @@ type responsesOutputItem struct {
 	CallID    string `json:"call_id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
+
+	// reasoning fields
+	Summary []responsesOutputContent `json:"summary,omitempty"`
 }
 
 type responsesOutputContent struct {
@@ -235,17 +240,60 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 	if len(req.Input) == 0 {
 		return writeResponsesError(c, fiber.StatusBadRequest, "invalid_request", "input_required", "input is required", strPtr("input"))
 	}
-	// previous_response_id is not yet supported
-	if req.PreviousResponseID != "" {
-		return writeResponsesError(c, fiber.StatusBadRequest, "invalid_request", "unsupported_parameter", "previous_response_id is not yet supported", strPtr("previous_response_id"))
-	}
 	if err := validateResponseMetadata(req.Metadata); err != nil {
 		return writeResponsesError(c, fiber.StatusBadRequest, "invalid_request", "invalid_metadata", err.Error(), strPtr("metadata"))
+	}
+
+	// Reconstruct conversation from previous_response_id if provided
+	var previousMessages []models.ChatMessage
+	if req.PreviousResponseID != "" {
+		if h.container.ResponseStore == nil {
+			return writeResponsesError(c, fiber.StatusBadRequest, "invalid_request", "unsupported_parameter", "response storage is not available", strPtr("previous_response_id"))
+		}
+		stored, err := h.container.ResponseStore.Get(c.UserContext(), req.PreviousResponseID)
+		if err != nil {
+			return writeResponsesError(c, fiber.StatusNotFound, "invalid_request", "response_not_found", "previous response not found or expired", strPtr("previous_response_id"))
+		}
+		// Reconstruct messages from stored input + output
+		prevInput, err := parseResponseInputItems(stored.Input)
+		if err == nil {
+			previousMessages = append(previousMessages, prevInput...)
+		}
+		prevOutput, err := outputItemsToMessages(stored.Output)
+		if err == nil {
+			previousMessages = append(previousMessages, prevOutput...)
+		}
 	}
 
 	messages, err := buildResponseMessages(req.Instructions, req.Input)
 	if err != nil {
 		return writeResponsesError(c, fiber.StatusBadRequest, "invalid_request", "invalid_input", err.Error(), strPtr("input"))
+	}
+	// Prepend previous conversation context
+	if len(previousMessages) > 0 {
+		full := make([]models.ChatMessage, 0, len(previousMessages)+len(messages))
+		// Keep developer/system instruction at the front if present
+		if len(messages) > 0 && (messages[0].Role == "developer" || messages[0].Role == "system") {
+			full = append(full, messages[0])
+			full = append(full, previousMessages...)
+			full = append(full, messages[1:]...)
+		} else {
+			full = append(full, previousMessages...)
+			full = append(full, messages...)
+		}
+		messages = full
+	}
+
+	// Apply truncation if configured
+	truncationMode := strings.TrimSpace(req.Truncation)
+	if truncationMode == "" {
+		truncationMode = "disabled"
+	}
+	if truncationMode == "auto" {
+		model, lookupErr := h.container.Queries.GetModelByAlias(c.UserContext(), alias)
+		if lookupErr == nil && model.ContextWindow > 0 {
+			messages = truncateMessages(messages, int(model.ContextWindow))
+		}
 	}
 
 	// Parse tools
@@ -276,6 +324,12 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 				Strict:      t.Function.Strict,
 			})
 		}
+	}
+
+	// Handle allowed_tools in tool_choice: filter tools list and convert to "required"
+	providerToolChoice := req.ToolChoice
+	if len(req.ToolChoice) > 0 && len(tools) > 0 {
+		tools, toolDefs, providerToolChoice = applyAllowedTools(req.ToolChoice, tools, toolDefs)
 	}
 
 	ctx := c.UserContext()
@@ -321,9 +375,12 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 		freqF32 = &v
 	}
 
-	// Convert text.format to ChatRequest response_format if present
+	// Validate and convert text.format to ChatRequest response_format if present
 	var chatResponseFormat json.RawMessage
 	if req.Text != nil && len(req.Text.Format) > 0 {
+		if err := validateTextFormat(req.Text.Format); err != nil {
+			return writeResponsesError(c, fiber.StatusBadRequest, "invalid_request", "invalid_text_format", err.Error(), strPtr("text.format"))
+		}
 		chatResponseFormat = req.Text.Format
 	}
 
@@ -336,7 +393,7 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 		FrequencyPenalty:   freqF32,
 		ChatResponseFormat: chatResponseFormat,
 		Tools:              tools,
-		ToolChoice:         req.ToolChoice,
+		ToolChoice:         providerToolChoice,
 		ParallelToolCalls:  req.ParallelToolCalls,
 	}
 
@@ -408,18 +465,85 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 		PreviousResponseID: req.PreviousResponseID,
 	}
 
+	// Enrich wide event with Responses API metadata
+	if event, ok := logging.WideEventFromContext(c.UserContext()); ok {
+		event.ResponsesAPI = true
+		event.Truncation = truncation
+		event.PreviousResponseID = req.PreviousResponseID
+		event.ToolCallCount = len(tools)
+	}
+
+	// Record Prometheus counter for Responses API
+	if obs := h.container.Observability; obs != nil {
+		obs.RecordResponsesRequest(alias, "ok", truncation, len(tools) > 0, reasoningField != nil)
+	}
+
+	// Capture input for response storage
+	rawInput := req.Input
+	responseStore := h.container.ResponseStore
+	tenantID := rc.TenantID
+
 	if req.Stream {
 		return h.chatStreamPipeline.StreamResponses(c, rc, alias, traceID, idempotencyKey, modelReq, options)
 	}
 
 	return h.chatPipeline.ExecuteWithConverter(c, rc, alias, traceID, idempotencyKey, modelReq, func(resp models.ChatResponse, alias string) (interface{}, error) {
-		return convertResponsesResponse(resp, alias, options), nil
+		payload := convertResponsesResponse(resp, alias, options)
+
+		// Store response for previous_response_id support
+		if responseStore != nil && storeBool {
+			outputJSON, _ := json.Marshal(payload.Output)
+			_ = responseStore.Store(c.UserContext(), responsestore.StoredResponse{
+				ID:           payload.ID,
+				TenantID:     tenantID,
+				Model:        alias,
+				Input:        rawInput,
+				Output:       outputJSON,
+				Instructions: strings.TrimSpace(req.Instructions),
+				Metadata:     req.Metadata,
+			})
+		}
+
+		return payload, nil
 	})
 }
 
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
+
+func validateTextFormat(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var obj struct {
+		Type       string          `json:"type"`
+		JSONSchema json.RawMessage `json:"json_schema"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return fmt.Errorf("text.format must be an object with a \"type\" field")
+	}
+	switch obj.Type {
+	case "text", "":
+		return nil
+	case "json_object":
+		return nil
+	case "json_schema":
+		if len(obj.JSONSchema) == 0 {
+			return fmt.Errorf("text.format type \"json_schema\" requires a \"json_schema\" field")
+		}
+		// Validate that json_schema has at minimum a "name" field
+		var schema struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(obj.JSONSchema, &schema); err != nil || schema.Name == "" {
+			return fmt.Errorf("text.format json_schema requires a \"name\" field")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported text.format type %q; must be \"text\", \"json_object\", or \"json_schema\"", obj.Type)
+	}
+}
 
 func validateResponseMetadata(md map[string]string) error {
 	if len(md) == 0 {
@@ -589,6 +713,163 @@ func convertResponsesMessageItem(item responsesInputItem) (models.ChatMessage, e
 // Response conversion (sync)
 // ---------------------------------------------------------------------------
 
+// applyAllowedTools checks if tool_choice contains an "allowed" array per the
+// Open Responses spec. If so, it filters the tools/toolDefs to only those named
+// in the allowed list and returns tool_choice as "required" for the provider
+// (since all remaining tools are allowed, the provider should use any of them).
+// If tool_choice does not contain "allowed", the original values are returned unchanged.
+func applyAllowedTools(toolChoice json.RawMessage, tools []models.Tool, toolDefs []responsesToolDef) ([]models.Tool, []responsesToolDef, json.RawMessage) {
+	// Try to parse as object with "allowed" field
+	var obj struct {
+		Type    string   `json:"type"`
+		Allowed []string `json:"allowed"`
+		Name    string   `json:"name"`
+	}
+	if err := json.Unmarshal(toolChoice, &obj); err != nil {
+		return tools, toolDefs, toolChoice
+	}
+	if len(obj.Allowed) == 0 {
+		return tools, toolDefs, toolChoice
+	}
+
+	// Build allow set
+	allowSet := make(map[string]bool, len(obj.Allowed))
+	for _, name := range obj.Allowed {
+		allowSet[name] = true
+	}
+
+	// Filter tools
+	filteredTools := make([]models.Tool, 0, len(tools))
+	filteredDefs := make([]responsesToolDef, 0, len(toolDefs))
+	for _, t := range tools {
+		if allowSet[t.Function.Name] {
+			filteredTools = append(filteredTools, t)
+		}
+	}
+	for _, d := range toolDefs {
+		if allowSet[d.Name] {
+			filteredDefs = append(filteredDefs, d)
+		}
+	}
+
+	// Convert tool_choice to "required" for the provider
+	providerChoice := json.RawMessage(`"required"`)
+	return filteredTools, filteredDefs, providerChoice
+}
+
+// truncateMessages trims older non-system messages to fit within the model's context
+// window. Uses a rough chars/4 token estimate. System/developer messages at the
+// front and the last user message are always preserved.
+func truncateMessages(msgs []models.ChatMessage, contextWindow int) []models.ChatMessage {
+	if len(msgs) == 0 || contextWindow <= 0 {
+		return msgs
+	}
+	// Reserve ~25% of context window for output
+	maxInputTokens := contextWindow * 3 / 4
+	estimateTokens := func(m models.ChatMessage) int {
+		text := m.Text()
+		n := len(text) / 4
+		if n < 1 {
+			n = 1
+		}
+		// Tool calls add overhead
+		for _, tc := range m.ToolCalls {
+			n += (len(tc.Function.Arguments) + len(tc.Function.Name)) / 4
+		}
+		return n
+	}
+
+	total := 0
+	for _, m := range msgs {
+		total += estimateTokens(m)
+	}
+	if total <= maxInputTokens {
+		return msgs
+	}
+
+	// Identify system/developer prefix and keep it
+	prefixEnd := 0
+	for i, m := range msgs {
+		if m.Role == "system" || m.Role == "developer" {
+			prefixEnd = i + 1
+		} else {
+			break
+		}
+	}
+
+	// Always keep prefix + last message
+	result := make([]models.ChatMessage, 0, len(msgs))
+	result = append(result, msgs[:prefixEnd]...)
+	budget := maxInputTokens
+	for _, m := range result {
+		budget -= estimateTokens(m)
+	}
+	// Always keep the last message
+	last := msgs[len(msgs)-1]
+	budget -= estimateTokens(last)
+
+	// Add middle messages from most recent backward until budget exhausted
+	middle := msgs[prefixEnd : len(msgs)-1]
+	kept := make([]models.ChatMessage, 0, len(middle))
+	for i := len(middle) - 1; i >= 0; i-- {
+		cost := estimateTokens(middle[i])
+		if budget-cost < 0 {
+			break
+		}
+		budget -= cost
+		kept = append(kept, middle[i])
+	}
+	// Reverse kept to restore original order
+	for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
+		kept[i], kept[j] = kept[j], kept[i]
+	}
+	result = append(result, kept...)
+	result = append(result, last)
+	return result
+}
+
+// outputItemsToMessages converts stored output items (JSON array of responsesOutputItem)
+// back into ChatMessages for conversation reconstruction.
+func outputItemsToMessages(outputJSON json.RawMessage) ([]models.ChatMessage, error) {
+	if len(outputJSON) == 0 {
+		return nil, nil
+	}
+	var items []responsesOutputItem
+	if err := json.Unmarshal(outputJSON, &items); err != nil {
+		return nil, err
+	}
+	msgs := make([]models.ChatMessage, 0, len(items))
+	for _, item := range items {
+		switch item.Type {
+		case "message":
+			role := item.Role
+			if role == "" {
+				role = "assistant"
+			}
+			var content string
+			if len(item.Content) > 0 {
+				content = item.Content[0].Text
+			}
+			msgs = append(msgs, models.ChatMessage{Role: role, Content: content})
+		case "function_call":
+			msgs = append(msgs, models.ChatMessage{
+				Role: "assistant",
+				ToolCalls: []models.ToolCall{
+					{
+						ID:   item.CallID,
+						Type: "function",
+						Function: models.ToolCallFunction{
+							Name:      item.Name,
+							Arguments: item.Arguments,
+						},
+					},
+				},
+			})
+		}
+	}
+	return msgs, nil
+}
+
 func convertResponsesResponse(resp models.ChatResponse, alias string, opts openAIResponseOptions) responsesPayload {
 	return buildResponsesPayload(resp, alias, opts, "")
 }
@@ -604,6 +885,25 @@ func buildResponsesPayload(resp models.ChatResponse, alias string, opts openAIRe
 		status := mapResponseStatus(choice.FinishReason)
 		if status != "completed" && statusOverride == "" {
 			overallStatus = status
+		}
+
+		// Emit reasoning output item if model returned reasoning content
+		reasoning := strings.TrimSpace(choice.Message.Reasoning)
+		if reasoning == "" {
+			reasoning = strings.TrimSpace(choice.Message.ReasoningContent)
+		}
+		if reasoning != "" {
+			outputs = append(outputs, responsesOutputItem{
+				Type:   "reasoning",
+				ID:     fmt.Sprintf("rs_%s-%d", resp.ID, choice.Index),
+				Status: status,
+				Summary: []responsesOutputContent{
+					{
+						Type: "summary_text",
+						Text: reasoning,
+					},
+				},
+			})
 		}
 
 		// Emit function_call items for tool calls

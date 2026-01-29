@@ -265,6 +265,17 @@ func buildChatRequest(req models.ChatRequest, streaming bool) chatCompletionRequ
 		payload.StreamOptions = &streamOptions{IncludeUsage: true}
 	}
 
+	// Best-effort pass-through for penalties and response_format
+	if req.PresencePenalty != nil {
+		payload.PresencePenalty = req.PresencePenalty
+	}
+	if req.FrequencyPenalty != nil {
+		payload.FrequencyPenalty = req.FrequencyPenalty
+	}
+	if len(req.ChatResponseFormat) > 0 {
+		payload.ResponseFormat = req.ChatResponseFormat
+	}
+
 	// Add tools
 	if len(req.Tools) > 0 {
 		payload.Tools = make([]chatTool, 0, len(req.Tools))
@@ -416,6 +427,9 @@ type chatCompletionRequest struct {
 	Stop                []string        `json:"stop,omitempty"`
 	Stream              bool            `json:"stream,omitempty"`
 	StreamOptions       *streamOptions  `json:"stream_options,omitempty"`
+	PresencePenalty     *float32        `json:"presence_penalty,omitempty"`
+	FrequencyPenalty    *float32        `json:"frequency_penalty,omitempty"`
+	ResponseFormat      json.RawMessage `json:"response_format,omitempty"`
 	Tools               []chatTool      `json:"tools,omitempty"`
 	ToolChoice          json.RawMessage `json:"tool_choice,omitempty"`
 	ParallelToolCalls   *bool           `json:"parallel_tool_calls,omitempty"`

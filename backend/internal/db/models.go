@@ -445,6 +445,18 @@ type RateLimitDefault struct {
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ResponsesCache struct {
+	ID           string             `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Model        string             `json:"model"`
+	Input        []byte             `json:"input"`
+	Output       []byte             `json:"output"`
+	Instructions pgtype.Text        `json:"instructions"`
+	Metadata     []byte             `json:"metadata"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+}
+
 type Request struct {
 	ID             pgtype.UUID        `json:"id"`
 	TenantID       pgtype.UUID        `json:"tenant_id"`

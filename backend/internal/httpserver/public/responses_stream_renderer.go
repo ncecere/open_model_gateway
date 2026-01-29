@@ -20,6 +20,7 @@ type responsesStreamRenderer struct {
 	items      map[int]*responseStreamItem
 	toolCalls  map[int]*toolCallStream // keyed by tool call index
 	nextOutput int                     // next output index for tool call items
+	reasoning  *reasoningStreamItem    // tracks reasoning output during streaming
 }
 
 type responseStreamItem struct {
@@ -30,6 +31,14 @@ type responseStreamItem struct {
 	Text         strings.Builder
 	FinishReason string
 	IsToolCall   bool // true if this item is a function_call, not a message
+}
+
+// reasoningStreamItem tracks reasoning content during streaming.
+type reasoningStreamItem struct {
+	ItemID      string
+	OutputIndex int
+	Text        strings.Builder
+	Started     bool
 }
 
 // toolCallStream tracks incremental tool call arguments during streaming.
@@ -60,6 +69,17 @@ func (r *responsesStreamRenderer) HandleChunk(chunk models.ChatChunk, w *bufio.W
 		return err
 	}
 	for _, choice := range chunk.Choices {
+		// Handle reasoning content deltas
+		reasoningDelta := strings.TrimSpace(choice.Delta.Reasoning)
+		if reasoningDelta == "" {
+			reasoningDelta = strings.TrimSpace(choice.Delta.ReasoningContent)
+		}
+		if reasoningDelta != "" {
+			if err := r.handleReasoningDelta(chunk, choice, reasoningDelta, w); err != nil {
+				return err
+			}
+		}
+
 		// Handle tool call deltas
 		if len(choice.Delta.ToolCalls) > 0 {
 			if err := r.handleToolCallDeltas(chunk, choice, w); err != nil {
@@ -87,6 +107,10 @@ func (r *responsesStreamRenderer) HandleChunk(chunk models.ChatChunk, w *bufio.W
 
 		// Handle finish
 		if finish := strings.TrimSpace(choice.FinishReason); finish != "" {
+			// Finalize reasoning if open
+			if err := r.finalizeReasoning(w); err != nil {
+				return err
+			}
 			// Finalize any open tool calls
 			if err := r.finalizeToolCalls(w); err != nil {
 				return err
@@ -139,6 +163,90 @@ func (r *responsesStreamRenderer) HandleChunk(chunk models.ChatChunk, w *bufio.W
 	return nil
 }
 
+func (r *responsesStreamRenderer) handleReasoningDelta(chunk models.ChatChunk, choice models.ChunkDelta, delta string, w *bufio.Writer) error {
+	if r.reasoning == nil {
+		// First reasoning delta — create the item and emit events
+		outputIdx := r.nextOutput
+		r.nextOutput++
+		itemID := fmt.Sprintf("%s-rs-%d", chunk.ID, choice.Index)
+		r.reasoning = &reasoningStreamItem{
+			ItemID:      itemID,
+			OutputIndex: outputIdx,
+			Started:     true,
+		}
+		if err := r.emitEvent(w, "response.output_item.added", map[string]any{
+			"output_index": outputIdx,
+			"item": map[string]any{
+				"id":      itemID,
+				"type":    "reasoning",
+				"status":  "in_progress",
+				"summary": []any{},
+			},
+		}); err != nil {
+			return err
+		}
+		if err := r.emitEvent(w, "response.reasoning_summary_part.added", map[string]any{
+			"item_id":       itemID,
+			"output_index":  outputIdx,
+			"content_index": 0,
+			"part": map[string]any{
+				"type": "summary_text",
+				"text": "",
+			},
+		}); err != nil {
+			return err
+		}
+	}
+	r.reasoning.Text.WriteString(delta)
+	return r.emitEvent(w, "response.reasoning_summary_text.delta", map[string]any{
+		"item_id":       r.reasoning.ItemID,
+		"output_index":  r.reasoning.OutputIndex,
+		"content_index": 0,
+		"delta":         delta,
+	})
+}
+
+func (r *responsesStreamRenderer) finalizeReasoning(w *bufio.Writer) error {
+	if r.reasoning == nil {
+		return nil
+	}
+	rs := r.reasoning
+	text := rs.Text.String()
+	if err := r.emitEvent(w, "response.reasoning_summary_text.done", map[string]any{
+		"item_id":       rs.ItemID,
+		"output_index":  rs.OutputIndex,
+		"content_index": 0,
+		"text":          text,
+	}); err != nil {
+		return err
+	}
+	if err := r.emitEvent(w, "response.reasoning_summary_part.done", map[string]any{
+		"item_id":       rs.ItemID,
+		"output_index":  rs.OutputIndex,
+		"content_index": 0,
+		"part": map[string]any{
+			"type": "summary_text",
+			"text": text,
+		},
+	}); err != nil {
+		return err
+	}
+	return r.emitEvent(w, "response.output_item.done", map[string]any{
+		"output_index": rs.OutputIndex,
+		"item": map[string]any{
+			"id":     rs.ItemID,
+			"type":   "reasoning",
+			"status": "completed",
+			"summary": []map[string]any{
+				{
+					"type": "summary_text",
+					"text": text,
+				},
+			},
+		},
+	})
+}
+
 func (r *responsesStreamRenderer) handleToolCallDeltas(chunk models.ChatChunk, choice models.ChunkDelta, w *bufio.Writer) error {
 	for _, tc := range choice.Delta.ToolCalls {
 		idx := 0
@@ -147,15 +255,9 @@ func (r *responsesStreamRenderer) handleToolCallDeltas(chunk models.ChatChunk, c
 		}
 		tcs, exists := r.toolCalls[idx]
 		if !exists {
-			// New tool call — assign an output index and emit output_item.added
+			// New tool call — assign a deterministic output index
+			outputIdx := r.nextOutput
 			r.nextOutput++
-			outputIdx := r.nextOutput - 1
-			// If there's already a message item at index 0, offset
-			if _, hasMsg := r.items[choice.Index]; hasMsg {
-				outputIdx = len(r.items) + len(r.toolCalls)
-			} else {
-				outputIdx = len(r.toolCalls)
-			}
 			itemID := fmt.Sprintf("%s-fc-%d", chunk.ID, idx)
 			tcs = &toolCallStream{
 				ItemID:      itemID,
@@ -350,10 +452,12 @@ func (r *responsesStreamRenderer) ensureItem(chunk models.ChatChunk, choice mode
 	if role == "" {
 		role = "assistant"
 	}
+	outputIdx := r.nextOutput
+	r.nextOutput++
 	item := &responseStreamItem{
 		ItemID:       fmt.Sprintf("%s-%d", chunk.ID, choice.Index),
 		Role:         role,
-		OutputIndex:  choice.Index,
+		OutputIndex:  outputIdx,
 		ContentIndex: 0,
 	}
 	r.items[choice.Index] = item

@@ -47,6 +47,7 @@ import (
 	billinghooks "github.com/ncecere/open_model_gateway/backend/internal/services/billinghooks"
 	exportsvc "github.com/ncecere/open_model_gateway/backend/internal/services/exports"
 	filesvc "github.com/ncecere/open_model_gateway/backend/internal/services/files"
+	"github.com/ncecere/open_model_gateway/backend/internal/services/responsestore"
 	tenantservice "github.com/ncecere/open_model_gateway/backend/internal/services/tenant"
 	usageService "github.com/ncecere/open_model_gateway/backend/internal/services/usage"
 	providermetrics "github.com/ncecere/open_model_gateway/backend/internal/telemetry/provider"
@@ -111,6 +112,7 @@ type Container struct {
 	HealthMon            *health.Monitor
 	Observability        *observability.Provider
 	Files                *filesvc.Service
+	ResponseStore        *responsestore.Service
 	TelemetryCancel      context.CancelFunc
 	tenantModels         *runtimetype.AccessStore
 	tenantRateLimitMu    sync.RWMutex
@@ -375,6 +377,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 	container.AdminRBAC = adminrbacsvc.NewService(queries)
 	container.AdminAudit = adminauditsvc.NewService(auditservice.NewService(queries))
 	container.AdminAPIKeys = adminapikeyssvc.NewService(queries)
+	container.ResponseStore = responsestore.New(queries, container.Logger, 7*24*time.Hour)
 
 	// Update ServiceContainer with admin services
 	container.Services.AdminTenants = container.AdminTenants

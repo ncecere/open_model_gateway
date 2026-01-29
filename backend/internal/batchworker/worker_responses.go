@@ -46,11 +46,18 @@ func (w *Worker) runResponsesItem(ctx context.Context, rc *requestctx.Context, t
 			errPayload: encodeErrorPayload("invalid_request_error", "input is required"),
 		}
 	}
-	if len(body.Tools) > 0 || len(body.ToolChoice) > 0 || len(body.ResponseFormat) > 0 || len(body.Conversation) > 0 || strings.TrimSpace(body.PreviousResponseID) != "" {
+	if len(body.Conversation) > 0 {
 		return itemOutcome{
 			statusCode: fiber.StatusBadRequest,
 			requestID:  traceID,
-			errPayload: encodeErrorPayload("invalid_request_error", "tools, conversations, and response_format are not supported in batches"),
+			errPayload: encodeErrorPayload("invalid_request_error", "conversations are not supported in batches"),
+		}
+	}
+	if strings.TrimSpace(body.PreviousResponseID) != "" {
+		return itemOutcome{
+			statusCode: fiber.StatusBadRequest,
+			requestID:  traceID,
+			errPayload: encodeErrorPayload("invalid_request_error", "previous_response_id is not supported in batches"),
 		}
 	}
 	if err := validateResponsesMetadata(body.Metadata); err != nil {
@@ -78,11 +85,42 @@ func (w *Worker) runResponsesItem(ctx context.Context, rc *requestctx.Context, t
 		}
 	}
 
+	// Parse tools for batch
+	var tools []models.Tool
+	if len(body.Tools) > 0 {
+		var rawTools []struct {
+			Type     string `json:"type"`
+			Function struct {
+				Name        string          `json:"name"`
+				Description string          `json:"description"`
+				Parameters  json.RawMessage `json:"parameters"`
+				Strict      *bool           `json:"strict"`
+			} `json:"function"`
+		}
+		if err := json.Unmarshal(body.Tools, &rawTools); err == nil {
+			tools = make([]models.Tool, 0, len(rawTools))
+			for _, t := range rawTools {
+				tools = append(tools, models.Tool{
+					Type: t.Type,
+					Function: models.ToolFunction{
+						Name:        t.Function.Name,
+						Description: t.Function.Description,
+						Parameters:  t.Function.Parameters,
+						Strict:      t.Function.Strict,
+					},
+				})
+			}
+		}
+	}
+
 	req := models.ChatRequest{
-		Messages:    messages,
-		Temperature: body.Temperature,
-		TopP:        body.TopP,
-		MaxTokens:   body.MaxOutputTokens,
+		Messages:          messages,
+		Temperature:       body.Temperature,
+		TopP:              body.TopP,
+		MaxTokens:         body.MaxOutputTokens,
+		Tools:             tools,
+		ToolChoice:        body.ToolChoice,
+		ParallelToolCalls: body.ParallelToolCalls,
 	}
 
 	options := responsesOptions{

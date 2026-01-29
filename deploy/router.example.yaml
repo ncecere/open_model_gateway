@@ -154,7 +154,7 @@ health:
 
 admin:
   session:
-    jwt_secret: "change-me"
+    jwt_secret: "change-me-to-a-secure-secret"
     access_token_ttl: 15m
     refresh_token_ttl: 24h
     cookie_name: "og_admin_session"

@@ -134,7 +134,7 @@ redis:
 
 admin:
   session:
-    jwt_secret: "test-secret"
+    jwt_secret: "test-secret-key-1234"
   local:
     enabled: true
 
@@ -183,14 +183,14 @@ redis:
   url: "redis://localhost:6379"
 admin:
   session:
-    jwt_secret: "test"
+    jwt_secret: "test-secret-key-1234"
   local:
     enabled: true
 budgets:
   alert:
     enabled: false
 `,
-			errContains: "ROUTER_DB_URL",
+			errContains: "ROUTER_DATABASE_URL",
 		},
 		{
 			name: "missing redis url",
@@ -199,7 +199,7 @@ database:
   url: "postgres://test@localhost/db"
 admin:
   session:
-    jwt_secret: "test"
+    jwt_secret: "test-secret-key-1234"
   local:
     enabled: true
 budgets:
@@ -217,7 +217,7 @@ redis:
   url: "redis://localhost:6379"
 admin:
   session:
-    jwt_secret: "test"
+    jwt_secret: "test-secret-key-1234"
   local:
     enabled: true
 budgets:
@@ -296,9 +296,9 @@ func TestNormalizeBudgetRefreshSchedule(t *testing.T) {
 
 func TestBudgetRollingWindowDays(t *testing.T) {
 	tests := []struct {
-		input    string
-		days     int
-		ok       bool
+		input string
+		days  int
+		ok    bool
 	}{
 		{"rolling_30d", 30, true},
 		{"rolling_7d", 7, true},

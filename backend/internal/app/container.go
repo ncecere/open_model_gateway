@@ -28,7 +28,6 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/observability"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers"
 	"github.com/ncecere/open_model_gateway/backend/internal/router"
-	"github.com/ncecere/open_model_gateway/backend/internal/runtime/bootstrap"
 	runtimebudgets "github.com/ncecere/open_model_gateway/backend/internal/runtime/budgets"
 	runtimeratelimits "github.com/ncecere/open_model_gateway/backend/internal/runtime/ratelimits"
 	runtimetype "github.com/ncecere/open_model_gateway/backend/internal/runtime/tenants"
@@ -195,18 +194,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, r
 		}
 	}
 
-	// Run bootstrap
-	if err := bootstrap.Ensure(ctx, bootstrap.Params{
-		Queries:      queries,
-		AdminAuth:    adminAuth,
-		PersonalSvc:  personalSvc,
-		Bootstrap:    cfg.Bootstrap,
-		Budgets:      cfg.Budgets,
-		KeyLimits:    keyLimitOverrides,
-		TenantLimits: tenantLimitOverrides,
-	}); err != nil {
-		return nil, err
-	}
+	// NOTE: bootstrap.Ensure is called inside BuildServices; no need to repeat here.
 
 	// Set up telemetry guard for degraded providers
 	var telemetryGuard func(alias, routeKey string) bool

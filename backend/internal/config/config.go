@@ -129,10 +129,29 @@ func (c *Config) Validate() error {
 	var missing []string
 
 	if c.Database.URL == "" {
-		missing = append(missing, "ROUTER_DB_URL")
+		missing = append(missing, "ROUTER_DATABASE_URL")
 	}
 	if c.Redis.URL == "" {
 		missing = append(missing, "ROUTER_REDIS_URL")
+	}
+
+	// Validate logging config values.
+	switch strings.ToLower(c.Logging.Level) {
+	case "debug", "info", "warn", "error":
+		// valid
+	default:
+		return fmt.Errorf("logging.level must be one of: debug, info, warn, error (got %q)", c.Logging.Level)
+	}
+	switch strings.ToLower(c.Logging.Format) {
+	case "text", "json":
+		// valid
+	default:
+		return fmt.Errorf("logging.format must be one of: text, json (got %q)", c.Logging.Format)
+	}
+
+	// Server body limit must be positive.
+	if c.Server.BodyLimitMB <= 0 {
+		return fmt.Errorf("server.body_limit_mb must be > 0")
 	}
 
 	if c.RateLimits.DefaultTokensPerMinute <= 0 {
@@ -276,6 +295,9 @@ func (c *Config) Validate() error {
 func (a *AdminConfig) validate() error {
 	if a.Session.JWTSecret == "" {
 		return fmt.Errorf("admin.session.jwt_secret must be provided")
+	}
+	if len(a.Session.JWTSecret) < 16 {
+		return fmt.Errorf("admin.session.jwt_secret must be at least 16 characters for security")
 	}
 	if a.Session.AccessTokenTTL <= 0 {
 		return fmt.Errorf("admin.session.access_token_ttl must be > 0")
@@ -495,6 +517,26 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("admin.oidc.enabled", false)
 	v.SetDefault("admin.oidc.scopes", []string{"openid", "email", "profile"})
 	v.SetDefault("admin.oidc.http_timeout", "5s")
+	// CORS defaults
+	v.SetDefault("server.cors.enabled", true)
+	v.SetDefault("server.cors.allow_origins", "*")
+	v.SetDefault("server.cors.allow_methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+	v.SetDefault("server.cors.allow_headers", "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Idempotency-Key")
+	v.SetDefault("server.cors.allow_credentials", false)
+	v.SetDefault("server.cors.max_age", 3600)
+
+	// Security header defaults
+	v.SetDefault("server.security.hsts", false)
+	v.SetDefault("server.security.hsts_max_age", 31536000)
+	v.SetDefault("server.security.frame_options", "DENY")
+	v.SetDefault("server.security.content_type_nosniff", true)
+	v.SetDefault("server.security.csp", "")
+
+	// Auth rate limiting defaults
+	v.SetDefault("server.auth_rate_limit.enabled", true)
+	v.SetDefault("server.auth_rate_limit.max_attempts", 10)
+	v.SetDefault("server.auth_rate_limit.window", "15m")
+
 	v.SetDefault("providers.azure.api_version", "2024-07-01-preview")
 	v.SetDefault("providers.azure_openai_version", "2024-07-01-preview")
 	v.SetDefault("providers.openrouter.base_url", "https://openrouter.ai/api/v1")

@@ -61,7 +61,9 @@ Update, delete, or filter hooks using the matching `PUT`/`DELETE` endpoints and 
 
 #### Dispatch summaries
 Trigger a payload with `POST /admin/billing-webhooks/{id}/dispatch` (or `/user/...`) by passing either `period` (`2025-01`) or `start` + `end` plus an optional `timezone`.
-Registered webhooks include `X-OMG-Signature-Version`, `X-OMG-Timestamp`, and `X-OMG-Signature: sha256=<hex>` headers where the signature equals `HMAC_SHA256(secret, body)`.
+Registered webhooks include `X-OMG-Signature-Version: v1`, `X-OMG-Timestamp: <RFC 3339>`, and `X-OMG-Signature: sha256=<hex>` headers where the signature equals `HMAC_SHA256(secret, body)`.
+The same HMAC signing applies to **budget alert webhooks** and **provider alert webhooks** when `budgets.alert.webhook.secret` is configured.
+Failed deliveries are retried up to `max_retries` times (default 3) with exponential backoff and 0-25% random jitter. Each attempt is logged with URL, status code, latency, and attempt number.
 
 ---
 

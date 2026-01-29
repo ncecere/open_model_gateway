@@ -235,7 +235,7 @@ func buildBedrockRoute(ctx context.Context, cfg *config.Config, entry config.Mod
 		Health:   WrapHealth(adapter.HealthCheck),
 	}
 	route.Capabilities = deriveCapabilities(entry.Modalities, route.Metadata)
-	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 300 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 3, InitialBackoff: 500 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
 	route.Tokenizer = selectTokenizer("anthropic", entry.ProviderOverrides.Tokenizer, route.Metadata)
 
 	if supportsModality(entry.Modalities, "text") && chatFormat != "" {

@@ -44,6 +44,7 @@ type SMTPConfig struct {
 type WebhookConfig struct {
 	Timeout    time.Duration `mapstructure:"timeout"`
 	MaxRetries int           `mapstructure:"max_retries"`
+	Secret     string        `mapstructure:"secret"`
 }
 
 // FilesConfig holds file storage settings.

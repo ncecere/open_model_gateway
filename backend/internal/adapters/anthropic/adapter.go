@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/retryafter"
 	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
@@ -928,5 +929,28 @@ func mapAnthropicStopReason(reason string) string {
 
 func decodeAPIError(resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return fmt.Errorf("anthropic api error %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	msg := strings.TrimSpace(string(body))
+	op := "anthropic"
+
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		return retryafter.RateLimitError(op, resp)
+	case 529: // Anthropic overloaded
+		return retryafter.OverloadedError(op, resp)
+	case http.StatusServiceUnavailable:
+		return retryafter.OverloadedError(op, resp)
+	case http.StatusBadRequest:
+		return apperror.BadRequest(op, msg)
+	case http.StatusUnauthorized:
+		return apperror.Unauthorized(op, msg)
+	case http.StatusForbidden:
+		return apperror.Forbidden(op, msg)
+	case http.StatusNotFound:
+		return apperror.NotFound(op, msg)
+	default:
+		if resp.StatusCode >= 500 {
+			return apperror.ServiceUnavailable(op, fmt.Sprintf("status %d: %s", resp.StatusCode, msg))
+		}
+		return fmt.Errorf("anthropic api error %d: %s", resp.StatusCode, msg)
+	}
 }

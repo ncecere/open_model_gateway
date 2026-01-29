@@ -15,6 +15,8 @@ Review these directories before editing services.
 | `backend/internal/providers` | Capability interfaces, registry definitions, builders, fixtures, and provider adapters. |
 | `backend/internal/router` | Alias merge engine, circuit breakers, routing weights, Redis-cached health state. |
 | `backend/internal/limits` | Redis-backed RPM/TPM/parallel limiters plus bootstrap + admin override plumbing. |
+| `backend/internal/tokenizer` | Pure-Go token counting (`tiktoken-go`): `o200k_base` for newer OpenAI, `cl100k_base` fallback for all others. Used by Responses truncation. |
+| `backend/internal/adapters/retryafter` | Parses `Retry-After` headers (seconds or HTTP-date) and surfaces them as `apperror.RetryAfter` for the executor retry loop. |
 | `backend/internal/usage` | Request persistence, budget evaluator, pricing cache, alert dispatcher. |
 | `backend/internal/timeutil` | Timezone-aware reporting window helpers shared by admin and user APIs. |
 | `backend/migrations` | Goose migrations defining schema, typed enums, indexes, and bootstrap helpers. |
@@ -64,8 +66,10 @@ Operate the gateway through dedicated admin APIs.
 ## Route providers safely
 Register adapters via `internal/providers` and read the [provider guides](./providers/adding.md). Rely on the router’s weighted selection plus Redis-cached circuit breakers to down-weight degraded deployments.
 
+The executor retries failed upstream calls up to 3 times (configurable per builder) with 500ms base exponential backoff. When a provider returns a `Retry-After` header (429 or 529), the `retryafter` package parses it and the executor honours that delay instead of the configured backoff. All retry delays include 0-25% random jitter to prevent thundering herd.
+
 ## Enforce budgets and limits
-`internal/usage` persists requests, calculates spend, emits alert events per budget window, and appends `X-Budget-*` headers. `internal/limits` enforces tenant defaults before key overrides so no key exceeds its parent quota.
+`internal/usage` persists requests, calculates spend, emits alert events per budget window, and appends `X-Budget-*` headers. Budget and provider alert webhooks support HMAC signing (`X-OMG-Signature`) when `budgets.alert.webhook.secret` is configured, with structured delivery logging for every attempt. `internal/limits` enforces tenant defaults before key overrides so no key exceeds its parent quota.
 
 ## Observe the platform
 Enable OTEL spans (`executor`, `ratelimiter`, `budget-evaluator`) and Prometheus metrics (`/metrics`) as described in [observability](./observability.md). `/healthz` exposes Postgres/Redis latency so dashboards can render status without Grafana.

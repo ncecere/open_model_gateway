@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/retryafter"
 	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
@@ -407,12 +408,22 @@ func epochTime(sec int64) time.Time {
 }
 
 func decodeAPIError(resp *http.Response) error {
+	op := "groq"
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		return retryafter.RateLimitError(op, resp)
+	case http.StatusServiceUnavailable:
+		return retryafter.OverloadedError(op, resp)
+	}
 	var parsed apiError
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 		return fmt.Errorf("groq: http %d", resp.StatusCode)
 	}
 	if parsed.Error.Message == "" {
 		return fmt.Errorf("groq: http %d", resp.StatusCode)
+	}
+	if resp.StatusCode >= 500 {
+		return apperror.ServiceUnavailable(op, parsed.Error.Message)
 	}
 	return fmt.Errorf("groq: %s", parsed.Error.Message)
 }

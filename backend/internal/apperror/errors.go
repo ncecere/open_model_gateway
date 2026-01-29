@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // Sentinel errors for common application errors.
@@ -50,17 +51,17 @@ type Code string
 
 // Common error codes for categorization and client handling.
 const (
-	CodeNotFound          Code = "NOT_FOUND"
-	CodeUnauthorized      Code = "UNAUTHORIZED"
-	CodeForbidden         Code = "FORBIDDEN"
-	CodeRateLimited       Code = "RATE_LIMITED"
-	CodeBudgetExceeded    Code = "BUDGET_EXCEEDED"
-	CodeBadRequest        Code = "BAD_REQUEST"
-	CodeConflict          Code = "CONFLICT"
-	CodeInternal          Code = "INTERNAL_ERROR"
+	CodeNotFound           Code = "NOT_FOUND"
+	CodeUnauthorized       Code = "UNAUTHORIZED"
+	CodeForbidden          Code = "FORBIDDEN"
+	CodeRateLimited        Code = "RATE_LIMITED"
+	CodeBudgetExceeded     Code = "BUDGET_EXCEEDED"
+	CodeBadRequest         Code = "BAD_REQUEST"
+	CodeConflict           Code = "CONFLICT"
+	CodeInternal           Code = "INTERNAL_ERROR"
 	CodeServiceUnavailable Code = "SERVICE_UNAVAILABLE"
-	CodeTimeout           Code = "TIMEOUT"
-	CodeValidation        Code = "VALIDATION_ERROR"
+	CodeTimeout            Code = "TIMEOUT"
+	CodeValidation         Code = "VALIDATION_ERROR"
 )
 
 // Error represents a structured application error with context.
@@ -76,6 +77,10 @@ type Error struct {
 
 	// Err is the underlying error, if any.
 	Err error
+
+	// RetryAfter is the duration the caller should wait before retrying.
+	// Only meaningful for rate-limited or overloaded errors.
+	RetryAfter time.Duration
 }
 
 // Error returns a formatted error message.
@@ -234,6 +239,27 @@ func RateLimited(op, message string) *Error {
 		Message: message,
 		Err:     ErrRateLimited,
 	}
+}
+
+// RateLimitedWithRetryAfter creates a rate limited error with a retry-after hint.
+func RateLimitedWithRetryAfter(op, message string, retryAfter time.Duration) *Error {
+	return &Error{
+		Op:         op,
+		Code:       CodeRateLimited,
+		Message:    message,
+		Err:        ErrRateLimited,
+		RetryAfter: retryAfter,
+	}
+}
+
+// GetRetryAfter extracts the RetryAfter duration from an error chain.
+// Returns 0 if the error does not carry retry-after information.
+func GetRetryAfter(err error) time.Duration {
+	var e *Error
+	if errors.As(err, &e) && e.RetryAfter > 0 {
+		return e.RetryAfter
+	}
+	return 0
 }
 
 // BudgetExceeded creates a budget exceeded error.

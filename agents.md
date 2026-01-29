@@ -29,8 +29,8 @@
 - Observability: enable OTEL exporters (HTTP OTLP by default), Prometheus `/metrics`.
 
 ## Research & Decisions Needed
-- Select Go tokenization libraries for Anthropic & Llama models (free/open-source). Candidate search via Context7 and web.
-- Confirm retry/backoff policy per provider (reference provider docs; align with SLA).
+- ~~Select Go tokenization libraries for Anthropic & Llama models~~ **RESOLVED**: Using `tiktoken-go` (`github.com/pkoukk/tiktoken-go`), pure Go, no CGO. `o200k_base` for newer OpenAI models, `cl100k_base` as universal fallback (~5-10% variance). See `internal/tokenizer/`.
+- ~~Confirm retry/backoff policy per provider~~ **RESOLVED**: 3 attempts / 500ms base / 2x multiplier for hosted providers (OpenAI, Anthropic, Azure, Bedrock, Vertex, OpenRouter); 2 / 250ms for fast/self-hosted (Groq, vLLM). Executor honours `Retry-After` headers with 0-25% jitter. See `internal/adapters/retryafter/` and `internal/executor/`.
 - Finalize auth storage for JWT secrets (ENV-based for now).
 
 ## Decisions Locked

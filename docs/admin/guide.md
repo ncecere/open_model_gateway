@@ -115,7 +115,7 @@ Define audio aliases with `model_type: audio_transcription` or `audio_speech` so
 - Per-key budgets can be set at key creation time; they can never exceed the tenant budget.
 - Alert routing:
   - **Email**: configure `budgets.alert.smtp.*` (host, credentials, TLS). Alerts include spend, limit, warning threshold, and tenant metadata.
-  - **Webhook**: configure `budgets.alert.webhook.*` (timeout, retries). Payloads mirror the email body and include HMAC signatures.
+  - **Webhook**: configure `budgets.alert.webhook.*` (timeout, retries, secret). Payloads mirror the email body. When `webhook.secret` is set, every delivery includes `X-OMG-Signature: sha256=<hex>`, `X-OMG-Signature-Version: v1`, and `X-OMG-Timestamp` headers for verification. Failed deliveries retry with exponential backoff and random jitter.
   - Alert history lives in `budget_alert_events` and will surface in future UI releases.
 - Every API response includes `X-Budget-*` and `X-RateLimit-*` headers, so you can verify changes without opening the UI.
 - Usage exports + billing webhooks (`/admin/usage-exports`, `/admin/billing-webhooks`) are documented in `docs/admin/runtime/usage.md`. Use them to hand finance teams CSV/Parquet exports or to post monthly summaries into billing systems.

@@ -59,4 +59,4 @@ model_catalog:
 ```
 
 ## Verify behavior
-Include attribution headers to avoid throttling, rely on the adapter’s automatic retry/backoff for 429/5xx responses, monitor `/admin/providers` for incident data sourced from `/api/v1/key`, and note that streaming errors arrive via the final SSE chunk with `finish_reason: "error"`.
+Include attribution headers to avoid throttling. The adapter parses `Retry-After` headers on 429 and 503 responses and surfaces them to the executor, which honours the provider-requested delay (with 0-25% jitter) before retrying up to 3 times with 500ms base backoff. Rely on the adapter’s automatic retry/backoff for 429/5xx responses, monitor `/admin/providers` for incident data sourced from `/api/v1/key`, and note that streaming errors arrive via the final SSE chunk with `finish_reason: "error"`.

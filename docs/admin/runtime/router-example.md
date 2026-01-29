@@ -76,6 +76,7 @@ budgets:
     webhook:
       timeout: 5s
       max_retries: 3
+      secret: ${WEBHOOK_HMAC_SECRET}  # optional; enables X-OMG-Signature HMAC headers
 
 providers:
   openai_key: ${OPENAI_KEY}

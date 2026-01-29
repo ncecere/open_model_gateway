@@ -128,7 +128,7 @@ func buildOpenRouterRoute(ctx context.Context, cfg *config.Config, entry config.
 		Health:     WrapHealth(adapter.HealthCheck),
 	}
 	route.Capabilities = deriveCapabilities(entry.Modalities, route.Metadata)
-	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 2, InitialBackoff: 250 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
+	route.Retry = mergeRetry(RetryConfig{MaxAttempts: 3, InitialBackoff: 500 * time.Millisecond, BackoffMultiplier: 2}, entry.ProviderOverrides.Retry, route.Metadata)
 	route.Tokenizer = selectTokenizer("openai", entry.ProviderOverrides.Tokenizer, route.Metadata)
 	return route, nil
 }

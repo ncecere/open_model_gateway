@@ -56,7 +56,7 @@ If you only need personal experimentation, follow the dedicated walkthrough in `
 | `401 unauthorized` | Key revoked or expired | Request a new key from the tenant owner |
 | `402 budget_exceeded` | Key/tenant budget spent | Wait for refresh or request a higher budget |
 | `404 model_not_found` | Alias not attached to your tenant | Ask the tenant owner to enable the model |
-| `429 rate_limit_exceeded` | RPM/TPM reached | Add exponential backoff or ask for higher limits |
+| `429 rate_limit_exceeded` | RPM/TPM reached | Honour the `Retry-After` header value, then add exponential backoff; the gateway itself retries upstream 429s with jitter |
 | `provider_unavailable` | Upstream provider outage | Retry later or use a different model alias |
 
 Escalate to your tenant owner with the request ID and timestamp if the issue persists. They can coordinate with platform administrators for deeper investigation.

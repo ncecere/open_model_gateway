@@ -3,10 +3,14 @@ package usagepipeline
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -17,6 +21,7 @@ import (
 // WebhookSink delivers alerts to arbitrary HTTP endpoints.
 type WebhookSink struct {
 	client     *http.Client
+	secret     string
 	maxRetries int
 	logger     *slog.Logger
 }
@@ -33,6 +38,7 @@ func NewWebhookSink(cfg config.WebhookConfig, logger *slog.Logger) AlertSink {
 	}
 	return &WebhookSink{
 		client:     &http.Client{Timeout: cfg.Timeout},
+		secret:     strings.TrimSpace(cfg.Secret),
 		maxRetries: cfg.MaxRetries,
 		logger:     logger,
 	}
@@ -80,37 +86,71 @@ func (s *WebhookSink) Notify(ctx context.Context, payload AlertPayload) error {
 func (s *WebhookSink) postWithRetries(ctx context.Context, url string, body []byte) error {
 	var lastErr error
 	for attempt := 1; attempt <= s.maxRetries; attempt++ {
-		if err := s.post(ctx, url, body); err != nil {
-			lastErr = err
-			delay := time.Duration(attempt) * 250 * time.Millisecond
+		start := time.Now()
+		statusCode, err := s.post(ctx, url, body)
+		elapsed := time.Since(start)
+		if err == nil {
+			s.logger.Info("budget webhook delivered",
+				slog.String("url", url),
+				slog.Int("status", statusCode),
+				slog.Duration("latency", elapsed),
+				slog.Int("attempt", attempt),
+			)
+			return nil
+		}
+		lastErr = err
+		s.logger.Warn("budget webhook delivery failed",
+			slog.String("url", url),
+			slog.Int("status", statusCode),
+			slog.String("error", err.Error()),
+			slog.Duration("latency", elapsed),
+			slog.Int("attempt", attempt),
+			slog.Int("max_retries", s.maxRetries),
+		)
+		if attempt < s.maxRetries {
+			base := time.Duration(attempt) * 250 * time.Millisecond
+			jitter := time.Duration(rand.Int63n(int64(base) / 4))
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(delay):
+			case <-time.After(base + jitter):
 			}
-			continue
 		}
-		return nil
 	}
 	return lastErr
 }
 
-func (s *WebhookSink) post(ctx context.Context, url string, body []byte) error {
+func (s *WebhookSink) post(ctx context.Context, url string, body []byte) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "open-model-gateway")
+	if sig := s.signPayload(body); sig != "" {
+		req.Header.Set("X-OMG-Signature", sig)
+		req.Header.Set("X-OMG-Signature-Version", "v1")
+		req.Header.Set("X-OMG-Timestamp", time.Now().UTC().Format(time.RFC3339))
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("status %d", resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("status %d", resp.StatusCode)
 	}
-	return nil
+	return resp.StatusCode, nil
+}
+
+func (s *WebhookSink) signPayload(payload []byte) string {
+	if s.secret == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, []byte(s.secret))
+	mac.Write(payload)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
 type webhookPayload struct {

@@ -13,6 +13,7 @@ import (
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/requestctx"
 	"github.com/ncecere/open_model_gateway/backend/internal/services/responsestore"
+	"github.com/ncecere/open_model_gateway/backend/internal/tokenizer"
 )
 
 // ---------------------------------------------------------------------------
@@ -292,7 +293,7 @@ func (h *openAIHandler) responses(c *fiber.Ctx) error {
 	if truncationMode == "auto" {
 		model, lookupErr := h.container.Queries.GetModelByAlias(c.UserContext(), alias)
 		if lookupErr == nil && model.ContextWindow > 0 {
-			messages = truncateMessages(messages, int(model.ContextWindow))
+			messages = truncateMessages(messages, int(model.ContextWindow), model.Provider)
 		}
 	}
 
@@ -758,9 +759,9 @@ func applyAllowedTools(toolChoice json.RawMessage, tools []models.Tool, toolDefs
 }
 
 // truncateMessages trims older non-system messages to fit within the model's context
-// window. Uses a rough chars/4 token estimate. System/developer messages at the
-// front and the last user message are always preserved.
-func truncateMessages(msgs []models.ChatMessage, contextWindow int) []models.ChatMessage {
+// window. Uses tiktoken-based BPE token counting (falls back to len/4 on error).
+// System/developer messages at the front and the last user message are always preserved.
+func truncateMessages(msgs []models.ChatMessage, contextWindow int, provider string) []models.ChatMessage {
 	if len(msgs) == 0 || contextWindow <= 0 {
 		return msgs
 	}
@@ -768,13 +769,13 @@ func truncateMessages(msgs []models.ChatMessage, contextWindow int) []models.Cha
 	maxInputTokens := contextWindow * 3 / 4
 	estimateTokens := func(m models.ChatMessage) int {
 		text := m.Text()
-		n := len(text) / 4
+		n := tokenizer.MustCountTokens(provider, text)
 		if n < 1 {
 			n = 1
 		}
 		// Tool calls add overhead
 		for _, tc := range m.ToolCalls {
-			n += (len(tc.Function.Arguments) + len(tc.Function.Name)) / 4
+			n += tokenizer.MustCountTokens(provider, tc.Function.Arguments+tc.Function.Name)
 		}
 		return n
 	}

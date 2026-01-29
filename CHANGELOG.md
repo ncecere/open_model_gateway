@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Added
 #### Backend
+- **Tokenizer package** (`internal/tokenizer/`) — pure-Go token counting via `tiktoken-go` with `o200k_base` for newer OpenAI models and `cl100k_base` as universal fallback for Anthropic/Bedrock/Vertex/Groq/OpenRouter/Llama (~5-10% variance vs chars/4 at ~50%). Lazy-init with RWMutex caching, `CountTokens`, `MustCountTokens`, `EstimateMessageTokens` helpers, and 8 tests.
+- **Retry-After header parser** (`internal/adapters/retryafter/`) — parses `Retry-After` as delta-seconds or HTTP-date, with convenience constructors for rate-limit and overload errors. 8 tests.
+- **`RetryAfter` field on `apperror.Error`** — new `RateLimitedWithRetryAfter` constructor and `GetRetryAfter` helper to propagate provider backpressure through the error chain.
+- **HMAC webhook signatures** — budget alert and provider alert webhook sinks now sign payloads with `X-OMG-Signature: sha256=<hex>`, `X-OMG-Signature-Version: v1`, and `X-OMG-Timestamp` headers when `webhook.secret` is configured. Uses same pattern as billing hooks.
+- **Webhook delivery logging** — both `WebhookSink` (budget) and `WebhookAlertSink` (provider) emit structured slog entries on success/failure with URL, status code, latency, attempt number, and max retries.
+
+### Changed
+#### Backend
+- **Truncation uses real tokenizer** — `truncateMessages` in the Responses handler now calls `tokenizer.MustCountTokens(provider, text)` instead of `len(text)/4`, with proper tool-call overhead accounting.
+- **Retry loops honour Retry-After** — executor `retryDelay()` checks `apperror.GetRetryAfter(err)` first, falls back to exponential backoff with 0-25% random jitter to avoid thundering herd.
+- **Provider retry defaults raised** — OpenAI, Anthropic, Azure, Bedrock, Vertex, OpenRouter builders now default to 3 attempts / 500ms base (was 2 / 250ms). Groq and vLLM unchanged (fast/self-hosted).
+- **Structured provider error handling** — Anthropic, Groq, and OpenRouter adapters now surface `Retry-After` headers on 429/529/503 via `retryafter` package instead of generic errors.
+- **Webhook retry jitter** — budget and provider alert webhook sinks add 0-25% random jitter to retry delays to spread load.
+- **Provider alert webhook retries** — `WebhookAlertSink` now retries failed deliveries (configurable `max_retries`, default 3) instead of fire-and-forget.
+- **`WebhookConfig.Secret`** field added for HMAC signing configuration.
+
+#### Docs
+- Updated 10 documentation files to reflect tokenizer, retry/backoff, and webhook signing changes across admin guides, developer guides, user guide, troubleshooting reference, sample configs, and agents playbook.
+
 - **Shared model catalog normalizer** (`internal/catalog/normalize.go`) — single `NormalizeEntry()` function that auto-infers model type from provider model name (e.g. "gpt-image-1" → image, "text-embedding-3-small" → embedding), auto-infers modalities from model type, auto-detects tool support for known LLM families, and applies canonical defaults (deployment, weight, currency, pricing clamps). Used by both config seeding and admin API upsert.
 - **`managed_by` column** on `model_catalog` table — tracks whether an entry was created via YAML config (`config`) or the admin UI (`ui`). Migration + schema included.
 - **`POST /admin/model-catalog/validate`** endpoint — runs the normalizer on a payload and returns the preview entry plus warnings without persisting, for live form feedback.

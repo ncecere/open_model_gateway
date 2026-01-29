@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -226,7 +227,6 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 		lastRoute = route
 		req.Model = route.ResolveDeployment()
 		retryCfg := normalizedRetry(route)
-		delay := retryCfg.InitialBackoff
 
 		for attempt := 1; attempt <= retryCfg.MaxAttempts; attempt++ {
 			attemptCtx, attemptSpan := execTracer.Start(ctx, "Executor.ChatAttempt", trace.WithAttributes(
@@ -248,12 +248,10 @@ func (e *Executor) Chat(ctx context.Context, rc *requestctx.Context, alias strin
 
 				if retryable && attempt < retryCfg.MaxAttempts {
 					e.recordRetry(rc, alias, route.Provider, retryReason(err))
+					delay := retryDelay(err, retryCfg.InitialBackoff, retryCfg.BackoffMultiplier, attempt)
 					if delay > 0 {
 						if err := waitForRetry(ctx, delay); err != nil {
 							return ChatResult{}, err
-						}
-						if retryCfg.BackoffMultiplier > 0 {
-							delay = time.Duration(float64(delay) * retryCfg.BackoffMultiplier)
 						}
 					}
 					continue
@@ -384,7 +382,6 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 		}
 		lastRoute = route
 		retryCfg := normalizedRetry(route)
-		delay := retryCfg.InitialBackoff
 
 		for attempt := 1; attempt <= retryCfg.MaxAttempts; attempt++ {
 			attemptCtx, attemptSpan := execTracer.Start(ctx, "Executor.ImageAttempt", trace.WithAttributes(
@@ -410,12 +407,10 @@ func (e *Executor) Image(ctx context.Context, rc *requestctx.Context, traceID st
 
 				if retryable && attempt < retryCfg.MaxAttempts {
 					e.recordRetry(rc, alias, route.Provider, retryReason(err))
+					delay := retryDelay(err, retryCfg.InitialBackoff, retryCfg.BackoffMultiplier, attempt)
 					if delay > 0 {
 						if err := waitForRetry(ctx, delay); err != nil {
 							return ImageResult{}, err
-						}
-						if retryCfg.BackoffMultiplier > 0 {
-							delay = time.Duration(float64(delay) * retryCfg.BackoffMultiplier)
 						}
 					}
 					continue
@@ -553,8 +548,6 @@ func (e *Executor) Embed(ctx context.Context, rc *requestctx.Context, alias stri
 		lastRoute = route
 		req.Model = route.ResolveDeployment()
 		retryCfg := normalizedRetry(route)
-		delay := retryCfg.InitialBackoff
-
 		for attempt := 1; attempt <= retryCfg.MaxAttempts; attempt++ {
 			attemptCtx, attemptSpan := execTracer.Start(ctx, "Executor.EmbedAttempt", trace.WithAttributes(
 				attribute.String("provider", route.Provider),
@@ -575,12 +568,10 @@ func (e *Executor) Embed(ctx context.Context, rc *requestctx.Context, alias stri
 
 				if retryable && attempt < retryCfg.MaxAttempts {
 					e.recordRetry(rc, alias, route.Provider, retryReason(err))
+					delay := retryDelay(err, retryCfg.InitialBackoff, retryCfg.BackoffMultiplier, attempt)
 					if delay > 0 {
 						if err := waitForRetry(ctx, delay); err != nil {
 							return EmbeddingsResult{}, err
-						}
-						if retryCfg.BackoffMultiplier > 0 {
-							delay = time.Duration(float64(delay) * retryCfg.BackoffMultiplier)
 						}
 					}
 					continue
@@ -710,7 +701,6 @@ func (e *Executor) Moderate(ctx context.Context, rc *requestctx.Context, alias s
 			Input: inputs,
 		}
 		retryCfg := normalizedRetry(route)
-		delay := retryCfg.InitialBackoff
 
 		for attempt := 1; attempt <= retryCfg.MaxAttempts; attempt++ {
 			attemptCtx, attemptSpan := execTracer.Start(ctx, "Executor.ModerateAttempt", trace.WithAttributes(
@@ -732,12 +722,10 @@ func (e *Executor) Moderate(ctx context.Context, rc *requestctx.Context, alias s
 
 				if retryable && attempt < retryCfg.MaxAttempts {
 					e.recordRetry(rc, alias, route.Provider, retryReason(err))
+					delay := retryDelay(err, retryCfg.InitialBackoff, retryCfg.BackoffMultiplier, attempt)
 					if delay > 0 {
 						if err := waitForRetry(ctx, delay); err != nil {
 							return ModerationResult{}, err
-						}
-						if retryCfg.BackoffMultiplier > 0 {
-							delay = time.Duration(float64(delay) * retryCfg.BackoffMultiplier)
 						}
 					}
 					continue
@@ -924,11 +912,15 @@ func shouldRetryProvider(err error) bool {
 	return true
 }
 
+// waitForRetry sleeps for the given delay plus random jitter (up to 25% of delay).
 func waitForRetry(ctx context.Context, delay time.Duration) error {
 	if delay <= 0 {
 		return nil
 	}
-	timer := time.NewTimer(delay)
+	// Add jitter: 0-25% of the base delay to avoid thundering herd
+	jitter := time.Duration(rand.Int63n(int64(delay/4) + 1))
+	total := delay + jitter
+	timer := time.NewTimer(total)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -936,6 +928,21 @@ func waitForRetry(ctx context.Context, delay time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+// retryDelay computes the delay for the next retry attempt, honoring
+// Retry-After from the error if present, otherwise using exponential backoff.
+func retryDelay(err error, baseDelay time.Duration, multiplier float64, attempt int) time.Duration {
+	if ra := apperror.GetRetryAfter(err); ra > 0 {
+		return ra
+	}
+	delay := baseDelay
+	for i := 1; i < attempt; i++ {
+		if multiplier > 0 {
+			delay = time.Duration(float64(delay) * multiplier)
+		}
+	}
+	return delay
 }
 
 func normalizedRetry(route providers.Route) providers.RetryConfig {

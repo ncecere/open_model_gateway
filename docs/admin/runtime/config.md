@@ -24,7 +24,7 @@ description: Detailed router.yaml options
 | Block | Highlights |
 | --- | --- |
 | `rate_limits.*` | Defaults for RPM, TPM, and parallel caps used whenever tenants or keys have not defined stricter overrides. |
-| `budgets.*` | Global USD ceiling, warning threshold, refresh schedule, plus alert channels (SMTP + webhook) with per-channel cooldowns and delivery retries. |
+| `budgets.*` | Global USD ceiling, warning threshold, refresh schedule, plus alert channels (SMTP + webhook) with per-channel cooldowns, delivery retries, jitter, and optional HMAC signing via `webhook.secret`. |
 | `retention.*` | Minimum metadata retention window and a `zero_retention` escape hatch when compliance forbids storing usage rows. |
 | `admin.session.*` | JWT secret, cookie, and TTL pairings for admin access tokens and refresh cookies. |
 | `admin.local.*` | Boolean guard for username/password logins when you rely only on OIDC. |

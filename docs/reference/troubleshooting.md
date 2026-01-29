@@ -10,9 +10,9 @@ Use this checklist to resolve common issues across admins, tenant owners, and st
 | `402 budget_exceeded` | Budget exhausted for key or tenant | Pause workload until refresh | Increase per-key budget (if approved) or delay jobs | Adjust tenant/global budgets or refresh schedule; notify finance |
 | `404 model_not_found` | Alias not assigned to tenant | Ask owner to enable alias | Enable alias under **Models -> Assignments** | Confirm alias exists in catalog and is tenant-assignable |
 | `409 conflict` | Duplicate idempotency key | Change client idempotency tokens | Ensure client uses unique IDs per request | Investigate Redis idempotency cache for leaks |
-| `429 rate_limit_exceeded` | RPM/TPM/parallel cap hit | Add retry/backoff with `Retry-After` header | Raise per-key limits if needed | Raise tenant defaults or global settings if capacity allows |
+| `429 rate_limit_exceeded` | RPM/TPM/parallel cap hit | Honour the `Retry-After` header (seconds or HTTP-date); the gateway parses it from upstream providers and uses it internally for retry scheduling with jitter | Raise per-key limits if needed | Raise tenant defaults or global settings if capacity allows |
 | `provider_unavailable` | Upstream unhealthy and no fallback available | Retry later or switch models | Provide fallback aliases; communicate ETA | Adjust routing weights, disable bad providers, track via `/admin/providers` |
-| `500` (generic) | Unexpected backend error | Retry with exponential backoff | Provide request IDs to admins | Inspect router logs, traces, and request payloads |
+| `500` (generic) | Unexpected backend error | Retry with exponential backoff (the gateway retries upstream calls up to 3 times with 500ms base delay + jitter) | Provide request IDs to admins | Inspect router logs, traces, and request payloads |
 
 ## Diagnostics Checklist
 

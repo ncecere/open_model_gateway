@@ -3,9 +3,13 @@ package provider
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -199,9 +203,11 @@ func (s *EmailAlertSink) manageLink() string {
 
 // WebhookAlertSink delivers provider incidents via JSON webhook.
 type WebhookAlertSink struct {
-	client *http.Client
-	urls   []string
-	logger *slog.Logger
+	client     *http.Client
+	secret     string
+	maxRetries int
+	urls       []string
+	logger     *slog.Logger
 }
 
 func NewWebhookAlertSink(cfg config.WebhookConfig, urls []string, logger *slog.Logger) AlertSink {
@@ -211,11 +217,21 @@ func NewWebhookAlertSink(cfg config.WebhookConfig, urls []string, logger *slog.L
 	if logger == nil {
 		logger = slog.Default()
 	}
-	client := &http.Client{Timeout: cfg.Timeout}
-	if client.Timeout <= 0 {
-		client.Timeout = 5 * time.Second
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
 	}
-	return &WebhookAlertSink{client: client, urls: urls, logger: logger}
+	maxRetries := cfg.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	return &WebhookAlertSink{
+		client:     &http.Client{Timeout: timeout},
+		secret:     strings.TrimSpace(cfg.Secret),
+		maxRetries: maxRetries,
+		urls:       urls,
+		logger:     logger,
+	}
 }
 
 func (w *WebhookAlertSink) Notify(ctx context.Context, inc Incident) error {
@@ -240,20 +256,80 @@ func (w *WebhookAlertSink) Notify(ctx context.Context, inc Incident) error {
 	if err != nil {
 		return err
 	}
+	var lastErr error
 	for _, u := range w.urls {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSpace(u), bytes.NewReader(body))
-		if err != nil {
-			continue
+		if err := w.postWithRetries(ctx, strings.TrimSpace(u), body); err != nil {
+			lastErr = err
 		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := w.client.Do(req)
-		if err != nil {
-			if w.logger != nil {
-				w.logger.Warn("provider webhook send failed", slog.String("url", u), slog.String("err", err.Error()))
-			}
-			continue
-		}
-		resp.Body.Close()
 	}
-	return nil
+	return lastErr
+}
+
+func (w *WebhookAlertSink) postWithRetries(ctx context.Context, url string, body []byte) error {
+	var lastErr error
+	for attempt := 1; attempt <= w.maxRetries; attempt++ {
+		start := time.Now()
+		statusCode, err := w.post(ctx, url, body)
+		elapsed := time.Since(start)
+		if err == nil {
+			w.logger.Info("provider webhook delivered",
+				slog.String("url", url),
+				slog.Int("status", statusCode),
+				slog.Duration("latency", elapsed),
+				slog.Int("attempt", attempt),
+			)
+			return nil
+		}
+		lastErr = err
+		w.logger.Warn("provider webhook delivery failed",
+			slog.String("url", url),
+			slog.Int("status", statusCode),
+			slog.String("error", err.Error()),
+			slog.Duration("latency", elapsed),
+			slog.Int("attempt", attempt),
+			slog.Int("max_retries", w.maxRetries),
+		)
+		if attempt < w.maxRetries {
+			base := time.Duration(attempt) * 250 * time.Millisecond
+			jitter := time.Duration(rand.Int63n(int64(base) / 4))
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(base + jitter):
+			}
+		}
+	}
+	return lastErr
+}
+
+func (w *WebhookAlertSink) post(ctx context.Context, url string, body []byte) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "open-model-gateway")
+	if sig := w.signPayload(body); sig != "" {
+		req.Header.Set("X-OMG-Signature", sig)
+		req.Header.Set("X-OMG-Signature-Version", "v1")
+		req.Header.Set("X-OMG-Timestamp", time.Now().UTC().Format(time.RFC3339))
+	}
+	resp, err := w.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return resp.StatusCode, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return resp.StatusCode, nil
+}
+
+func (w *WebhookAlertSink) signPayload(payload []byte) string {
+	if w.secret == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, []byte(w.secret))
+	mac.Write(payload)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }

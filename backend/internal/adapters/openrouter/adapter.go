@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/retryafter"
 	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
@@ -527,6 +528,15 @@ func epochTime(ts int64) time.Time {
 }
 
 func decodeAPIError(resp *http.Response) error {
+	op := "openrouter"
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		resp.Body.Close()
+		return retryafter.RateLimitError(op, resp)
+	case http.StatusServiceUnavailable:
+		resp.Body.Close()
+		return retryafter.OverloadedError(op, resp)
+	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if len(body) == 0 {
@@ -535,6 +545,9 @@ func decodeAPIError(resp *http.Response) error {
 	var apiErr apiErrorResponse
 	if err := json.Unmarshal(body, &apiErr); err != nil || apiErr.Error.Message == "" {
 		return fmt.Errorf("openrouter: http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if resp.StatusCode >= 500 {
+		return apperror.ServiceUnavailable(op, apiErr.Error.Message)
 	}
 	return fmt.Errorf("openrouter: %s", apiErr.Error.Message)
 }

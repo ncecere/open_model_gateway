@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"go.opentelemetry.io/otel"
@@ -53,11 +54,26 @@ func New(container *app.Container, health runtime.HealthReporter) (*Server, erro
 	})
 
 	app.Use(requestid.New())
+
+	// Security headers (X-Content-Type-Options, X-Frame-Options, HSTS, CSP).
+	app.Use(middleware.SecurityHeaders(cfg.Server.Security))
+
+	// CORS middleware.
+	if cfg.Server.CORS.Enabled {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.Server.CORS.AllowOrigins,
+			AllowMethods:     cfg.Server.CORS.AllowMethods,
+			AllowHeaders:     cfg.Server.CORS.AllowHeaders,
+			AllowCredentials: cfg.Server.CORS.AllowCredentials,
+			MaxAge:           cfg.Server.CORS.MaxAge,
+		}))
+	}
+
 	app.Use(middleware.WideEvent(middleware.WideEventConfig{
 		Logger:           container.Log(),
 		ServiceName:      "open-model-gateway",
 		ServiceVersion:   cfg.Version,
-		SkipPaths:        []string{"/healthz", "/metrics"},
+		SkipPaths:        []string{"/healthz", "/readyz", "/metrics"},
 		IncludeUserAgent: cfg.Logging.WideEvent.IncludeUserAgent,
 	}))
 	app.Use(recover.New())
@@ -113,8 +129,9 @@ func New(container *app.Container, health runtime.HealthReporter) (*Server, erro
 	}
 
 	registerHealthRoutes(app, container, health)
+	registerReadinessRoute(app, container)
 	mountAdminUISubpath(app)
-	adminroutes.Register(app, container)
+	adminroutes.Register(app, container, cfg.Server.AuthRateLimit)
 	userroutes.Register(app, container)
 	publicroutes.Register(app, container)
 	registerOpenAPIRoutes(app)
@@ -151,6 +168,48 @@ func (s *Server) Listen(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+func registerReadinessRoute(app *fiber.App, container *app.Container) {
+	app.Get("/readyz", func(c *fiber.Ctx) error {
+		ctx, cancel := context.WithTimeout(c.Context(), 2*time.Second)
+		defer cancel()
+
+		checks := make(map[string]string)
+		ready := true
+
+		// Check database.
+		if pool := container.DBPool; pool != nil {
+			if err := pool.Ping(ctx); err != nil {
+				checks["postgres"] = err.Error()
+				ready = false
+			} else {
+				checks["postgres"] = "ok"
+			}
+		}
+
+		// Check Redis.
+		if rdb := container.Data; rdb != nil && rdb.Redis != nil {
+			if err := rdb.Redis.Ping(ctx).Err(); err != nil {
+				checks["redis"] = err.Error()
+				ready = false
+			} else {
+				checks["redis"] = "ok"
+			}
+		}
+
+		status := fiber.StatusOK
+		overall := "ready"
+		if !ready {
+			status = fiber.StatusServiceUnavailable
+			overall = "not_ready"
+		}
+
+		return c.Status(status).JSON(fiber.Map{
+			"status": overall,
+			"checks": checks,
+		})
+	})
 }
 
 func registerHealthRoutes(app *fiber.App, container *app.Container, reporter runtime.HealthReporter) {

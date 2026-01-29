@@ -34,12 +34,7 @@ interface UsageBreakdownCardProps {
 
 type MetricKey = "requests" | "tokens" | "spend";
 
-const currencyFormatter = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+import { currencyFormatter } from "@/lib/formatters";
 
 export function UsageBreakdownCard({
   series,

@@ -31,11 +31,7 @@ import { useUserTenantsQuery } from "../hooks/useUserData";
 import { PageHeader } from "@/components/layouts";
 import type { PricingTier } from "@/api/model-catalog";
 
-const currencyFormatter = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 4,
-});
+import { formatPricingCurrency } from "@/lib/formatters";
 
 const throughputFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
@@ -378,10 +374,10 @@ function TierPriceRow({ tiers }: { tiers: PricingTier[] }) {
     return (
       <div className="flex flex-col text-sm">
         <span>
-          {currencyFormatter.format(inputTier.price_per_unit ?? 0)} / 1M input
+          {formatPricingCurrency(inputTier.price_per_unit ?? 0)} / 1M input
         </span>
         <span className="text-xs text-muted-foreground">
-          {currencyFormatter.format(outputTier.price_per_unit ?? 0)} / 1M output
+          {formatPricingCurrency(outputTier.price_per_unit ?? 0)} / 1M output
         </span>
       </div>
     );
@@ -392,7 +388,7 @@ function TierPriceRow({ tiers }: { tiers: PricingTier[] }) {
   if (first) {
     return (
       <div className="text-sm">
-        {currencyFormatter.format(first.price_per_unit ?? 0)} / {formatUnitLabel(first.unit)}
+        {formatPricingCurrency(first.price_per_unit ?? 0)} / {formatUnitLabel(first.unit)}
       </div>
     );
   }
@@ -404,10 +400,10 @@ function LegacyPriceRow({ model }: { model: UserModel }) {
   return (
     <div className="flex flex-col text-sm">
       <span>
-        {currencyFormatter.format(model.price_input)} / 1M input
+        {formatPricingCurrency(model.price_input)} / 1M input
       </span>
       <span className="text-xs text-muted-foreground">
-        {currencyFormatter.format(model.price_output)} / 1M output
+        {formatPricingCurrency(model.price_output)} / 1M output
       </span>
     </div>
   );

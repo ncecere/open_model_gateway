@@ -1,11 +1,5 @@
 import { Progress } from "@/components/ui/progress";
-
-const currencyFormatter = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+import { currencyFormatter } from "@/lib/formatters";
 
 type BudgetMeterProps = {
   used: number;

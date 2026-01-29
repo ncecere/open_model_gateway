@@ -17,12 +17,7 @@ import { PeriodSelector, usePeriodSelector } from "@/components/ui/period-select
 import { PageHeader } from "@/components/layouts";
 import { UsageBreakdownCard } from "../features/dashboard";
 
-const currencyFormatter = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 4,
-  maximumFractionDigits: 4,
-});
+import { formatPricingCurrency } from "@/lib/formatters";
 
 export function UserDashboardPage() {
   const [scopeSelection, setScopeSelection] = useState("personal");
@@ -130,7 +125,7 @@ export function UserDashboardPage() {
           title="Spend"
           value={
             selectedTotals
-              ? currencyFormatter.format(spendValue ?? 0)
+              ? formatPricingCurrency(spendValue ?? 0)
               : "—"
           }
           secondary={data ? periodLabel : undefined}

@@ -245,6 +245,29 @@ export function formatCost(value: number): string {
   return formatCurrency(value);
 }
 
+/**
+ * Formats a pricing value in USD with 4-decimal precision (e.g., "$0.0150").
+ * Used for per-token/per-unit model pricing display.
+ */
+export function formatPricingCurrency(value: number): string {
+  return formatCurrency(value, "USD", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+}
+
+/**
+ * Pre-built formatter instance for standard $X.XX display.
+ * Prefer formatCurrency() for most cases; use this for hot paths
+ * where avoiding repeated Intl.NumberFormat construction matters.
+ */
+export const currencyFormatter = new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 // ============================================================================
 // File Size Formatting
 // ============================================================================

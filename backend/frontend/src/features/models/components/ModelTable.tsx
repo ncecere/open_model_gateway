@@ -24,11 +24,7 @@ import { formatModelTypeLabel } from "../types";
 import { getProviderIcon } from "@/features/models/provider-icons";
 import { statusToneClass, toneFromStatus } from "@/ui/kit/status";
 
-const currency = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 4,
-});
+import { formatPricingCurrency } from "@/lib/formatters";
 
 type ModelTableProps = {
   models: ModelCatalogEntry[];
@@ -304,7 +300,7 @@ function formatBucketSummary(bucket: string, tiers: PricingTier[]) {
   if (!first) {
     return `${bucket}: n/a`;
   }
-  const price = currency.format(first.price_per_unit ?? 0);
+  const price = formatPricingCurrency(first.price_per_unit ?? 0);
   const unitLabel = formatUnitLabel(first.unit);
   const scope = first.max_units
     ? `≤${Number(first.max_units).toLocaleString()} `

@@ -29,10 +29,7 @@ import { Sparkline, extractSparklineData } from "@/components/charts/Sparkline";
 import { BreakdownTabs } from "@/features/dashboard";
 import { cn } from "@/lib/utils";
 
-const currencyFormatter = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-});
+import { currencyFormatter } from "@/lib/formatters";
 
 const formatSpendAmount = (usd?: number, cents?: number) =>
   currencyFormatter.format(

@@ -11,12 +11,7 @@ interface BreakdownTabsProps {
   periodLabel: string;
 }
 
-const currencyFormatter = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+import { currencyFormatter } from "@/lib/formatters";
 
 export function BreakdownTabs({ queryParams, periodLabel }: BreakdownTabsProps) {
   const modelBreakdown = useUsageBreakdown(

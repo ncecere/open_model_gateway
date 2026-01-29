@@ -1,6 +1,2 @@
-export const currencyFormatter = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+// Re-export the canonical currency formatter from the shared library.
+export { currencyFormatter } from "@/lib/formatters";

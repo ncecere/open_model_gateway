@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { AxiosError } from "axios";
 import { ApiError, toApiError, getErrorMessage, isAxiosError } from "./errors";
+import type { ApiErrorResponse } from "./errors";
 
-function makeAxiosError(status: number, data?: Record<string, unknown>): AxiosError {
-  const err = new AxiosError("Request failed");
+function makeAxiosError(status: number, data?: Record<string, unknown>): AxiosError<ApiErrorResponse> {
+  const err = new AxiosError<ApiErrorResponse>("Request failed");
   err.response = {
     status,
     statusText: "Error",
-    data: data ?? {},
+    data: (data ?? {}) as ApiErrorResponse,
     headers: {},
     config: {} as any,
   };

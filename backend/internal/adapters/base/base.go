@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/retryafter"
 	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 )
 
@@ -283,9 +284,43 @@ type APIError struct {
 	} `json:"error"`
 }
 
+// DecodeAPIError reads an error HTTP response and returns an appropriate apperror.
+// It handles Retry-After headers for 429/503/529, attempts JSON body parsing,
+// and maps status codes to typed errors. The op parameter identifies the provider.
+// Callers should NOT close resp.Body before calling this function; it is read here.
+func DecodeAPIError(op string, resp *http.Response) error {
+	// Handle rate-limit / overloaded statuses with Retry-After support first.
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		return retryafter.RateLimitError(op, resp)
+	case 529, http.StatusServiceUnavailable:
+		return retryafter.OverloadedError(op, resp)
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	msg := strings.TrimSpace(string(body))
+
+	// Try standard OpenAI-style {"error":{"message":"..."}} envelope.
+	if len(body) > 0 {
+		var apiErr APIError
+		if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Error.Message != "" {
+			msg = apiErr.Error.Message
+		}
+	}
+
+	if msg == "" {
+		msg = http.StatusText(resp.StatusCode)
+	}
+
+	return mapStatusToError(resp.StatusCode, msg, op)
+}
+
 // mapStatusToError maps HTTP status codes to apperror types.
-func mapStatusToError(status int, message string) error {
+func mapStatusToError(status int, message string, ops ...string) error {
 	op := "api"
+	if len(ops) > 0 && ops[0] != "" {
+		op = ops[0]
+	}
 	switch status {
 	case http.StatusBadRequest:
 		return apperror.BadRequest(op, message)

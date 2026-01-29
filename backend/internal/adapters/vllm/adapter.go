@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -194,6 +195,7 @@ func (a *TGIAdapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-
 			}
 			var event tgiStreamEvent
 			if err := json.Unmarshal([]byte(payload), &event); err != nil {
+				slog.Warn("vllm: failed to unmarshal streaming event", "error", err)
 				continue
 			}
 			if event.Token != nil && event.Token.Text != "" && !event.Token.Special {

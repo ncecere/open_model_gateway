@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -466,6 +467,7 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 
 				var payload anthropicStreamEvent
 				if err := json.Unmarshal(chunk.Value.Bytes, &payload); err != nil {
+					slog.Warn("bedrock: failed to unmarshal streaming chunk", "error", err)
 					continue
 				}
 

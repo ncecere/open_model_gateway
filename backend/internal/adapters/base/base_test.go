@@ -306,6 +306,100 @@ func TestAdapter_DecodeError(t *testing.T) {
 	}
 }
 
+func TestDecodeAPIError(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		headers    map[string]string
+		body       string
+		wantErr    error
+		wantMsg    string
+	}{
+		{
+			name:       "429 with Retry-After",
+			statusCode: http.StatusTooManyRequests,
+			headers:    map[string]string{"Retry-After": "30"},
+			body:       `{"error":{"message":"rate limited"}}`,
+			wantErr:    apperror.ErrRateLimited,
+		},
+		{
+			name:       "429 without Retry-After",
+			statusCode: http.StatusTooManyRequests,
+			body:       `{}`,
+			wantErr:    apperror.ErrRateLimited,
+		},
+		{
+			name:       "503 overloaded",
+			statusCode: http.StatusServiceUnavailable,
+			body:       `{}`,
+			wantErr:    apperror.ErrServiceUnavailable,
+		},
+		{
+			name:       "529 Anthropic overloaded",
+			statusCode: 529,
+			body:       `{"error":{"message":"overloaded"}}`,
+			wantErr:    apperror.ErrServiceUnavailable,
+		},
+		{
+			name:       "400 with JSON error body",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"message":"invalid model"}}`,
+			wantErr:    apperror.ErrBadRequest,
+			wantMsg:    "invalid model",
+		},
+		{
+			name:       "400 with plain text body",
+			statusCode: http.StatusBadRequest,
+			body:       `bad request`,
+			wantErr:    apperror.ErrBadRequest,
+			wantMsg:    "bad request",
+		},
+		{
+			name:       "401 unauthorized",
+			statusCode: http.StatusUnauthorized,
+			body:       `{"error":{"message":"invalid key"}}`,
+			wantErr:    apperror.ErrUnauthorized,
+		},
+		{
+			name:       "500 with empty body",
+			statusCode: http.StatusInternalServerError,
+			body:       ``,
+			wantErr:    apperror.ErrInternal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				for k, v := range tt.headers {
+					w.Header().Set(k, v)
+				}
+				w.WriteHeader(tt.statusCode)
+				w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			resp, err := http.Get(server.URL)
+			if err != nil {
+				t.Fatalf("unexpected http error: %v", err)
+			}
+
+			decodeErr := DecodeAPIError("test-provider", resp)
+			if !errors.Is(decodeErr, tt.wantErr) {
+				t.Errorf("expected %v, got %v", tt.wantErr, decodeErr)
+			}
+			if tt.wantMsg != "" {
+				var appErr *apperror.Error
+				if errors.As(decodeErr, &appErr) {
+					if appErr.Message != tt.wantMsg {
+						t.Errorf("expected message %q, got %q", tt.wantMsg, appErr.Message)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestAdapter_Retry(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

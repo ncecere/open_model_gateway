@@ -8,12 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/base"
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
-	"github.com/ncecere/open_model_gateway/backend/internal/adapters/retryafter"
 	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
@@ -110,6 +111,7 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 			}
 			var chunk chatCompletionChunk
 			if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+				slog.Warn("openrouter: failed to unmarshal streaming chunk", "error", err)
 				return true
 			}
 			if !yield(convertChatChunk(chunk)) {
@@ -528,28 +530,7 @@ func epochTime(ts int64) time.Time {
 }
 
 func decodeAPIError(resp *http.Response) error {
-	op := "openrouter"
-	switch resp.StatusCode {
-	case http.StatusTooManyRequests:
-		resp.Body.Close()
-		return retryafter.RateLimitError(op, resp)
-	case http.StatusServiceUnavailable:
-		resp.Body.Close()
-		return retryafter.OverloadedError(op, resp)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	if len(body) == 0 {
-		return fmt.Errorf("openrouter: http %d", resp.StatusCode)
-	}
-	var apiErr apiErrorResponse
-	if err := json.Unmarshal(body, &apiErr); err != nil || apiErr.Error.Message == "" {
-		return fmt.Errorf("openrouter: http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	if resp.StatusCode >= 500 {
-		return apperror.ServiceUnavailable(op, apiErr.Error.Message)
-	}
-	return fmt.Errorf("openrouter: %s", apiErr.Error.Message)
+	return base.DecodeAPIError("openrouter", resp)
 }
 
 type chatCompletionRequest struct {
@@ -691,12 +672,6 @@ type modelArchitecture struct {
 type providerMetadata struct {
 	MaxCompletionTokens int32 `json:"max_completion_tokens"`
 	ContextLength       int32 `json:"context_length"`
-}
-
-type apiErrorResponse struct {
-	Error struct {
-		Message string `json:"message"`
-	} `json:"error"`
 }
 
 type modelPricing struct {

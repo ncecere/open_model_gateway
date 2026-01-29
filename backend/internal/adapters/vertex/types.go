@@ -1,11 +1,10 @@
 package vertex
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
+
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/base"
 )
 
 type vertexPart struct {
@@ -143,19 +142,6 @@ type vertexPredictResponse struct {
 	Metadata    *vertexUsageMetadata `json:"metadata,omitempty"`
 }
 
-type vertexAPIError struct {
-	Error struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Status  string `json:"status"`
-	} `json:"error"`
-}
-
 func decodeAPIError(resp *http.Response) error {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	var apiErr vertexAPIError
-	if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Error.Message != "" {
-		return fmt.Errorf("vertex api error %d (%s): %s", apiErr.Error.Code, apiErr.Error.Status, apiErr.Error.Message)
-	}
-	return fmt.Errorf("vertex api error %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	return base.DecodeAPIError("vertex", resp)
 }

@@ -8,12 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/ncecere/open_model_gateway/backend/internal/adapters/base"
 	"github.com/ncecere/open_model_gateway/backend/internal/adapters/openaihelper"
-	"github.com/ncecere/open_model_gateway/backend/internal/adapters/retryafter"
 	"github.com/ncecere/open_model_gateway/backend/internal/apperror"
 	"github.com/ncecere/open_model_gateway/backend/internal/models"
 	"github.com/ncecere/open_model_gateway/backend/internal/providers/streamutil"
@@ -108,6 +109,7 @@ func (a *Adapter) ChatStream(ctx context.Context, req models.ChatRequest) (<-cha
 			}
 			var chunk chatCompletionChunk
 			if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+				slog.Warn("groq: failed to unmarshal streaming chunk", "error", err)
 				return true
 			}
 			if !yield(convertChatChunk(chunk)) {
@@ -408,24 +410,7 @@ func epochTime(sec int64) time.Time {
 }
 
 func decodeAPIError(resp *http.Response) error {
-	op := "groq"
-	switch resp.StatusCode {
-	case http.StatusTooManyRequests:
-		return retryafter.RateLimitError(op, resp)
-	case http.StatusServiceUnavailable:
-		return retryafter.OverloadedError(op, resp)
-	}
-	var parsed apiError
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return fmt.Errorf("groq: http %d", resp.StatusCode)
-	}
-	if parsed.Error.Message == "" {
-		return fmt.Errorf("groq: http %d", resp.StatusCode)
-	}
-	if resp.StatusCode >= 500 {
-		return apperror.ServiceUnavailable(op, parsed.Error.Message)
-	}
-	return fmt.Errorf("groq: %s", parsed.Error.Message)
+	return base.DecodeAPIError("groq", resp)
 }
 
 type chatCompletionRequest struct {
@@ -516,13 +501,4 @@ type chunkChoice struct {
 	Index        int         `json:"index"`
 	FinishReason string      `json:"finish_reason"`
 	Delta        chatMessage `json:"delta"`
-}
-
-type apiError struct {
-	Error struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-		Code    string `json:"code"`
-		Param   string `json:"param"`
-	} `json:"error"`
 }

@@ -115,24 +115,44 @@ func (w *Worker) runResponsesItem(ctx context.Context, rc *requestctx.Context, t
 func convertResponsesPayload(resp models.ChatResponse, alias string, opts responsesOptions) openAIResponsesPayload {
 	outputs := make([]openAIResponsesOutput, 0, len(resp.Choices))
 	status := "completed"
+	outputIdx := 0
 	for _, choice := range resp.Choices {
 		finish := mapResponseStatus(choice.FinishReason)
 		if finish != "completed" {
 			status = finish
 		}
-		outputs = append(outputs, openAIResponsesOutput{
-			Type:   "message",
-			ID:     fmt.Sprintf("%s-%d", resp.ID, choice.Index),
-			Status: finish,
-			Role:   choice.Message.Role,
-			Content: []openAIResponsesOutputContent{
-				{
-					Type: "output_text",
-					Text: choice.Message.Text(),
+		// Emit function_call items for tool calls
+		for _, tc := range choice.Message.ToolCalls {
+			outputs = append(outputs, openAIResponsesOutput{
+				Type:      "function_call",
+				ID:        fmt.Sprintf("%s-fc-%d", resp.ID, outputIdx),
+				Status:    "completed",
+				CallID:    tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			})
+			outputIdx++
+		}
+		// Emit message item if there's text content
+		text := choice.Message.Text()
+		if text != "" || len(choice.Message.ToolCalls) == 0 {
+			outputs = append(outputs, openAIResponsesOutput{
+				Type:   "message",
+				ID:     fmt.Sprintf("%s-%d", resp.ID, outputIdx),
+				Status: finish,
+				Role:   choice.Message.Role,
+				Content: []openAIResponsesOutputContent{
+					{
+						Type:        "output_text",
+						Text:        text,
+						Annotations: []interface{}{},
+					},
 				},
-			},
-		})
+			})
+			outputIdx++
+		}
 	}
+	completedAt := resp.Created.Unix()
 	usage := openAIResponsesUsage{
 		InputTokens:  resp.Usage.PromptTokens,
 		OutputTokens: resp.Usage.CompletionTokens,
@@ -141,23 +161,38 @@ func convertResponsesPayload(resp models.ChatResponse, alias string, opts respon
 			ReasoningTokens: resp.Usage.ReasoningTokens,
 		},
 	}
+
+	var instructions *string
+	if inst := strings.TrimSpace(opts.Instructions); inst != "" {
+		instructions = &inst
+	}
+	metadata := opts.Metadata
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+
+	var incomplete *incompleteDetails
+	if status == "incomplete" {
+		incomplete = &incompleteDetails{Reason: "max_output_tokens"}
+	}
+
 	payload := openAIResponsesPayload{
 		ID:                resp.ID,
 		Object:            "response",
 		CreatedAt:         resp.Created.Unix(),
+		CompletedAt:       &completedAt,
 		Status:            status,
+		IncompleteDetails: incomplete,
 		Model:             alias,
+		Instructions:      instructions,
 		Output:            outputs,
 		ParallelToolCalls: opts.ParallelToolCalls,
 		ToolChoice:        "auto",
+		Truncation:        "disabled",
 		Tools:             []interface{}{},
 		Usage:             usage,
-	}
-	if strings.TrimSpace(opts.Instructions) != "" {
-		payload.Instructions = opts.Instructions
-	}
-	if len(opts.Metadata) > 0 {
-		payload.Metadata = opts.Metadata
+		Metadata:          metadata,
+		ServiceTier:       "default",
 	}
 	return payload
 }
@@ -180,26 +215,50 @@ type responsesOptions struct {
 }
 
 type openAIResponsesPayload struct {
-	ID                string                  `json:"id"`
-	Object            string                  `json:"object"`
-	CreatedAt         int64                   `json:"created_at"`
-	Status            string                  `json:"status"`
-	Model             string                  `json:"model"`
-	Output            []openAIResponsesOutput `json:"output"`
-	ParallelToolCalls bool                    `json:"parallel_tool_calls"`
-	ToolChoice        string                  `json:"tool_choice"`
-	Tools             []interface{}           `json:"tools"`
-	Usage             openAIResponsesUsage    `json:"usage"`
-	Instructions      string                  `json:"instructions,omitempty"`
-	Metadata          map[string]string       `json:"metadata,omitempty"`
+	ID                 string                  `json:"id"`
+	Object             string                  `json:"object"`
+	CreatedAt          int64                   `json:"created_at"`
+	CompletedAt        *int64                  `json:"completed_at"`
+	Status             string                  `json:"status"`
+	IncompleteDetails  *incompleteDetails      `json:"incomplete_details"`
+	Model              string                  `json:"model"`
+	PreviousResponseID *string                 `json:"previous_response_id"`
+	Instructions       *string                 `json:"instructions"`
+	Output             []openAIResponsesOutput `json:"output"`
+	Error              *responsesErrorObj      `json:"error"`
+	ParallelToolCalls  bool                    `json:"parallel_tool_calls"`
+	ToolChoice         string                  `json:"tool_choice"`
+	Truncation         string                  `json:"truncation"`
+	Tools              []interface{}           `json:"tools"`
+	Temperature        *float32                `json:"temperature"`
+	TopP               *float32                `json:"top_p"`
+	MaxOutputTokens    *int32                  `json:"max_output_tokens"`
+	Usage              openAIResponsesUsage    `json:"usage"`
+	Metadata           map[string]string       `json:"metadata"`
+	Store              bool                    `json:"store"`
+	ServiceTier        string                  `json:"service_tier"`
+}
+
+type incompleteDetails struct {
+	Reason string `json:"reason"`
+}
+
+type responsesErrorObj struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type openAIResponsesOutput struct {
 	Type    string                         `json:"type"`
 	ID      string                         `json:"id"`
 	Status  string                         `json:"status"`
-	Role    string                         `json:"role"`
-	Content []openAIResponsesOutputContent `json:"content"`
+	Role    string                         `json:"role,omitempty"`
+	Content []openAIResponsesOutputContent `json:"content,omitempty"`
+
+	// function_call fields
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 type openAIResponsesOutputContent struct {
@@ -212,7 +271,12 @@ type openAIResponsesUsage struct {
 	InputTokens         int32                             `json:"input_tokens"`
 	OutputTokens        int32                             `json:"output_tokens"`
 	TotalTokens         int32                             `json:"total_tokens"`
+	InputTokensDetails  openAIResponsesUsageInputDetails  `json:"input_tokens_details"`
 	OutputTokensDetails openAIResponsesUsageOutputDetails `json:"output_tokens_details"`
+}
+
+type openAIResponsesUsageInputDetails struct {
+	CachedTokens int32 `json:"cached_tokens"`
 }
 
 type openAIResponsesUsageOutputDetails struct {

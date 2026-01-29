@@ -413,6 +413,7 @@ type ModelCatalog struct {
 	Region             string             `json:"region"`
 	MetadataJson       []byte             `json:"metadata_json"`
 	Weight             int32              `json:"weight"`
+	ManagedBy          string             `json:"managed_by"`
 }
 
 type ProviderIncident struct {

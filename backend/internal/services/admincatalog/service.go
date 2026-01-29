@@ -67,6 +67,12 @@ type ModelPayload struct {
 	config.ProviderOverrides
 }
 
+// UpsertResult wraps the persisted entry with any normalization warnings.
+type UpsertResult struct {
+	Entry    db.ModelCatalog            `json:"entry"`
+	Warnings []catalog.NormalizeWarning `json:"warnings,omitempty"`
+}
+
 // List returns the model catalog entries.
 func (s *Service) List(ctx context.Context) ([]db.ModelCatalog, error) {
 	if s == nil || s.repo == nil {
@@ -82,168 +88,177 @@ func (s *Service) List(ctx context.Context) ([]db.ModelCatalog, error) {
 	return items, nil
 }
 
+// ValidateResult wraps a normalized entry preview without persisting.
+type ValidateResult struct {
+	Entry    config.ModelCatalogEntry   `json:"entry"`
+	Warnings []catalog.NormalizeWarning `json:"warnings,omitempty"`
+	Errors   []string                   `json:"errors,omitempty"`
+}
+
+// Validate runs the normalizer on a payload and returns the preview without saving.
+func (s *Service) Validate(payload ModelPayload) (ValidateResult, error) {
+	var errs []string
+	if strings.TrimSpace(payload.Alias) == "" {
+		errs = append(errs, "alias is required")
+	}
+	if strings.TrimSpace(payload.Provider) == "" {
+		errs = append(errs, "provider is required")
+	}
+	if strings.TrimSpace(payload.ProviderModel) == "" {
+		errs = append(errs, "provider_model is required")
+	}
+
+	var enabled *bool
+	t := payload.Enabled
+	enabled = &t
+
+	cfgEntry := config.ModelCatalogEntry{
+		Alias:             payload.Alias,
+		Provider:          payload.Provider,
+		ProviderModel:     payload.ProviderModel,
+		ModelType:         payload.ModelType,
+		ContextWindow:     payload.ContextWindow,
+		MaxOutputTokens:   payload.MaxOutputTokens,
+		Modalities:        payload.Modalities,
+		SupportsTools:     payload.SupportsTools,
+		PriceInput:        payload.PriceInput,
+		PriceOutput:       payload.PriceOutput,
+		Currency:          payload.Currency,
+		Deployment:        payload.Deployment,
+		Endpoint:          payload.Endpoint,
+		APIKey:            payload.APIKey,
+		APIVersion:        payload.APIVersion,
+		Region:            payload.Region,
+		Weight:            int(payload.Weight),
+		Enabled:           enabled,
+		Metadata:          payload.Metadata,
+		PricingTiers:      payload.PricingTiers,
+		ProviderOverrides: payload.ProviderOverrides,
+	}
+
+	result := catalog.NormalizeEntry(cfgEntry)
+	return ValidateResult{
+		Entry:    result.Entry,
+		Warnings: result.Warnings,
+		Errors:   errs,
+	}, nil
+}
+
 // Upsert validates and saves a catalog entry, reloading the router afterwards.
 func (s *Service) Upsert(ctx context.Context, payload ModelPayload) (db.ModelCatalog, error) {
+	result, err := s.UpsertWithWarnings(ctx, payload)
+	if err != nil {
+		return db.ModelCatalog{}, err
+	}
+	return result.Entry, nil
+}
+
+// UpsertWithWarnings validates, normalizes, and saves a catalog entry, returning
+// the persisted entry along with any normalization warnings. Only alias, provider,
+// and provider_model are strictly required; all other fields have smart defaults.
+func (s *Service) UpsertWithWarnings(ctx context.Context, payload ModelPayload) (UpsertResult, error) {
 	if s == nil || s.repo == nil {
-		return db.ModelCatalog{}, ErrServiceUnavailable
-	}
-	alias := strings.TrimSpace(payload.Alias)
-	if alias == "" {
-		return db.ModelCatalog{}, ErrAliasRequired
-	}
-	provider := catalog.NormalizeProviderSlug(payload.Provider)
-	if provider == "" {
-		return db.ModelCatalog{}, ErrProviderRequired
-	}
-	modelType := catalog.NormalizeModelType(payload.ModelType)
-	if modelType == "" {
-		modelType = "llm"
-	}
-	model := strings.TrimSpace(payload.ProviderModel)
-	if model == "" {
-		return db.ModelCatalog{}, ErrModelRequired
-	}
-	deployment := strings.TrimSpace(payload.Deployment)
-	if payload.Weight == 0 {
-		payload.Weight = 100
-	}
-	if payload.Metadata == nil {
-		payload.Metadata = map[string]string{}
-	}
-	if payload.PricingTiers == nil {
-		payload.PricingTiers = config.PricingTiers{}
+		return UpsertResult{}, ErrServiceUnavailable
 	}
 
-	switch provider {
-	case "azure":
-		if cfg := payload.ProviderOverrides.Azure; cfg != nil {
-			if deployment == "" {
-				deployment = strings.TrimSpace(cfg.Deployment)
-			}
-			if payload.Endpoint == "" {
-				payload.Endpoint = strings.TrimSpace(cfg.Endpoint)
-			}
-			if payload.APIKey == "" {
-				payload.APIKey = strings.TrimSpace(cfg.APIKey)
-			}
-			if payload.APIVersion == "" {
-				payload.APIVersion = strings.TrimSpace(cfg.APIVersion)
-			}
-			if payload.Region == "" {
-				payload.Region = strings.TrimSpace(cfg.Region)
-			}
-		}
-	case "openai":
-		if cfg := payload.ProviderOverrides.OpenAI; cfg != nil {
-			if payload.Endpoint == "" {
-				payload.Endpoint = strings.TrimSpace(cfg.BaseURL)
-			}
-			if payload.APIKey == "" {
-				payload.APIKey = strings.TrimSpace(cfg.APIKey)
-			}
-		}
-	case "openai-compatible":
-		if cfg := payload.ProviderOverrides.OpenAICompatible; cfg != nil {
-			if payload.Endpoint == "" {
-				payload.Endpoint = strings.TrimSpace(cfg.BaseURL)
-			}
-			if payload.APIKey == "" {
-				payload.APIKey = strings.TrimSpace(cfg.APIKey)
-			}
-		}
-	case "openrouter":
-		if cfg := payload.ProviderOverrides.OpenRouter; cfg != nil {
-			if payload.Endpoint == "" {
-				payload.Endpoint = strings.TrimSpace(cfg.BaseURL)
-			}
-			if payload.APIKey == "" {
-				payload.APIKey = strings.TrimSpace(cfg.APIKey)
-			}
-		}
-	case "vllm":
-		if cfg := payload.ProviderOverrides.VLLM; cfg != nil {
-			if payload.Endpoint == "" {
-				payload.Endpoint = strings.TrimSpace(cfg.BaseURL)
-			}
-			if payload.APIKey == "" {
-				payload.APIKey = strings.TrimSpace(cfg.APIKey)
-			}
-		}
-	case "bedrock":
-		if cfg := payload.ProviderOverrides.Bedrock; cfg != nil && payload.Region == "" {
-			payload.Region = strings.TrimSpace(cfg.Region)
-		}
-	case "vertex":
-		if cfg := payload.ProviderOverrides.Vertex; cfg != nil && payload.Region == "" {
-			payload.Region = strings.TrimSpace(cfg.Location)
-		}
+	// Minimal required-field checks before normalization.
+	if strings.TrimSpace(payload.Alias) == "" {
+		return UpsertResult{}, ErrAliasRequired
+	}
+	if strings.TrimSpace(payload.Provider) == "" {
+		return UpsertResult{}, ErrProviderRequired
+	}
+	if strings.TrimSpace(payload.ProviderModel) == "" {
+		return UpsertResult{}, ErrModelRequired
 	}
 
-	if deployment == "" {
-		return db.ModelCatalog{}, ErrDeploymentRequired
+	// Convert the payload into a config entry and run through the shared normalizer.
+	var enabled *bool
+	t := payload.Enabled
+	enabled = &t
+
+	cfgEntry := config.ModelCatalogEntry{
+		Alias:             payload.Alias,
+		Provider:          payload.Provider,
+		ProviderModel:     payload.ProviderModel,
+		ModelType:         payload.ModelType,
+		ContextWindow:     payload.ContextWindow,
+		MaxOutputTokens:   payload.MaxOutputTokens,
+		Modalities:        payload.Modalities,
+		SupportsTools:     payload.SupportsTools,
+		PriceInput:        payload.PriceInput,
+		PriceOutput:       payload.PriceOutput,
+		Currency:          payload.Currency,
+		Deployment:        payload.Deployment,
+		Endpoint:          payload.Endpoint,
+		APIKey:            payload.APIKey,
+		APIVersion:        payload.APIVersion,
+		Region:            payload.Region,
+		Weight:            int(payload.Weight),
+		Enabled:           enabled,
+		Metadata:          payload.Metadata,
+		PricingTiers:      payload.PricingTiers,
+		ProviderOverrides: payload.ProviderOverrides,
 	}
 
-	endpoint := strings.TrimSpace(payload.Endpoint)
-	apiKey := strings.TrimSpace(payload.APIKey)
-	apiVersion := strings.TrimSpace(payload.APIVersion)
-	region := strings.TrimSpace(payload.Region)
+	result := catalog.NormalizeEntry(cfgEntry)
+	e := result.Entry
 
-	modalitiesJSON, err := json.Marshal(payload.Modalities)
+	// Marshal JSON fields.
+	modalitiesJSON, err := json.Marshal(e.Modalities)
 	if err != nil {
-		return db.ModelCatalog{}, err
+		return UpsertResult{}, err
 	}
-	metadataJSON, err := json.Marshal(payload.Metadata)
+	metadataJSON, err := json.Marshal(e.Metadata)
 	if err != nil {
-		return db.ModelCatalog{}, err
+		return UpsertResult{}, err
 	}
-	providerConfigJSON, err := json.Marshal(payload.ProviderOverrides)
+	providerConfigJSON, err := json.Marshal(e.ProviderOverrides)
 	if err != nil {
-		return db.ModelCatalog{}, err
+		return UpsertResult{}, err
 	}
-	pricingJSON, err := json.Marshal(payload.PricingTiers)
+	pricingJSON, err := json.Marshal(e.PricingTiers)
 	if err != nil {
-		return db.ModelCatalog{}, err
+		return UpsertResult{}, err
 	}
 
 	params := db.UpsertModelCatalogEntryParams{
-		Alias:              alias,
-		Provider:           provider,
-		ProviderModel:      model,
-		ModelType:          modelType,
-		ContextWindow:      payload.ContextWindow,
-		MaxOutputTokens:    payload.MaxOutputTokens,
+		Alias:              e.Alias,
+		Provider:           e.Provider,
+		ProviderModel:      e.ProviderModel,
+		ModelType:          e.ModelType,
+		ContextWindow:      e.ContextWindow,
+		MaxOutputTokens:    e.MaxOutputTokens,
 		ModalitiesJson:     modalitiesJSON,
-		SupportsTools:      payload.SupportsTools,
+		SupportsTools:      e.SupportsTools,
 		PricingTiersJson:   pricingJSON,
-		PriceInput:         decimal.NewFromFloat(payload.PriceInput),
-		PriceOutput:        decimal.NewFromFloat(payload.PriceOutput),
-		Currency:           strings.ToUpper(strings.TrimSpace(payload.Currency)),
-		Enabled:            payload.Enabled,
+		PriceInput:         decimal.NewFromFloat(e.PriceInput),
+		PriceOutput:        decimal.NewFromFloat(e.PriceOutput),
+		Currency:           e.Currency,
+		Enabled:            e.IsEnabled(),
 		TenantAssignable:   payload.TenantAssignable,
-		Deployment:         deployment,
-		Endpoint:           endpoint,
-		ApiKey:             apiKey,
-		ApiVersion:         apiVersion,
-		Region:             region,
+		Deployment:         e.Deployment,
+		Endpoint:           e.Endpoint,
+		ApiKey:             e.APIKey,
+		ApiVersion:         e.APIVersion,
+		Region:             e.Region,
 		MetadataJson:       metadataJSON,
-		Weight:             payload.Weight,
+		Weight:             int32(e.Weight),
 		ProviderConfigJson: providerConfigJSON,
-	}
-	if params.Currency == "" {
-		params.Currency = "USD"
+		ManagedBy:          "ui",
 	}
 
 	entry, err := s.repo.UpsertModelCatalogEntry(ctx, params)
 	if err != nil {
-		return db.ModelCatalog{}, err
+		return UpsertResult{}, err
 	}
 	if s.reload != nil {
 		if err := s.reload(ctx); err != nil {
-			return db.ModelCatalog{}, err
+			return UpsertResult{}, err
 		}
 	}
-	entry.ModelType = modelType
-	return entry, nil
+	entry.ModelType = e.ModelType
+	return UpsertResult{Entry: entry, Warnings: result.Warnings}, nil
 }
 
 // Remove deletes an entry and reloads the router.

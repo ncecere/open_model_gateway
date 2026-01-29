@@ -28,6 +28,13 @@ type ChatRequest struct {
 	Stream      bool          `json:"stream,omitempty"`
 	Stop        []string      `json:"stop,omitempty"`
 
+	// Sampling parameters
+	PresencePenalty  *float32 `json:"presence_penalty,omitempty"`
+	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+
+	// Response format (json_object, json_schema, text, etc.)
+	ChatResponseFormat json.RawMessage `json:"response_format,omitempty"`
+
 	// Tool calling fields
 	Tools             []Tool          `json:"tools,omitempty"`
 	ToolChoice        json.RawMessage `json:"tool_choice,omitempty"` // string or object

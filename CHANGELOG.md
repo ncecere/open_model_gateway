@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+#### Backend
+- **Shared model catalog normalizer** (`internal/catalog/normalize.go`) — single `NormalizeEntry()` function that auto-infers model type from provider model name (e.g. "gpt-image-1" → image, "text-embedding-3-small" → embedding), auto-infers modalities from model type, auto-detects tool support for known LLM families, and applies canonical defaults (deployment, weight, currency, pricing clamps). Used by both config seeding and admin API upsert.
+- **`managed_by` column** on `model_catalog` table — tracks whether an entry was created via YAML config (`config`) or the admin UI (`ui`). Migration + schema included.
+- **`POST /admin/model-catalog/validate`** endpoint — runs the normalizer on a payload and returns the preview entry plus warnings without persisting, for live form feedback.
+- **`GET /admin/model-catalog/presets`** endpoint — returns 28 built-in model presets covering OpenAI (GPT-4.1, GPT-4o, o3/o4, embeddings, TTS), Anthropic (Claude Sonnet/Opus 4, 3.5 Sonnet/Haiku), Google Vertex (Gemini 2.5/2.0), AWS Bedrock (Claude via Bedrock), and Groq (Llama, Gemma) with pre-filled pricing, context windows, and capabilities.
+- **Provider descriptor metadata** exposed via `GET /admin/providers` — response now includes `descriptor` with `summary`, `auth`, `config_inputs`, `entry_fields`, and `health_notes` so the frontend can dynamically build provider-specific form fields.
+
+- **Open Responses spec compliance — streaming function calls** (`responses_stream_renderer.go`) — streaming responses now emit `response.output_item.added` (type `function_call`), `response.function_call_arguments.delta`, `response.function_call_arguments.done`, and `response.output_item.done` events when the model invokes tools, matching the Open Responses SSE contract.
+- **Open Responses spec compliance — complete request struct** — `openAIResponsesRequest` now parses all spec fields: `previous_response_id`, `presence_penalty`, `frequency_penalty`, `top_logprobs`, `max_tool_calls`, `truncation`, `include`, `reasoning` (effort/summary), `text` (format/verbosity), `store`, `background`, `service_tier`, `safety_identifier`, `prompt_cache_key`, `stream_options`.
+- **Open Responses spec compliance — complete response payload** — `responsesPayload` includes all required fields: `completed_at`, `incomplete_details`, `previous_response_id`, `instructions`, `error`, `truncation`, `text`, `reasoning`, penalty echo-backs, `max_tool_calls`, `store`, `background`, `service_tier`, `safety_identifier`, `prompt_cache_key`, `input_tokens_details.cached_tokens`.
+- **Open Responses spec compliance — function call output items** — sync responses now emit `function_call` output items (type, id, call_id, name, arguments, status) when the model invokes tools.
+- **Open Responses spec compliance — polymorphic input parsing** — `parseResponseInputItems()` handles string shorthand, `type: "message"`, `type: "function_call"`, `type: "function_call_output"`, `type: "item_reference"`, and `type: "reasoning"` input items per spec.
+- **Open Responses spec compliance — error shape** — `writeResponsesError()` returns `{error: {type, code, message, param}}` matching spec error format.
+- **`presence_penalty` and `frequency_penalty` on `ChatRequest`** — new fields forwarded through to providers via `BuildChatParams`, benefiting both `/v1/chat/completions` and `/v1/responses`.
+- **`ChatResponseFormat` on `ChatRequest`** — new `json.RawMessage` field forwarded as `response_format` to the OpenAI SDK; the responses handler maps `text.format` into it.
+
+### Changed
+#### Backend
+- **Admin catalog upsert relaxed** — only alias, provider, and provider_model are required; all other fields (model type, modalities, deployment, weight, currency, tool support) are auto-filled by the shared normalizer. Removed ~60 lines of duplicated inline normalization from the admin service.
+- **`EnsurePersisted` refactored** to use `NormalizeEntry()` so config-seeded entries get the same smart defaults as UI-created entries.
+- **`UpsertWithWarnings()`** method added to admin catalog service, returning normalization warnings alongside the persisted entry.
+- **Batch worker responses format updated** — `convertResponsesPayload` now produces spec-compliant output with `completed_at`, `incomplete_details`, `instructions` (nullable), `truncation`, `input_tokens_details`, function_call output items for tool calls, non-nil `metadata` default, and `annotations` on content items.
+- **Responses instructions role** changed from `"system"` to `"developer"` per Open Responses spec, with `developer` → `system` mapping when forwarding to providers that don't support the developer role.
+
+#### Frontend
+- **"Config" badge** shown on model catalog entries seeded from YAML configuration, using the new `managed_by` field.
+- **API types updated** with `managed_by` field on `ModelCatalogEntry`, plus new `listModelPresets()`, `validateModel()`, and `listProviders()` API functions for presets, validation preview, and provider descriptors.
+
 ## [v0.1.30] - 2026-01-17
 ### Added
 #### Backend

@@ -21,11 +21,12 @@ INSERT INTO model_catalog (
     region,
     metadata_json,
     weight,
-    provider_config_json
+    provider_config_json,
+    managed_by
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
 )
 ON CONFLICT (alias)
 DO UPDATE SET
@@ -50,6 +51,7 @@ DO UPDATE SET
     metadata_json = EXCLUDED.metadata_json,
     weight = EXCLUDED.weight,
     provider_config_json = EXCLUDED.provider_config_json,
+    managed_by = EXCLUDED.managed_by,
     updated_at = NOW()
 RETURNING *;
 

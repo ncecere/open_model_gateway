@@ -24,6 +24,7 @@ interface ModelCatalogDTO {
   metadata_json: string;
   weight: number;
   provider_config_json?: string;
+  managed_by?: string;
 }
 
 export interface AzureProviderConfig {
@@ -140,6 +141,7 @@ export interface ModelCatalogEntry {
   weight: number;
   provider_overrides: ProviderOverrides;
   pricing_tiers: PricingTierMap;
+  managed_by: string;
 }
 
 export interface ModelStatus {
@@ -246,6 +248,7 @@ function mapCatalogEntry(entry: ModelCatalogDTO): ModelCatalogEntry {
       entry.pricing_tiers_json,
       {},
     ),
+    managed_by: entry.managed_by ?? "ui",
   };
 }
 
@@ -301,4 +304,74 @@ export async function upsertModel(payload: ModelCatalogUpsertRequest) {
 
 export async function deleteModel(alias: string) {
   await api.delete(`/model-catalog/${alias}`);
+}
+
+// --- Presets ---
+
+export interface ModelPreset {
+  alias: string;
+  provider: string;
+  provider_model: string;
+  model_type: string;
+  modalities?: string[];
+  context_window?: number;
+  max_output_tokens?: number;
+  supports_tools?: boolean;
+  price_input: number;
+  price_output: number;
+  category: string;
+  description?: string;
+}
+
+export async function listModelPresets() {
+  const { data } = await api.get<ModelPreset[]>("/model-catalog/presets");
+  return data;
+}
+
+// --- Validate (preview) ---
+
+export interface ValidateResult {
+  entry: Record<string, unknown>;
+  warnings?: Array<{ field: string; message: string }>;
+  errors?: string[];
+}
+
+export async function validateModel(
+  payload: Partial<ModelCatalogUpsertRequest>,
+) {
+  const { data } = await api.post<ValidateResult>(
+    "/model-catalog/validate",
+    payload,
+  );
+  return data;
+}
+
+// --- Providers with descriptors ---
+
+export interface ProviderInput {
+  name: string;
+  description: string;
+  required: boolean;
+  secret: boolean;
+  source?: string;
+}
+
+export interface ProviderDescriptor {
+  summary: string;
+  auth?: string[];
+  config_inputs?: ProviderInput[];
+  entry_fields?: ProviderInput[];
+  health_notes?: string;
+}
+
+export interface ProviderDefinition {
+  name: string;
+  description: string;
+  capabilities: string[];
+  descriptor?: ProviderDescriptor;
+}
+
+export async function listProviders() {
+  const { data } = await api.get<ProviderDefinition[]>("/providers");
+  return data;
 }

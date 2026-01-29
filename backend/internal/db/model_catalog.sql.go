@@ -22,7 +22,7 @@ func (q *Queries) DeleteModelCatalogEntry(ctx context.Context, alias string) err
 }
 
 const getModelByAlias = `-- name: GetModelByAlias :one
-SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight, managed_by
 FROM model_catalog
 WHERE alias = $1
 `
@@ -54,12 +54,13 @@ func (q *Queries) GetModelByAlias(ctx context.Context, alias string) (ModelCatal
 		&i.Region,
 		&i.MetadataJson,
 		&i.Weight,
+		&i.ManagedBy,
 	)
 	return i, err
 }
 
 const listEnabledModels = `-- name: ListEnabledModels :many
-SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight, managed_by
 FROM model_catalog
 WHERE enabled = true
 ORDER BY alias
@@ -98,6 +99,7 @@ func (q *Queries) ListEnabledModels(ctx context.Context) ([]ModelCatalog, error)
 			&i.Region,
 			&i.MetadataJson,
 			&i.Weight,
+			&i.ManagedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -110,7 +112,7 @@ func (q *Queries) ListEnabledModels(ctx context.Context) ([]ModelCatalog, error)
 }
 
 const listModelCatalog = `-- name: ListModelCatalog :many
-SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight, managed_by
 FROM model_catalog
 ORDER BY alias
 `
@@ -148,6 +150,7 @@ func (q *Queries) ListModelCatalog(ctx context.Context) ([]ModelCatalog, error) 
 			&i.Region,
 			&i.MetadataJson,
 			&i.Weight,
+			&i.ManagedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -160,7 +163,7 @@ func (q *Queries) ListModelCatalog(ctx context.Context) ([]ModelCatalog, error) 
 }
 
 const listModelCatalogByAliases = `-- name: ListModelCatalogByAliases :many
-SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+SELECT alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight, managed_by
 FROM model_catalog
 WHERE alias = ANY($1::text[])
 `
@@ -198,6 +201,7 @@ func (q *Queries) ListModelCatalogByAliases(ctx context.Context, dollar_1 []stri
 			&i.Region,
 			&i.MetadataJson,
 			&i.Weight,
+			&i.ManagedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -232,11 +236,12 @@ INSERT INTO model_catalog (
     region,
     metadata_json,
     weight,
-    provider_config_json
+    provider_config_json,
+    managed_by
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
 )
 ON CONFLICT (alias)
 DO UPDATE SET
@@ -261,8 +266,9 @@ DO UPDATE SET
     metadata_json = EXCLUDED.metadata_json,
     weight = EXCLUDED.weight,
     provider_config_json = EXCLUDED.provider_config_json,
+    managed_by = EXCLUDED.managed_by,
     updated_at = NOW()
-RETURNING alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight
+RETURNING alias, provider, provider_model, model_type, context_window, max_output_tokens, modalities_json, supports_tools, pricing_tiers_json, price_input, price_output, currency, enabled, tenant_assignable, provider_config_json, updated_at, deployment, endpoint, api_key, api_version, region, metadata_json, weight, managed_by
 `
 
 type UpsertModelCatalogEntryParams struct {
@@ -288,6 +294,7 @@ type UpsertModelCatalogEntryParams struct {
 	MetadataJson       []byte          `json:"metadata_json"`
 	Weight             int32           `json:"weight"`
 	ProviderConfigJson []byte          `json:"provider_config_json"`
+	ManagedBy          string          `json:"managed_by"`
 }
 
 func (q *Queries) UpsertModelCatalogEntry(ctx context.Context, arg UpsertModelCatalogEntryParams) (ModelCatalog, error) {
@@ -314,6 +321,7 @@ func (q *Queries) UpsertModelCatalogEntry(ctx context.Context, arg UpsertModelCa
 		arg.MetadataJson,
 		arg.Weight,
 		arg.ProviderConfigJson,
+		arg.ManagedBy,
 	)
 	var i ModelCatalog
 	err := row.Scan(
@@ -340,6 +348,7 @@ func (q *Queries) UpsertModelCatalogEntry(ctx context.Context, arg UpsertModelCa
 		&i.Region,
 		&i.MetadataJson,
 		&i.Weight,
+		&i.ManagedBy,
 	)
 	return i, err
 }

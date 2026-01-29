@@ -170,6 +170,11 @@ export function ModelTable({
                       {model.tenant_assignable ? (
                         <Badge variant="secondary">Tenant</Badge>
                       ) : null}
+                      {model.managed_by === "config" ? (
+                        <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-600 dark:text-amber-400">
+                          Config
+                        </Badge>
+                      ) : null}
                     </div>
                   </div>
                 </div>

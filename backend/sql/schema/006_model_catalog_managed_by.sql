@@ -1,0 +1,2 @@
+ALTER TABLE model_catalog
+    ADD COLUMN IF NOT EXISTS managed_by TEXT NOT NULL DEFAULT 'ui';

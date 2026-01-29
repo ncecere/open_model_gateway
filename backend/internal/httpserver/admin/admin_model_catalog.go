@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/ncecere/open_model_gateway/backend/internal/app"
+	"github.com/ncecere/open_model_gateway/backend/internal/catalog"
 	"github.com/ncecere/open_model_gateway/backend/internal/httpserver/httputil"
 	"github.com/ncecere/open_model_gateway/backend/internal/router"
 	admincatalogsvc "github.com/ncecere/open_model_gateway/backend/internal/services/admincatalog"
@@ -22,6 +23,8 @@ func registerAdminModelCatalogRoutes(router fiber.Router, container *app.Contain
 	group.Get("/", handler.list)
 	group.Get("/status", handler.status)
 	group.Post("/", handler.upsert)
+	group.Post("/validate", handler.validate)
+	group.Get("/presets", handler.presets)
 	group.Delete("/:alias", handler.remove)
 }
 
@@ -59,6 +62,25 @@ func (h *modelCatalogHandler) status(c *fiber.Ctx) error {
 		})
 	}
 	return c.JSON(fiber.Map{"statuses": resp})
+}
+
+func (h *modelCatalogHandler) presets(c *fiber.Ctx) error {
+	return c.JSON(catalog.DefaultPresets())
+}
+
+func (h *modelCatalogHandler) validate(c *fiber.Ctx) error {
+	if h.service == nil {
+		return httputil.WriteError(c, fiber.StatusInternalServerError, "model catalog service unavailable")
+	}
+	var payload admincatalogsvc.ModelPayload
+	if err := c.BodyParser(&payload); err != nil {
+		return httputil.WriteError(c, fiber.StatusBadRequest, "invalid request body")
+	}
+	result, err := h.service.Validate(payload)
+	if err != nil {
+		return writeCatalogError(c, err)
+	}
+	return c.JSON(result)
 }
 
 func (h *modelCatalogHandler) upsert(c *fiber.Ctx) error {

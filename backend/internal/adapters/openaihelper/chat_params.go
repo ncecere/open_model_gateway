@@ -44,6 +44,19 @@ func BuildChatParams(req models.ChatRequest) (openai.ChatCompletionNewParams, er
 		params.Stop.OfStringArray = append(params.Stop.OfStringArray, req.Stop...)
 	}
 
+	if req.PresencePenalty != nil {
+		params.PresencePenalty = param.NewOpt(float64(*req.PresencePenalty))
+	}
+	if req.FrequencyPenalty != nil {
+		params.FrequencyPenalty = param.NewOpt(float64(*req.FrequencyPenalty))
+	}
+	if len(req.ChatResponseFormat) > 0 {
+		var rf openai.ChatCompletionNewParamsResponseFormatUnion
+		if err := json.Unmarshal(req.ChatResponseFormat, &rf); err == nil {
+			params.ResponseFormat = rf
+		}
+	}
+
 	// Add tools
 	if len(req.Tools) > 0 {
 		params.Tools = convertTools(req.Tools)

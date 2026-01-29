@@ -3,7 +3,6 @@ package catalog
 import (
 	"context"
 	"encoding/json"
-	"strings"
 
 	decimal "github.com/shopspring/decimal"
 
@@ -20,68 +19,55 @@ func EnsurePersisted(ctx context.Context, queries *db.Queries, entries []config.
 		return nil
 	}
 	for _, entry := range entries {
-		modalitiesJSON, err := json.Marshal(entry.Modalities)
+		// Run through the shared normalizer so config-seeded entries get the
+		// same defaults (model_type inference, modalities, tool support, etc.)
+		// as UI-created entries.
+		result := catalog.NormalizeEntry(entry)
+		e := result.Entry
+
+		modalitiesJSON, err := json.Marshal(e.Modalities)
 		if err != nil {
 			return err
 		}
-		metadataJSON, err := json.Marshal(entry.Metadata)
+		metadataJSON, err := json.Marshal(e.Metadata)
 		if err != nil {
 			return err
 		}
-		pricingTiers := entry.PricingTiers
-		if pricingTiers == nil {
-			pricingTiers = config.PricingTiers{}
-		}
-		pricingJSON, err := json.Marshal(pricingTiers)
+		pricingJSON, err := json.Marshal(e.PricingTiers)
 		if err != nil {
 			return err
 		}
-		providerCfgJSON, err := json.Marshal(entry.ProviderOverrides)
+		providerCfgJSON, err := json.Marshal(e.ProviderOverrides)
 		if err != nil {
 			return err
 		}
 
-		priceInput := decimal.NewFromFloat(entry.PriceInput)
-		priceOutput := decimal.NewFromFloat(entry.PriceOutput)
-		if priceInput.IsNegative() {
-			priceInput = decimal.Zero
-		}
-		if priceOutput.IsNegative() {
-			priceOutput = decimal.Zero
-		}
-		currency := entry.Currency
-		if strings.TrimSpace(currency) == "" {
-			currency = "USD"
-		}
-
-		provider := catalog.NormalizeProviderSlug(entry.Provider)
-		modelType := catalog.NormalizeModelType(entry.ModelType)
-		if modelType == "" {
-			modelType = "llm"
-		}
+		priceInput := decimal.NewFromFloat(e.PriceInput)
+		priceOutput := decimal.NewFromFloat(e.PriceOutput)
 
 		_, err = queries.UpsertModelCatalogEntry(ctx, db.UpsertModelCatalogEntryParams{
-			Alias:              entry.Alias,
-			Provider:           provider,
-			ProviderModel:      entry.ProviderModel,
-			ModelType:          modelType,
-			ContextWindow:      entry.ContextWindow,
-			MaxOutputTokens:    entry.MaxOutputTokens,
+			Alias:              e.Alias,
+			Provider:           e.Provider,
+			ProviderModel:      e.ProviderModel,
+			ModelType:          e.ModelType,
+			ContextWindow:      e.ContextWindow,
+			MaxOutputTokens:    e.MaxOutputTokens,
 			ModalitiesJson:     modalitiesJSON,
-			SupportsTools:      entry.SupportsTools,
+			SupportsTools:      e.SupportsTools,
 			PricingTiersJson:   pricingJSON,
 			PriceInput:         priceInput,
 			PriceOutput:        priceOutput,
-			Currency:           currency,
-			Enabled:            entry.IsEnabled(),
-			Deployment:         entry.Deployment,
-			Endpoint:           entry.Endpoint,
-			ApiKey:             entry.APIKey,
-			ApiVersion:         entry.APIVersion,
-			Region:             entry.Region,
+			Currency:           e.Currency,
+			Enabled:            e.IsEnabled(),
+			Deployment:         e.Deployment,
+			Endpoint:           e.Endpoint,
+			ApiKey:             e.APIKey,
+			ApiVersion:         e.APIVersion,
+			Region:             e.Region,
 			MetadataJson:       metadataJSON,
-			Weight:             int32(entry.Weight),
+			Weight:             int32(e.Weight),
 			ProviderConfigJson: providerCfgJSON,
+			ManagedBy:          "config",
 		})
 		if err != nil {
 			return err

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.31] - 2026-01-29
 
 ### Added
 #### Backend
